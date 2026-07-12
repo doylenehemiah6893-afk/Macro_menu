@@ -1,0 +1,12 @@
+[project]
+name = "macro-menu"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "olefile>=0.47",
+    "oletools>=0.60.2",
+    "pcodedmp>=1.2.6",
+    "pytest>=9.1.1",
+]
