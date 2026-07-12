@@ -8,6 +8,11 @@
 >
 > **Execution boundary:** 本轮只修改文档；未移动项目目录、未修改 VBA 业务源码、未生成 CATVBA、未访问 CATIA、未推送远端
 
+> [!NOTE]
+> **Subsequent design update:** 后续 DR-011 将本记录中的根级 Overlay 规划细化为
+> `catvba_refactor/` 唯一命名空间，并把 `Src/` 定义为 intake-only upstream mirror。本文其余内容保留为
+> `24f81a7` 前后文档治理的历史快照；当前结构以 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) 为准。
+
 ## 1. 审计结论
 
 项目文档原先同时存在“旧二进制可直接安装”“缺依赖就补 .NET/Excel”“危险 Git 发版命令”、

@@ -53,7 +53,7 @@
 | 文档 | 状态 | 用途 |
 |---|---|---|
 | [STATUS.md](STATUS.md) | `CURRENT` | NO-GO、门禁、阻塞、唯一下一动作和恢复检查表 |
-| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | `APPROVED`（高层 Overlay）/ `DRAFT`（执行细节） | 本地目录职责、零搬迁策略、上游跟进边界和待复核的落地细节 |
+| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | `APPROVED`（唯一命名空间/所有权边界）/ `DRAFT`（执行细节） | `Src` 上游镜像、`catvba_refactor/` 唯一本地实现命名空间和 fail-closed intake |
 | [DOCUMENT_GOVERNANCE_AUDIT_2026-07-13.md](DOCUMENT_GOVERNANCE_AUDIT_2026-07-13.md) | `HISTORICAL` | 本轮文档清点、编码/错链修复、结构审查、采用结论和延期项 |
 | [CATVBA重构调查与决策记录.md](CATVBA重构调查与决策记录.md) | `APPROVED`（仅已标明 DR） | 约束、证据与已批准决策；未批准段落仍不生效 |
 | [详细恢复设计](superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md) | `DRAFT` | Build Kit、Core 运行时和目标机门禁的完整草案 |
@@ -80,6 +80,9 @@
 ## 6. 维护规则
 
 - 每次任务开始先核对 [STATUS.md](STATUS.md)、当前分支、HEAD 和工作树。
+- 除既有治理例外外，不新增 tracked 根级实现目录；所有 new/override/config/schema/tool/test/build/dist 路径都属于 `catvba_refactor/`。
+- 不直接修改 `Src/`、`resources/`；本地缺陷修复使用显式整组件 override，upstream 采用后再经 intake 退役。
+- candidate 必须从固定 Git blobs 读取；不得用 clean worktree、路径阴影或自动选边替代来源证明。
 - 设计批准、门禁变化、Build Kit、目标机 build/profile 会话和 upstream intake 都必须写入文件并关联 SHA。
 - 历史证据采用追加勘误，不把旧快照改写成当前结论。
 - 维护中的 Markdown/YAML/JSON/Python 文件统一使用 UTF-8；遗留 VBA 源码在明确转码设计前保持原字节。

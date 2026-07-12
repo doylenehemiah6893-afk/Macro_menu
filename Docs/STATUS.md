@@ -28,15 +28,16 @@
 
 | 项目 | 当前状态 |
 |---|---|
-| 本地 CATIA | 无；本地只允许源码、分析、离线测试和打包准备 |
+| 本地 CATIA | 无；本地环境能力仅覆盖源码、分析、离线测试和打包准备；实现仍须等待详细设计及日期化计划获批 |
 | 目标宿主 | CATIA V5-6R2018（R28/B28）、VBA7、64 位 Windows |
 | Core 定义 | AB3-only、MD2-only、HD2-only 三套 profile 分别通过的严格能力交集 |
 | 交付路线 | 源码优先、物理分包、空白 B28 工程导入、证据门驱动 |
-| 结构策略 | 已确认本地 Overlay；首阶段不移动 `Src/` 或遗留根目录材料 |
+| 结构策略 | 已确认 `Src/`/`resources/` 为 intake-only 上游镜像；所有本地实现预留在唯一 `catvba_refactor/` 命名空间 |
 | 文档治理 | 主入口、权威链、结构规划和历史/参考材料已统一；过程见 [2026-07-13 治理审计](DOCUMENT_GOVERNANCE_AUDIT_2026-07-13.md) |
 | 详细设计 | `DRAFT`，仍待整体书面复核；写入仓库不等于批准 |
 | 实施计划 | 尚未建立获批实施计划；规划的恢复实现尚未开始 |
-| 本地工具链 | `macro_build/`、`config/`、`schemas/`、`tests/`、`build/`、`dist/` 均尚未创建 |
+| 本地工具链 | `catvba_refactor/` 及其 `vba/config/schemas/macro_build/tests/build/dist` 均尚未创建 |
+| Git intake 安全 | 当前 `.gitattributes` 的 `merge=theirs` 无仓库级 driver；首次正式 intake 前必须独立修复，FRX/CATVBA 禁止自动选边 |
 | CATIA 目标证据 | 缺少 B28 Compile、重启、三 profile、签名/ACL、试点与回滚证据 |
 
 遗留二进制固定证据：
@@ -52,7 +53,7 @@
 
 | Gate | 名称 | 状态 | 原因 |
 |---|---|---|---|
-| G0 | INPUT-FROZEN | `NOT_RUN` | 尚无获批 manifest、输入冻结记录和实现计划 |
+| G0 | INPUT-FROZEN | `NOT_RUN` | 尚无获批 manifest、accepted sync record、输入冻结记录和实现计划 |
 | G1 | KIT-READY | `NOT_RUN` | Build Kit 工具链和不可变 Kit 尚不存在 |
 | G2 | B28-ENV-ATTESTED | `BLOCKED` | 缺正式 R2018 SP/HF、References 和环境证明 |
 | G3 | BUILT-UNVERIFIED | `BLOCKED` | 尚未在空白 B28 工程构建候选 CATVBA |
@@ -70,7 +71,7 @@
 - 方案 2：源码优先恢复，不破解/修补旧加密 CATVBA；
 - 首个里程碑 B：离线基础与少量低风险只读 Core 候选；
 - Core 只取三种基线 profile 的实测能力交集；
-- 本地 Overlay 目录策略，以及 `origin/dev` 为唯一代码上游；
+- 本地唯一命名空间、显式整组件 override，以及 `origin/dev` 为 `Src/`/`resources/` 的唯一分支级上游；
 - 旧 CATVBA、许可证重置脚本、未知来源参考材料不得进入正式发布。
 
 仍需书面复核：
@@ -82,9 +83,9 @@
 
 ## 5. 当前唯一下一动作
 
-完成本轮文档统一检查点后，书面复核详细恢复设计：批准、修改或拒绝。
+完成本轮无冲突设计更新后，书面复核详细恢复设计：批准、修改或拒绝。
 结果必须追加到 [决策台账](CATVBA重构调查与决策记录.md)，然后才能用
-`Docs/superpowers/plans/` 中的日期化计划进入 Overlay 元数据和工具链实施。
+`Docs/superpowers/plans/` 中的日期化计划进入 namespaced Overlay 元数据和工具链实施。
 
 在该动作完成前，不创建业务实现、不迁移模块、不生成候选 CATVBA。
 
@@ -101,6 +102,6 @@
 1. `git status --short --branch`、当前 HEAD 和工作树；
 2. 本页、决策台账、详细 spec 和最新计划的状态；
 3. 两个遗留 CATVBA 的大小与 SHA-256 是否变化；
-4. `origin/dev` 的已记录 cutoff 是否变化，以及是否已有 intake 记录；
+4. `origin/dev` 的已记录 cutoff、保留命名空间和 override base 是否变化，以及是否已有 intake 记录；
 5. 最新测试/门禁证据和唯一下一动作；
 6. 不因对话摘要、文件存在或旧 Release 推断“已批准”“已编译”或“可用”。

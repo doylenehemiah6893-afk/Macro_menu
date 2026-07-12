@@ -10,7 +10,7 @@
 >
 > 目标环境：CATIA V5-6R2018（R28/B28）、VBA7 64 位 Windows
 >
-> 当前阶段：重构路线、总体包边界、离线 Build Kit 边界、首个里程碑范围 B，以及本地 Overlay/上游跟进边界已确认；详细 schema、CLI、Core 工具清单、运行时和目标机交付仍待书面评审
+> 当前阶段：重构路线、总体包边界、离线 Build Kit 边界、首个里程碑范围 B，以及唯一本地命名空间/上游镜像边界已确认；详细 schema、CLI、Core 工具清单、运行时和目标机交付仍待书面评审
 
 本文记录本轮重构开始前已经完成的调查过程、证据边界、独立复核结果和用户确认的设计决策。它不是“当前 CATVBA 已经修复”的证明，也不替代 R2018 目标机的编译、运行和许可证验收。
 
@@ -33,6 +33,11 @@
 | RQ-06 | 额外许可证能力必须提供风险与替代方案 | 每个可选包都要记录许可证证据、隔离方式、失败行为和无额外许可证的降级实现 |
 | RQ-07 | 重构只针对本地分支 | 不修改远端，不把未经审定的重构直接推入 `main` 或 `dev` |
 | RQ-08 | 远端 `main`、`dev` 会继续更新 | 初期保留现有 `Src` 平面文件结构，通过外部清单分包，降低后续同步冲突 |
+
+**DR-011 当前解释：** RQ-01 的“本地源码编写”不授权直接修改 upstream `Src/`；详细设计和
+日期化计划获批后，本地实现只进入 `catvba_refactor/`。RQ-08 的“保留现有 `Src`”落实为
+intake-only upstream mirror；显式整组件 override 和外部清单位于唯一 namespaced root。此处为后续
+决策解释，不改写原始任务约束。
 
 ---
 
@@ -348,20 +353,52 @@ DR-007 只批准上述职责边界；manifest schema、CLI/API、错误码、生
 - `origin/dev` 仍是唯一代码上游，每次变化经本地 intake 审查和显式 merge commit 吸收；`origin/main` 只观察，不整体合并；
 - Overlay 批准不等于其 schema、CLI、运行时或五个 Core 候选工具已批准，也不授权当前生成候选 CATVBA。
 
+**后续修订：** DR-011 保留 DR-010 的 Overlay 与零搬迁原则，但取代其“根级新增六个目录”的物理
+放置方式；这些目录统一收进 `catvba_refactor/`。
+
+### DR-011：唯一命名空间、上游镜像和显式整组件 Override
+
+**状态：方向已批准，2026-07-13；精确 manifest schema、错误码和 intake record 仍待详细 spec 书面复核。**
+
+- `Src/` 与 `resources/` 只由 `origin/dev` intake 更新；本地重构、修复、格式化、转码和生成器不得直接写入；
+- 除既有 `README.md`、`Docs/`、`.gitignore`、`.gitattributes` 等治理例外外，所有新增实现只进入 `catvba_refactor/`；
+- 本地新增组件位于 `catvba_refactor/vba/new/<source-id>/`；遗留组件修改使用
+  `catvba_refactor/vba/overrides/<source-id>/` 的完整组件副本；FRM/FRX 必须成对；
+- override 必须显式绑定 upstream path、Git blob OID、原始 SHA-256、组件类型和 `VB_Name`；任何
+  upstream 漂移都使 binding 过期并 fail-closed，禁止静默使用新版 upstream 文件；
+- 配置、schema、Python 工具、测试、build 和 dist 全部位于同一 namespaced root，避免未来 upstream
+  创建根级同名目录；
+- candidate 从固定 Git blobs 构建，不把 clean worktree 当成原始字节证明；
+- intake 与新的业务功能不得混在同一提交；上游改变 override base 时必须人工退役、重新实现、重绑或 Quarantine；
+- upstream 若创建 `catvba_refactor/**`、产生 Windows portable path 冲突或破坏 FRM/FRX 配对，intake 立即阻断。
+
+未采用的方案：
+
+- 同名路径阴影覆盖会静默隐藏上游变化；
+- fuzzy Git patch 对 rename、编码和 FRM/FRX 不确定；
+- 根级 `config/`、`tests/` 等仍可能与未来 upstream 撞路径。
+
+DR-011 细化 DR-004 的“文本源码”：它是 upstream cutoff blobs 与 namespaced local components 的组合，
+不是允许直接修改 `Src/`。本轮实时核对 `origin/dev@abce8ff` 与当前 `Src/`、`resources/` 差异均为 0。
+
 ---
 
-## 6. 已批准的总体架构边界
+## 6. 已批准的总体架构边界（DR-011 后）
 
 ```text
-Src 文本源码 + package/capability manifest
+origin/dev@cutoff:Src (upstream-owned, intake-only)
+                 +
+catvba_refactor/vba/{new,overrides,shared_contracts}
+                 +
+catvba_refactor/{config,schemas,macro_build,tests}
                  |
                  v
-      离线校验、目录生成、分包 staging
-        |              |              |
-        v              v              v
+       fail-closed source resolver
+                 |
+                 v
       Core      Baseline Extensions   Licensed Optional
         |              |              |
-        +------ 统一安装清单和稳定入口 ------+
+        +------ namespaced staging / Build Kit ------+
 
 DevTools / Quarantine 与正式发布完全分离
 现有 CATVBA 仅作为 legacy evidence
@@ -389,7 +426,7 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 2. 首个里程碑 B 的只读工具清单及 Core 运行时入口、上下文、错误/日志、状态保护和可选包调用协议；
 3. 安全策略、危险操作事务模型、现场调试版与正式版差异；
 4. B28 构建机测试、三许可证 profile 验收和发布门禁；
-5. upstream intake 记录格式、冲突分级和自动化校验细节；高层同步边界已由 DR-010 批准；
+5. upstream intake 记录格式、三树冲突分级、portable path 规则和 override rebind/retirement 自动化细节；高层所有权边界已由 DR-011 批准；
 6. 完整设计文档的整体批准、实施阶段、回滚点和任务级实施计划。
 
 本文件可以记录调查事实和已经确认的决策，但不能把这些待评审内容写成“已批准实现”。
@@ -434,3 +471,4 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 |---|---|
 | 2026-07-12 | 建立调查与决策台账；记录已完成审计、方案 2、严格 Core 交集和 Baseline Extensions 决策 |
 | 2026-07-12 | 确认离线 Build Kit 边界、首个里程碑范围 B 和阶段性文档检查点 |
+| 2026-07-13 | 以 DR-011 将所有本地实现收进 `catvba_refactor/`，把 `Src/` 定义为 intake-only upstream mirror，并采用显式整组件 override |

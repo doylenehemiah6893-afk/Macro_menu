@@ -1,7 +1,7 @@
 > [!CAUTION]
 > **文档状态：SUPERSEDED（历史 BOM 重构提案）**
 > **核对基线：** 2026-07-13，Git `b0085868`
-> **当前 Authority：** [`KCL.bas`](../Src/KCL.bas)、[`Cls_PDM.cls`](../Src/Cls_PDM.cls)、[`Cls_XLM.cls`](../Src/Cls_XLM.cls) 与 [`RW_Cbom.bas`](../Src/RW_Cbom.bas)
+> **当前 Authority：** [`KCL.bas`](../Src/KCL.bas)、[`Cls_PDM.cls`](../Src/Cls_PDM.cls)、[`Cls_XLM.cls`](../Src/Cls_XLM.cls) 与 [`RW_Cbom.bas`](../Src/RW_Cbom.bas) 仅表示 upstream evidence；未来实现必须进入 `catvba_refactor/vba/new/` 或显式绑定的 `overrides/`
 > **执行策略：** DO NOT EXECUTE。“最终版”和“立即执行”仅是历史提案措辞，不得按正文再次创建、删除或迁移模块。
 > **许可证/部署边界：** 目标架构计划把 Excel COM 隔离为 Optional；当前单体尚未完成隔离，`Cls_XLM` 经 `Cls_WsEvt` 仍早绑定 `Workbook`，可能要求 Excel 类型库才能编译。本文未证明无 Office 可构建，也未证明任何 CATIA 产品配置、KWA 或 DSLS 权益，须以当前架构与目标机验证为准。
 

@@ -8,7 +8,7 @@
 >
 > 目标环境：CATIA V5-6R2018（R28/B28）、DS VBA 7.1、64 位 Windows，许可证基线 AB3 / MD2 / HD2
 >
-> decision_overlay_as_of：2026-07-13（源码优先、严格 Core 交集、本地 Overlay 与文档治理）
+> decision_overlay_as_of：2026-07-13（源码优先、严格 Core 交集、`catvba_refactor/` 唯一命名空间与文档治理）
 >
 > current_delivery_status：**NO-GO。现有 CATVBA 不能作为 R2018 正式产物继续安装或分发。**
 >
@@ -31,7 +31,8 @@
 因此，不建议通过“在 R2018 机器继续安装各种旧 DLL”来救活当前 CATVBA。正确路线是：
 
 ```text
-仓库源码
+origin/dev@cutoff 的 Src blobs
+  + catvba_refactor 中审定的 new/override/config/schema/generator
   -> 修复确定性编译错误
   -> 构建期生成静态 Menu/UI manifest
   -> 按 Core严格交集 / Baseline Extensions / Licensed Optional / DevTools 拆包
@@ -648,7 +649,11 @@ VBA 是工程级编译。物理拆包后 Excel、SPA 或其他可选引用失败
 
 ### 13.2 静态 manifest
 
-构建工具从源码标签生成一个标准模块或只读资源：
+本地新实现不写回 `Src/`。构建工具从 `origin/dev@cutoff` 的上游 blobs 与
+`catvba_refactor/vba/{new,overrides,shared_contracts}` 解析出的唯一组件集生成标准模块或只读资源。
+override 必须绑定 upstream path/blob/SHA 和组件身份；base 漂移时停止，不得静默回退。
+
+静态目录至少包含：
 
 ```text
 tool_id
@@ -682,7 +687,11 @@ Optional 对 Core 只允许单向、版本化的逻辑依赖：公共 DTO、结�
 - `CapabilityRegistry`：许可证/工作台/COM probe；
 - `CatiaStateGuard`：RefreshDisplay、DisplayFileAlerts、UpdateMode、HSO 等保存和恢复。
 
-拆分的第一个编译边界不是移动文件，而是消除 [KCL.bas:46-47](../Src/KCL.bas#L46) 的 `Public pdm As New Cls_PDM` 和 `Public xlm As New Cls_XLM`。它们让任何引用 KCL 的 Core 模块在编译期同时依赖 KWA/Excel 路径。`KCL.GetMeas/getlength` 也必须移入 Optional-SPA；保留在共享 KCL 中再隐藏菜单按钮不构成许可证隔离。
+拆分的第一个编译边界不是原地修改 [KCL.bas:46-47](../Src/KCL.bas#L46)，而是在 namespaced
+Core/new 或整组件 override 中建立不含 `Public pdm As New Cls_PDM`、`Public xlm As New Cls_XLM`
+的新边界，并由 manifest 排除污染的上游模块。原声明让任何引用 KCL 的 Core 模块在编译期同时依赖
+KWA/Excel 路径。`KCL.GetMeas/getlength` 也必须进入 Optional-SPA candidate；保留共享 KCL 再隐藏按钮
+不构成许可证隔离。
 
 ### 13.4 破坏性操作事务化
 
@@ -707,8 +716,8 @@ Optional 对 Core 只允许单向、版本化的逻辑依赖：公共 DTO、结�
 |---|---|---|
 | P0 取证冻结 | 停止分发当前/旧 CATVBA，保存哈希和环境 | 两个二进制只读归档；旧文件不再作为回滚 |
 | P1 干净 B28 seed | 新建 R2018 CATVBA、最小引用 | 无 B30/x86/Temp/MISSING 引用 |
-| P2 Compile-zero | 修 C01-C06、Excel/SPA/LO1 隔离、Option Explicit | 每个候选库 `Debug > Compile` 零错误 |
-| P3 Core 可启动 | 静态 MenuManifest、合法 MSForms Name | 无 VBE 自省、菜单在无文档状态启动 |
+| P2 Compile-zero | 在 namespaced override/new 中修 C01-C06、隔离 Excel/SPA/LO1、启用 Option Explicit；不改 `Src/` | 每个候选库 `Debug > Compile` 零错误 |
+| P3 Core 可启动 | 从 namespaced 审定源生成静态 MenuManifest、合法 MSForms Name | 无 VBE 自省、菜单在无文档状态启动 |
 | P4 UI 可运行 | 静态 UiManifest | 工程锁定与否不影响 UI；不要求信任 VBProject |
 | P5 MVP 功能 | 恢复 5-10 个只读/可逆高价值功能 | AB3/MD2/HD2 分别通过 |
 | P6 安全收口 | 移除模块管理、Shell、网络、许可证修改 | Core 无 Office/PowerShell/网络仍通过 |
@@ -908,4 +917,8 @@ build-metadata-0.2.0.json
 
 现有 `CATIA_V5_SimpleMacroMenu.catvba` 的问题不能靠“补装一个依赖”解决。B30 引用污染、6 个必然编译错误、受保护工程与源码自省冲突、非法 UI Name、可选许可证未隔离和高风险外部能力，任何一项都足以阻断可信生产使用。
 
-建议立即停止分发现有二进制。文本源码是业务代码修复输入；正式构建真源还包括获批的 package/capability manifest、schema 和确定性生成规则。在干净 R2018/B28 环境先交付无 VBE 自省、无外部命令、无网络、无 Office 强依赖的 Core。只有通过本文的 Compile、三许可证、重启、引用、源码/p-code、签名/哈希和回滚门槛后，才能把状态从 NO-GO 改为可试点。
+建议立即停止分发现有二进制。正式构建真源是 `origin/dev@cutoff` 的 upstream blobs、
+`catvba_refactor/` 中获批的 new/override 组件、package/capability/source manifests、schema 和确定性
+生成规则的组合；`Src/` 不再作为本地修复写区。在干净 R2018/B28 环境先交付无 VBE 自省、无外部
+命令、无网络、无 Office 强依赖的 Core。只有通过本文的 Compile、三许可证、重启、引用、源码/p-code、
+签名/哈希和回滚门槛后，才能把状态从 NO-GO 改为可试点。

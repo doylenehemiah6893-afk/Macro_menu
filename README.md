@@ -27,15 +27,17 @@ V5-6R2018（R28/B28）与 VBA7 64 位目标机重建和现场调试的交付体�
 - Core：只包含在 AB3-only、MD2-only、HD2-only 三套 profile 中分别通过的能力交集。
 - 超出交集：物理隔离为 Baseline Extension 或 Licensed Optional，并单独记录许可证风险、
   隔离方式和无额外许可证的替代实现。
-- 当前工作区没有 CATIA：这里只能编写、分析、离线测试和准备 Build Kit；任何 CATIA
-  Compile、运行、许可证或发布结论都必须来自受控 B28 目标环境证据。
-- 重构只发生在本地 `codex/*` 分支；`origin/dev` 是唯一代码上游，`origin/main` 仅作旧发布观察源。
+- 当前工作区没有 CATIA：本地环境只能承担编写、分析、离线测试和准备 Build Kit；任何 CATIA
+  Compile、运行、许可证或发布结论都必须来自受控 B28 目标环境证据。详细设计和日期化实施计划获批后，
+  本地产品实现也只能进入预留的 `catvba_refactor/` 命名空间。
+- 重构只发生在本地 `codex/*` 分支；`origin/dev` 是 `Src/`、`resources/` 的唯一分支级上游，`origin/main` 仅作旧发布观察源。
 
 ## 当前仓库材料如何使用
 
 | 路径 | 当前定位 | 是否进入正式发布 |
 |---|---|---:|
-| `Src/` | 遗留文本源码与后续迁移输入；首阶段保持原位置 | 仅经清单筛选、生成和目标机验证后 |
+| `Src/`、`resources/` | `origin/dev` 的只读上游镜像；只由审定 intake 更新 | 仅经 resolver 筛选、生成和目标机验证后 |
+| `catvba_refactor/` | 规划中的唯一本地实现命名空间：new/override VBA、配置、schema、工具、测试与派生输出；当前尚未创建 | 只有 namespaced Build Kit 经目标门禁后 |
 | 根目录两个 `.catvba` | legacy evidence，保留原哈希 | 否 |
 | `LicenseReset.catvbs` | quarantine；禁止以修改许可证方式探测能力 | 否 |
 | `ref_project/`、`DrawFunc/` | 来源和适用性待核验的参考材料 | 否 |
