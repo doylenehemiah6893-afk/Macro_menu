@@ -1,5 +1,11 @@
 # 当前分支深度审查报告
 
+> [!NOTE]
+> **Status:** HISTORICAL SNAPSHOT — evidence as of 2026-07-11
+>
+> **Authority:** 保留本报告原日期、分支、SHA、问题编号和当时工具限制；当前状态见 [STATUS.md](STATUS.md)
+> **Subsequent evidence:** 后续已完成更深的 CATVBA 源码/引用取证，并形成 [恢复指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md) 与 [决策台账](CATVBA重构调查与决策记录.md)。本提示不改写历史正文。
+
 > 审查日期：2026-07-11
 > 工作分支：`codex/dev-review-report`
 > 审查开始时 HEAD：`c584202aad38909c27e745e38b8d2f6b4168c689`

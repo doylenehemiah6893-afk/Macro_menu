@@ -1,6 +1,6 @@
 # CATIA V5-6R2018 / VBA7 64 位恢复、依赖与安全交付指南
 
-> 审查日期：2026-07-11
+> evidence_as_of：2026-07-11（原始审查快照）
 >
 > 审查分支：`codex/dev-review-report`
 >
@@ -8,9 +8,11 @@
 >
 > 目标环境：CATIA V5-6R2018（R28/B28）、DS VBA 7.1、64 位 Windows，许可证基线 AB3 / MD2 / HD2
 >
-> 当前结论：**NO-GO。现有 CATVBA 不能作为 R2018 正式产物继续安装或分发。**
+> decision_overlay_as_of：2026-07-13（源码优先、严格 Core 交集、本地 Overlay 与文档治理）
 >
-> 2026-07-12 决策更新：采用“源码优先、分包渐进重构”；Core 定义为 AB3-only、MD2-only、HD2-only 三套 profile 实测能力的严格交集，并增加 Baseline Extensions 承接只属于部分基线配置的能力。详细过程见 [CATVBA 重构调查与设计决策记录](CATVBA重构调查与决策记录.md)。
+> current_delivery_status：**NO-GO。现有 CATVBA 不能作为 R2018 正式产物继续安装或分发。**
+>
+> 决策叠加：采用“源码优先、分包渐进重构”；Core 定义为 AB3-only、MD2-only、HD2-only 三套 profile 实测能力的严格交集，并增加 Baseline Extensions 承接只属于部分基线配置的能力。详细过程见 [CATVBA 重构调查与设计决策记录](CATVBA重构调查与决策记录.md)。
 
 本文是针对“CATIA 中编译报错、CATVBA 工程保护、R2018 可用性与安全性存疑、当前无法使用”的专项恢复文档。通用分支审查见 [dev 分支审查报告](dev分支审查报告.md)。本文没有修改业务源码，也没有声称已经在 R2018 中完成编译；它给出已核实的根因、依赖、许可证边界、恢复架构、实机步骤和验收门槛。
 
@@ -76,7 +78,7 @@
 
 | 文件 | 大小 | SHA-256 | 模块 | 结论 |
 |---|---:|---|---:|---|
-| `CATIA_V5_SimpleMacroMenu.catvba` | 4,161,536 B | `B09195D5BF2787715CF4E8A50C840B0CE256A2408C83038149E1853E27906BA5` | 77 | 当前正式文件，但不可用于 R2018 生产 |
+| `CATIA_V5_SimpleMacroMenu.catvba` | 4,161,536 B | `B09195D5BF2787715CF4E8A50C840B0CE256A2408C83038149E1853E27906BA5` | 77 | 历史正式文件；当前仅作 legacy evidence，不可用于 R2018 生产 |
 | `CAT_menu.catvba` | 4,007,424 B | `1C8EC220F3D97F84D5404F24225938B2A8E2821D3F16BFEF5964E97023CA2FCA` | 72 | 旧且分叉，不能作为回滚产物 |
 
 正式 CATVBA 的 77 个模块与 `Src` 名称 77/77 对应；规范化比较中 64 个完全一致，另 13 个仅有 Class/UserForm 导出隐藏元数据差异，业务代码一致。因此本文列出的 `purePN`、UDT、菜单命名、`IIf`、Selection 等缺陷，已经进入正式二进制，不是“只存在于尚未发布文本源码”的风险。
@@ -698,6 +700,9 @@ Optional 对 Core 只允许单向、版本化的逻辑依赖：公共 DTO、结�
 
 ## 14. 分阶段恢复计划
 
+本节的 `phase:P0-P8` 是工作推进阶段；详细设计中的 `gate:G0-G7` 是证据门。两者正交：
+完成某个 phase 不代表相应 gate 已通过，当前门禁状态只在 [STATUS.md](STATUS.md) 汇总。
+
 | 阶段 | 目标 | 出口条件 |
 |---|---|---|
 | P0 取证冻结 | 停止分发当前/旧 CATVBA，保存哈希和环境 | 两个二进制只读归档；旧文件不再作为回滚 |
@@ -903,4 +908,4 @@ build-metadata-0.2.0.json
 
 现有 `CATIA_V5_SimpleMacroMenu.catvba` 的问题不能靠“补装一个依赖”解决。B30 引用污染、6 个必然编译错误、受保护工程与源码自省冲突、非法 UI Name、可选许可证未隔离和高风险外部能力，任何一项都足以阻断可信生产使用。
 
-建议立即停止分发现有二进制，以仓库源码为唯一修复输入，在干净 R2018/B28 环境先交付无 VBE 自省、无外部命令、无网络、无 Office 强依赖的 Core。只有通过本文的 Compile、三许可证、重启、引用、源码/p-code、签名/哈希和回滚门槛后，才能把状态从 NO-GO 改为可试点。
+建议立即停止分发现有二进制。文本源码是业务代码修复输入；正式构建真源还包括获批的 package/capability manifest、schema 和确定性生成规则。在干净 R2018/B28 环境先交付无 VBE 自省、无外部命令、无网络、无 Office 强依赖的 Core。只有通过本文的 Compile、三许可证、重启、引用、源码/p-code、签名/哈希和回滚门槛后，才能把状态从 NO-GO 改为可试点。

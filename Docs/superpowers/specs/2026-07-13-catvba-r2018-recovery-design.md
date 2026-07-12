@@ -1,6 +1,8 @@
 # CATVBA R2018 恢复与首个 Core Build Kit 设计
 
-> 状态：待用户书面复核
+> 状态：DRAFT — 待用户整体书面复核
+>
+> 写入本文、引用本文或确认其中某个局部边界，都不等于整体批准；只有决策台账中的书面批准记录才能授权实施。
 >
 > 日期：2026-07-13
 >
@@ -324,7 +326,7 @@ G6 PILOT-READY
 G7 RELEASE-APPROVED
 ```
 
-每门状态只能是 `NOT_RUN/PASS/FAIL/BLOCKED/EXPIRED`。源码变化使 G1 以后失效；SP/HF/引用/构建环境变化使 G2 以后失效；候选二进制变化使 G3 以后失效；DSLS/profile 变化使 G4/G5 失效。
+每门状态只能是 `NOT_RUN/PASS/FAIL/BLOCKED/EXPIRED`。输入、源码、manifest、schema、generator 或冻结策略变化使 G0-G7 失效；SP/HF/引用/构建环境变化使 G2 以后失效；候选二进制变化使 G3 以后失效；DSLS/profile 变化使 G4-G7 失效。任一上游门失效时，所有下游门都必须重新计算，不得继续显示有效 `PASS`。
 
 G1 要求 clean Git tree、完整静态检查、不可变 Kit 和哈希。G2-G7 必须在目标/企业环境执行；当前没有精确 SP/HF、三套隔离 profile、审批人或制品库信息时，保持 BLOCKED，不猜测。
 
@@ -347,7 +349,7 @@ Build Kit 至少包含：kit manifest、分包源码、生成模块、导入顺�
 
 Production 默认安装到 `%ProgramData%\MacroMenu\<version>\`，普通用户只读，只有受管发布账号/管理员可写；Debug 使用 `%LOCALAPPDATA%\MacroMenu\debug\<build-id>\`，带到期清理。若 R2018 实测能可靠验证 VBA 签名，则最终保存后签名再计算哈希；否则采用企业签名安装包或 ACL+哈希+双人审批例外。
 
-版本并存安装，切换受管宏库注册，不覆盖旧目录。回滚只切回上一个完整通过 G6 的 R28 制品；模型数据恢复另依赖文档备份。现场禁止热改 Production CATVBA，修复必须回到源码并重跑状态门。
+版本并存安装，切换受管宏库注册，不覆盖旧目录。正式回滚只切回以前具有完整 G7 发布记录、哈希仍匹配且未撤回的 R28 制品；模型数据恢复另依赖文档备份。现场禁止热改 Production CATVBA，修复必须回到源码并重跑状态门。
 
 ## 9. Git 与远端同步
 
@@ -361,7 +363,7 @@ Production 默认安装到 `%ProgramData%\MacroMenu\<version>\`，普通用户�
 
 - 每个设计节确认后更新 `Docs/CATVBA重构调查与决策记录.md`。
 - 完整设计存放在 `Docs/superpowers/specs`，任务计划存放在 `Docs/superpowers/plans`。
-- 子代理执行使用 `.superpowers/sdd/progress.md` 作为压缩恢复台账；每个通过双重 review 的任务写入提交范围。
+- 项目级当前状态与压缩恢复入口统一使用 `Docs/STATUS.md`；任务级进度写入日期化实施计划或独立证据记录。每个通过双重 review 的任务写入提交范围。
 - 每个实现阶段开始/结束记录输入 SHA、测试命令/输出、风险和下一动作。
 - 每次 upstream intake、Build Kit、B28 build/profile 会话生成独立、不可覆盖的 sync/kit/build/evidence 记录。
 - 只有 Git 中的设计、计划、提交和证据可决定是否重做任务；不依赖对话记忆。
@@ -380,10 +382,10 @@ Production 默认安装到 `%ProgramData%\MacroMenu\<version>\`，普通用户�
 - 文档、CLI 帮助、schema 和实际输出一致；
 - 当前两个旧 CATVBA 仍保持原哈希且未被改写。
 
-只有 G2-G7 在目标环境逐门通过后，才能把 CATVBA 称为试点或生产制品。
+只有有效的 G0-G6 全部通过（其中 G2-G6 在目标/企业环境执行）后，才能把 CATVBA 称为 `pilot-ready`；只有 G7 通过后，才能称为 `release-approved` 或 Production 制品。
 
-## 12. 已选默认与外部阻塞
+## 12. 草案采用的默认值与外部阻塞（整体待书面复核）
 
-已选默认：YAML+JSON Schema、显式稳定 tool ID、candidate Kit 必须 clean、目录与确定性 ZIP同时生成、本地最小日志 7 天/5 MB、Production 只读本机安装、Debug 与 Production 物理分离、首轮无 Optional。
+草案默认：YAML+JSON Schema、显式稳定 tool ID、candidate Kit 必须 clean、目录与确定性 ZIP同时生成、本地最小日志 7 天/5 MB、Production 只读本机安装、Debug 与 Production 物理分离、首轮无 Optional。这些默认值随整体设计一起待书面复核。
 
 外部阻塞不会妨碍本地实现，但会阻止 G2 以后状态：正式 Windows/R2018 SP/HF、B28 References GUID/版本、三套真正隔离的 profile、DSLS L3/L4 证据、企业签名/ACL方案、脱敏测试数据、审批人和制品库。

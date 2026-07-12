@@ -1,85 +1,47 @@
-# ***CATIA V5宏菜单***
-git pull; git submodule update --remote
-## 这是什么？
-在catia程序中创建宏时，从菜单的调用宏很麻烦。此外，如果要注册到工具栏的宏数量很多，操作也很繁琐。本程序的目的是简化此类工作
+# CATIA V5 宏菜单（R2018 恢复工程）
 
+> [!CAUTION]
+> **当前交付状态：NO-GO。**
+>
+> 根目录中的 `CATIA_V5_SimpleMacroMenu.catvba` 与 `CAT_menu.catvba` 仅为遗留取证样本，
+> 不是获准普通/生产安装、运行、回滚或分发的 CATIA R2018 制品；只有另行批准的隔离取证会话
+> 才能按恢复指南使用只读副本。当前尚无 B28 Compile、重启、
+> AB3-only / MD2-only / HD2-only 三套隔离许可证验收或正式发布批准证据。
 
-## 如何安装：
+本仓库正在把原有单体 CATVBA 恢复为源码优先、可离线审查、可在 CATIA
+V5-6R2018（R28/B28）与 VBA7 64 位目标机重建和现场调试的交付体系。
 
-+ 首先下载文件 CATIA_V5_SimpleMacroMenu.catvba。
-+ 将CATIA_V5_SimpleMacroMenu.catvba文件复制到您喜欢的位置。路径最好不要包含中文.
-  
-***[step 1~3]***
+## 先从这里开始
 
-+ 启动CATIA V5，然后点击 "工具" - "宏" - "宏..."。 
+- [当前状态与唯一下一动作](Docs/STATUS.md)
+- [项目文档索引与权威规则](Docs/README.md)
+- [本地 Overlay 结构与上游同步规划](Docs/PROJECT_STRUCTURE.md)
+- [恢复调查与已批准决策](Docs/CATVBA重构调查与决策记录.md)
+- [R2018 恢复、依赖与安全交付指南](Docs/CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
+- [当前 NO-GO 发布政策与未来流程草案](Docs/发版.md)
 
-  start  CATIA V5，then click "Tools" - "Macros" - "Macros..."。
+## 目标与边界
 
-  ![安装步骤1~3](resources/step1.png)
+- 正式目标：CATIA V5-6R2018（R28/B28）、VBA7、64 位 Windows。
+- 许可证基线：AB3、MD2、HD2。
+- Core：只包含在 AB3-only、MD2-only、HD2-only 三套 profile 中分别通过的能力交集。
+- 超出交集：物理隔离为 Baseline Extension 或 Licensed Optional，并单独记录许可证风险、
+  隔离方式和无额外许可证的替代实现。
+- 当前工作区没有 CATIA：这里只能编写、分析、离线测试和准备 Build Kit；任何 CATIA
+  Compile、运行、许可证或发布结论都必须来自受控 B28 目标环境证据。
+- 重构只发生在本地 `codex/*` 分支；`origin/dev` 是唯一代码上游，`origin/main` 仅作旧发布观察源。
 
-***[step 4~6]***
+## 当前仓库材料如何使用
 
-+ 在 "宏库..." - "VBA项目" - "添加现有库..." 中选择之前的 "xxx.catvba" 文件。
+| 路径 | 当前定位 | 是否进入正式发布 |
+|---|---|---:|
+| `Src/` | 遗留文本源码与后续迁移输入；首阶段保持原位置 | 仅经清单筛选、生成和目标机验证后 |
+| 根目录两个 `.catvba` | legacy evidence，保留原哈希 | 否 |
+| `LicenseReset.catvbs` | quarantine；禁止以修改许可证方式探测能力 | 否 |
+| `ref_project/`、`DrawFunc/` | 来源和适用性待核验的参考材料 | 否 |
+| `artifacts/` | 历史分析材料，不是发布制品目录 | 否 |
+| `Docs/` | 当前设计、状态、证据和历史记录 | 按发布清单决定 |
 
-   click  "Macro Libraries..." and then select  "VBA Projects" at library type, then click "Add Existing Library..." and select the ".catvba" file you copied earlier.
-
-  ![安装步骤4~6](resources/step2.png)
-
-  即可安装完成
-
-## 注册到catia工具栏
-+ 点击 "工具" - "自定义..."
-
-  click "Tools" - "Customize..."
-
-  ![注册1](resources/step3.png)
-
-+ 在弹出的窗口中点击"命令"-"宏"-"A0-Menu"，然后自定义快捷键和图标，  并可以将"A0-Menu"命令拖动到菜单栏目
-
-  click "Commands" - "Macros" - "A0-Menu" and then customize the shortcut and icon, and you can drag "A0-Menu" command to the menu bar
-
-  ![注册2](resources/step4.png)
-
-
-## 效果：
-+ 如图点击你拖动到菜单栏的图标，或者按下你设置的快捷键可以启动该菜单程序。
-
-  click the icon or press the shortcut to start the menu program.
-  
-  ![效果](resources/test.png)
-
-
-
-
-
-***
-
-## 编写您自己的宏：
-
-此菜单程序仅支持宏的调用。因此，您需要有自己创建的宏。我已经创建了一些常用的宏，请在release页面下载使用
-
-要在菜单中添加按钮，需要在VBA模块的声明部分描述信息「标签」。
-
-在模块的开头和第一个函数之间添加注释。在以下示例中，是在「Option Explicit」之前的位置。
-
-
-「标签」：
-```vb
-'vba sample_Part2Product_ver0.0.3  using-'KCL0.0.12'  by XX
-'将零件转换为产品
-'仅处理以实体、形状集、时间序列形状集显示的内容
-'(草图不在处理范围内)
-
-'{GP:1}
-'{Caption:Pt→Pro}
-'{ControlTipText:将零件转换为产品}
-
-Option Explicit
-
-Sub CATMain()
-XXX 
-end sub
-```
-## 异常处理：
-
-runtime error: 一般是引用库或dll错误，请配置CATIA的引用库和常用的VBA引用库，例如.net excel依赖等
+旧版 README 中“下载 CATVBA 后直接添加宏库”“缺引用时安装 .NET/Excel”等操作已撤销。
+只有当 [Docs/STATUS.md](Docs/STATUS.md) 指向未过期的 G7 `PASS` 记录、不可变制品和
+SHA-256 时，才能把某个 CATVBA 称为正式可安装版本。
