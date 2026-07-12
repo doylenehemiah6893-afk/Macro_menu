@@ -1,3 +1,22 @@
+> [!CAUTION]
+> **文档状态：SUPERSEDED（历史架构快照）**
+> **核对基线：** 2026-07-13，Git `b0085868`
+> **当前 Authority：** 当前 [`Src/`](../Src/) 源码、[`CATVBA重构调查与决策记录.md`](../Docs/CATVBA重构调查与决策记录.md) 与 [`CATIA_V5_R2018_VBA7_64恢复与依赖指南.md`](../Docs/CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
+> **执行策略：** DO NOT EXECUTE。正文仅保留历史分析语境，不应用作当前文件清单、实施计划或发布/许可证证明。
+> **许可证边界：** 本文未验证 AB3、MD2、HD2、KWA、Office 或其他能力；实际包归属和授权以当前 Authority 及目标机验证为准。
+
+## 当前勘误（不改写历史正文）
+
+| 历史名称或结论 | 当前核对结果 |
+|---|---|
+| `Cls_DynaUIEngine` | 当前不存在；相关现有实现为 [`Cls_DynaWD`](../Src/Cls_DynaWD.cls)，但不应把两者静默视为一对一改名。 |
+| `Cls_MnuBtnEVT` | 当前不存在；相关现有实现为 [`Cls_allBTNEVT`](../Src/Cls_allBTNEVT.cls)。 |
+| `newEngine`、`newFrm`、`LoadFromModuleName`、`%UEI` | 当前 `Src/` 未定义这些入口/兼容前缀；现有相关入口为 `KCL.new_spWD`、`Cls_DynaWD.getUIcfgfromModDEC` 与 `%UI`。 |
+| `A0TEST_Engine.bas` | historical, absent；当前 `Src/` 中无此文件。 |
+| `MDL_Bodyrename.bas`、`MDL_LayersMng.bas`、`MDL_setThreadcolor.bas`、`MDL_wfrename.bas` | historical, absent；不在此历史文档中推断或静默指定替代文件。 |
+| “新增标签即可作为生产注册机制” | 这是旧的运行时源码扫描模型；当前目标设计要求构建期生成静态目录，生产运行时不读取 `VBProject` / `CodeModule`。 |
+| “历史会话：ce357595” | 仓库内没有可追溯证据；该引用仅作为历史文字保留，不能支持当前结论。 |
+
 # Macro_menu 项目架构分析
 
 ## 项目概述

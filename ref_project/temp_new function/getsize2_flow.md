@@ -1,3 +1,17 @@
+> [!CAUTION]
+> **Status:** `QUARANTINE`
+> **Execution:** `DO NOT EXECUTE`
+> **release:** `false`
+> **Provenance:** `UNKNOWN`；无许可证或再分发授权记录
+>
+> 已发现的风险：
+>
+> - 首段会新建 Drawing、Sheet 和多个生成视图，切换活动视图、执行 `Reframe`，并删除默认 Sheet；
+> - 第二段会在活动 Drawing 中新建文本/Leader 后执行 `Selection.Delete` 删除原文本，没有预览、事务或回滚；
+> - 依赖 CATIA Drafting、生成视图、Product/Part、活动窗口/选择以及本地化 `StartCommand`，目标许可证和 R2018 行为未验证；
+> - 存在确定性缺陷：`InStr(...) <> O` 使用字母 `O`，投影视图把当前行为对象传给自身，且无条件访问 `Leaders.Item(1)`；
+> - 文件包含未声明变量、缺少错误恢复、乱码过程名，以及位于过程外的 `StartCommand (...)————...` 文本，不能作为可编译模块使用。
+
 
 Private Sub �������ɹ���ͼ()
     Dim documents1 As Documents

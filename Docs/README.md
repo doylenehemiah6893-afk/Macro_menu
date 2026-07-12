@@ -13,10 +13,11 @@
 
 1. [当前状态与上下文恢复](STATUS.md)
 2. [项目结构与上游同步规划](PROJECT_STRUCTURE.md)
-3. [调查与已批准决策台账](CATVBA重构调查与决策记录.md)
-4. [详细恢复设计草案](superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md)
-5. [R2018 恢复、依赖与安全交付指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
-6. [发布门禁与回滚手册](发版.md)
+3. [2026-07-13 文档与结构治理审计](DOCUMENT_GOVERNANCE_AUDIT_2026-07-13.md)
+4. [调查与已批准决策台账](CATVBA重构调查与决策记录.md)
+5. [详细恢复设计草案](superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md)
+6. [R2018 恢复、依赖与安全交付指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
+7. [发布门禁与回滚手册](发版.md)
 
 ## 2. 文档状态词
 
@@ -53,6 +54,7 @@
 |---|---|---|
 | [STATUS.md](STATUS.md) | `CURRENT` | NO-GO、门禁、阻塞、唯一下一动作和恢复检查表 |
 | [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | `APPROVED`（高层 Overlay）/ `DRAFT`（执行细节） | 本地目录职责、零搬迁策略、上游跟进边界和待复核的落地细节 |
+| [DOCUMENT_GOVERNANCE_AUDIT_2026-07-13.md](DOCUMENT_GOVERNANCE_AUDIT_2026-07-13.md) | `HISTORICAL` | 本轮文档清点、编码/错链修复、结构审查、采用结论和延期项 |
 | [CATVBA重构调查与决策记录.md](CATVBA重构调查与决策记录.md) | `APPROVED`（仅已标明 DR） | 约束、证据与已批准决策；未批准段落仍不生效 |
 | [详细恢复设计](superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md) | `DRAFT` | Build Kit、Core 运行时和目标机门禁的完整草案 |
 | [恢复与依赖指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md) | `CURRENT` / evidence-runbook | NO-GO 根因、依赖、许可证边界、B28 操作与验收 |

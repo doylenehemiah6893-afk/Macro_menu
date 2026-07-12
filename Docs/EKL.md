@@ -1,6 +1,12 @@
-# EKL (Engineering Knowledge Language) 语法手册 (入门级)
+# EKL 语法手册（历史参考 / 待目标验证）
 
-EKL 是达索系统 (Dassault Systèmes) 3DEXPERIENCE 和 CATIA V6 平台中用于知识工程、自动化和业务逻辑定制的脚本语言。它的语法类似于 Visual Basic，简单易上手，但功能非常强大。
+> **Status: REFERENCE / target-validation-required**
+>
+> 本页只作语法索引，不是可直接执行的 B28 脚本集。类型、方法、知识包、编辑器和许可证可用性必须在目标 CATIA V5-6R2018（R28/B28）环境中用 Language Browser 重新确认。
+
+EKL 用于达索系统 CATIA V5、V6 和 3DEXPERIENCE 的知识工程、自动化和业务逻辑定制。达索 CATIA User Community 将其称为 Enterprise Knowledge Language，并明确说明它适用于 V5 与 V6/3DEXPERIENCE；具体版本中的名称、编辑器和可用对象仍以该目标环境的 Language Browser 为准。
+
+**产品边界：** CATIA V5 中的对应产品是 Knowledge Advisor 2（KWA）；3DEXPERIENCE 中的对应应用包括 Engineering Rules Capture。两者的 EKL 概念相关，但 UI、对象模型、可用包和 Action 输入方式不应默认完全等同。KWA 不能预设属于 AB3/MD2/HD2 Core；相关功能暂按 `Optional-KWA candidate` 物理隔离，最终分类必须由三个基线 profile 和客户 R2018 DSLS 证据决定。
 
 ---
 
@@ -8,7 +14,7 @@ EKL 是达索系统 (Dassault Systèmes) 3DEXPERIENCE 和 CATIA V6 平台中用�
 
 ### 1.1 注释
 注释是写给代码阅读者看的，不会被程序执行。
-- **单行注释**：使用 `/` (注意：在某些编辑器中也可以使用 `//`)
+- **单行注释**：使用 `//`
 - **多行注释**：使用 `/* 注释内容 */`
 
 ### 1.2 变量声明
@@ -107,8 +113,10 @@ for obj inside 列表变量
 ## 5. 核心对象操作 (A-EKL)
 
 在 CATIA 中，我们经常需要获取对象的属性：
-- **获取属性名列表**: `obj.ListAttributeNames("类型过滤", 是否递归)`
+- **获取属性名列表**: `obj.ListAttributeNames("类型过滤", DynamicOnly)`
 - **获取属性值**: `obj.GetAttributeReal("属性名")` 或 `obj.GetAttributeString("属性名")`
+
+`DynamicOnly` 是布尔型的“仅动态属性”过滤开关，不是递归开关。`ListAttributeNames` 本身不递归；读取参数时需在其直接父 Parameter Set 上调用并在目标版本中核对类型过滤值。
 
 ---
 
@@ -117,6 +125,8 @@ for obj inside 列表变量
 ### 示例 1：显示零件的所有属性清单
 这个脚本会遍历当前选中对象的所有属性，并将它们拼接到一个字符串中最后通过弹窗显示出来。
 
+在 Action Editor 的输入/参数区先定义一个占位输入，例如 `Target: Feature`；运行 Action 时再由用户选择真实对象。`Target` 不是仓库中某个固定 CATIA 对象名。
+
 ```ekl
 /* 定义变量 */
 let attrList (List)    /* 存储属性名的列表 */
@@ -124,9 +134,9 @@ let attrName (String)  /* 单个属性名 */
 let i (Integer)        /* 循环计数器 */
 let temp (String)      /* 用于拼接结果的字符串 */
 
-/* 假设 `2540` 是我们要查询的对象 (这里通常是传入的输入参数) */
+/* Target 是 Action Editor 中声明的 Feature 输入 */
 /* 获取该对象的所有字符串类型的属性名 */
-attrList = `2540` -> ListAttributeNames("String", False)
+attrList = Target -> ListAttributeNames("String", False)
 
 temp = "找到的属性如下：\n"
 i = 1
@@ -146,6 +156,14 @@ Message(temp)
 ---
 
 ## 7. 学习资源
+
+- [Dassault Systèmes CATIA User Community：EKL 适用于 V5 与 V6/3DEXPERIENCE](https://3dswym.3dexperience.3ds.com/post/catia-user-community/best-practice-enterprise-knowledge-language-overview-and-usage-3dexperience-r2020x_mNJwwoHaQwuxzCNENxESmg)
+- [Dassault Systèmes：CATIA Knowledge Advisor 2（KWA）产品边界](https://3dswym.3dexperience.3ds.com/wiki/catia-user-community/catia-knowledge-advisor-2-kwa_jKbzQs4hTpKtOxtpYIks5Q)
+- [Dassault Systèmes：V5-6R2018 至 V5-6R2023 课程目录（Knowledge Advisor）](https://www.3ds.com/assets/edu/document/course-catalog-v5-6r2018-to-v5-6r2023.pdf)
+- [3DEXPERIENCE 帮助文档镜像：Comments](https://help-3dexperience.aesvietnam.com/English/EKLRefMap/kwa-r-comments.htm)
+- [3DEXPERIENCE 帮助文档镜像：`ListAttributeNames`](https://help-3dexperience.aesvietnam.com/English/EKLRefMap/eklkwa-r-StandardMethods.htm)
+- [3DEXPERIENCE 帮助文档镜像：Creating an Action 及 Action 输入示例](https://help-3dexperience.aesvietnam.com/English/KwaUserMap/kwa-t-ActionFreatureUse.htm)
+- [3DEXPERIENCE 帮助文档镜像：Engineering Rules Capture 应用边界](https://help-3dexperience.aesvietnam.com/English/KwaUserMap/kwa-c-ov.htm)
 
 ---
 *提示：在编写 EKL 时，善用编辑器中的 "Language Browser" (语言浏览器)，它可以帮助你快速查找可用的函数和对象方法。*

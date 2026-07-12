@@ -1,3 +1,12 @@
+> [!CAUTION]
+> **Status:** `SUPERSEDED`
+> **Superseded by:** [`../Frame.md`](../Frame.md)
+> **Provenance:** `UNKNOWN`；仓库未提供许可证或再分发授权
+> **release:** `false`
+>
+> 本文件与上级目录的 `Frame.md` 重复，仅保留历史追溯。不要继续维护、执行或从本副本引入依赖；
+> 上级参考文件本身仍要求 R2018/VBA7 64 位目标验证，也不能据此推定可再分发。
+
 在VBA中，Dictionary (通常来自 Microsoft Scripting Runtime) 和 ArrayList (来自 .NET Framework 的 System.Collections) 是两种非常强大的数据结构，用于替代传统的数组。
 
 以下是它们在语法和特性上的详细对比和总结。

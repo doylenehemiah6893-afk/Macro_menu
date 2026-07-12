@@ -1,21 +1,45 @@
+# Drawing BOM VB è‰ç¨¿ï¼ˆå†å²å‚è€ƒï¼‰
+
+> **Status: SUPERSEDED / do-not-execute**
+>
+> æœ¬æ–‡åªä¿ç•™å†å²ç‰‡æ®µï¼Œä¸æ˜¯å½“å‰æºç ã€å¯æ‰§è¡Œå®æˆ–å›æ»šäº§ç‰©ã€‚æœ€æ¥è¿‘çš„å½“å‰æ–‡æœ¬æºç æ˜¯ [`Src/DRW_viewBOM_drawing_template.bas`](../Src/DRW_viewBOM_drawing_template.bas)ï¼›ç›¸å…³èœå•å…¥å£å®ç°è§ [`Src/DRW_VIewBOM.bas`](../Src/DRW_VIewBOM.bas)ã€‚è¿™äº›é“¾æ¥åªç”¨äºå®šä½å®¡æŸ¥å¯¹è±¡ï¼Œä¸ä»£è¡¨å®ƒä»¬å·²é€šè¿‡ CATIA/B28 éªŒè¯ã€‚
+
+## æ¥æºä¸æ‰§è¡Œä¸Šä¸‹æ–‡
+
+- åŸå§‹ä½œè€…ã€å¤åˆ¶æ¥æºã€ç›®æ ‡ CATIA ç‰ˆæœ¬/SP/HFã€è®¸å¯è¯ã€å¼•ç”¨åº“å’Œè¾“å…¥å›¾çº¸/BOM æ ¼å¼æœªè®°å½•ã€‚
+- ç‰‡æ®µç¼ºå°‘å¯ç‹¬ç«‹å®¡æ ¸çš„å®Œæ•´æ¨¡å—ä¸Šä¸‹æ–‡ï¼Œä¸åº”é€šè¿‡è¡¥ä¸€ä¸ª `Sub` åŒ…è£…åç›´æ¥è¿è¡Œã€‚
+- ä»»ä½•ä¿®å¤éƒ½åº”å›åˆ° `Src` ä¸­çš„çœŸæºå¹¶é‡èµ°ç¼–è¯‘ã€å›¾çº¸å›å½’å’ŒçŠ¶æ€æ¢å¤éªŒè¯ï¼Œä¸åº”åœ¨æœ¬æ–‡ä¸Šç»§ç»­æ´¾ç”Ÿã€‚
+
+## å·²çŸ¥å‰¯ä½œç”¨ä¸å¤±è´¥é£é™©
+
+- ç«‹å³è®¾ç½® `CATIA.RefreshDisplay = False`ï¼Œä½†ä¸ä¿å­˜å…¥å£çŠ¶æ€ï¼›å¤šä¸ªæ—©é€€å’Œå¼‚å¸¸è·¯å¾„ä¸ä¼šæ¢å¤åˆ·æ–°ã€‚
+- `On Error Resume Next` éšè—å¤§éƒ¨åˆ†å¤±è´¥ï¼Œä¸”æ²¡æœ‰ç»Ÿä¸€ cleanup/finally è·¯å¾„ã€‚
+- ä¾èµ–å¹¶è¯»å– `CATIA.ActiveDocument` / `ActiveSheet` / `ActiveView` / `Selection`ï¼Œæ²¡æœ‰åœ¨å‰¯ä½œç”¨å‰å®Œæˆæ–‡æ¡£ç±»å‹å’Œç”Ÿæˆè§†å›¾é¢„æ£€ã€‚
+- å‘ `%TEMP%\bom_temp.txt` å†™å…¥ BOM å¯¼å‡ºå¹¶é€šè¿‡ `Scripting.FileSystemObject` é‡æ–°è¯»å–ï¼›æ–‡ä»¶æ®‹ç•™ã€ç¼–ç ã€åŒºåŸŸè¯­è¨€å’Œ `Recapitulation`/`|` æ–‡æœ¬æ ¼å¼éƒ½æœªå¤„ç†ã€‚
+- è°ƒç”¨ `SetSecondaryFormat` å’Œ BOM `Print`ï¼Œä½†æ²¡æœ‰è®°å½•/æ¢å¤è¿›å…¥å‰æ ¼å¼çŠ¶æ€ã€‚
+- åœ¨æ–°è¡¨æ ¼å®Œæˆåˆ›å»ºä¹‹å‰åˆ é™¤å·²æœ‰ `GenBOM` DrawingTableï¼›ä¸­é€”å¤±è´¥å¯ç•™ä¸‹ä¸å¯æ¢å¤çš„éƒ¨åˆ†ç»“æœã€‚
+- ä¼šæ¸…ç©º/æ”¹å†™ CATIA Selectionï¼Œå¹¶é‡å»ºå›¾çº¸è¡¨æ ¼ï¼›è¿™äº›éƒ½æ˜¯ç”¨æˆ·æ–‡æ¡£å¯è§å‰¯ä½œç”¨ã€‚
+
+## å†å²æ­£æ–‡ï¼ˆä¿ç•™ï¼Œç¦æ­¢æ‰§è¡Œï¼‰
+
 CATIA.RefreshDisplay = False
     On Error Resume Next
-    ' 1. ¶¨Òå¸ñÊ½ÓëÂ·¾¶
+    ' 1. å®šä¹‰æ ¼å¼ä¸è·¯å¾„
     Dim fmt(6): fmt(0)="Number": fmt(1)="Part Number": fmt(2)="Quantity": fmt(3)="Nomenclature"
     fmt(4)="Definition": fmt(5)="Material"    : fmt(6)="Product Description"
     Dim tmpPath: tmpPath = CATIA.SystemService.environ("TEMP") & "\bom_temp.txt"
-    ' 2. »ñÈ¡ÊÓÍ¼Óë²úÆ·
+    ' 2. è·å–è§†å›¾ä¸äº§å“
     Dim oSheet : Set oSheet = CATIA.ActiveDocument.Sheets.ActiveSheet
     Dim oView : Set oView = oSheet.Views.ActiveView
     Dim oPrd : Set oPrd = oView.GenerativeBehavior.Document
 	dim sel: set sel=CATIA.ActiveDocument.Selection
-    If oPrd Is Nothing Then MsgBox "Ã»ÓĞ¹ØÁªµÄ Product": Exit Sub
-    ' 3. µ¼³ö²¢´¦ÀíÊı¾İ
+    If oPrd Is Nothing Then MsgBox "æ²¡æœ‰å…³è”çš„ Product": Exit Sub
+    ' 3. å¯¼å‡ºå¹¶å¤„ç†æ•°æ®
     oPrd.GetItem("BillOfMaterial").SetSecondaryFormat fmt
     oPrd.GetItem("BillOfMaterial").Print "TXT", tmpPath, oPrd
-    Dim flatData: flatData = GetSortedBOM(tmpPath) ' »ñÈ¡´¦ÀíºÃ²¢ÅÅĞòµÄÊı¾İ
+    Dim flatData: flatData = GetSortedBOM(tmpPath) ' è·å–å¤„ç†å¥½å¹¶æ’åºçš„æ•°æ®
     If IsEmpty(flatData) Then Exit Sub
-    ' 4. ¸üĞÂ±í¸ñ
+    ' 4. æ›´æ–°è¡¨æ ¼
 	dim pox,poy :pox=0:poy=0
     Dim tbl As DrawingTable, r, c
     Err.Clear: Set tbl = oView.Tables.GetItem("GenBOM")
@@ -33,15 +57,15 @@ CATIA.RefreshDisplay = False
     Next
     CATIA.RefreshDisplay = True
 End Sub
-' --- ºËĞÄ´¦Àíº¯Êı (¶ÁÈ¡ + ½âÎö + ÅÅĞò) ---
+' --- æ ¸å¿ƒå¤„ç†å‡½æ•° (è¯»å– + è§£æ + æ’åº) ---
 Function GetSortedBOM(fPath)
     Dim fso, ts, fullText, rawLines, i, validRows(), vCount, line
     Set fso = CreateObject("Scripting.FileSystemObject")
     If Not fso.FileExists(fPath) Then Exit Function
-    ' 1. ¶ÁÈ¡È«ÎÄ²¢°´ĞĞ·Ö¸î
+    ' 1. è¯»å–å…¨æ–‡å¹¶æŒ‰è¡Œåˆ†å‰²
     Set ts = fso.OpenTextFile(fPath, 1): fullText = ts.ReadAll: ts.Close
     rawLines = Split(fullText, vbCrLf)
-    ' ³õÊ¼»¯
+    ' åˆå§‹åŒ–
     ReDim validRows(UBound(rawLines))
     vCount = 0
     Dim isBody: isBody = False
@@ -50,46 +74,46 @@ Function GetSortedBOM(fPath)
     Dim bufferPipes
     For i = 0 To UBound(rawLines)
         line = Trim(rawLines(i))
-        ' ¶¨Î» Recapitulation
+        ' å®šä½ Recapitulation
         If InStr(line, "Recapitulation") > 0 Then isBody = True
-        ' Ö»´¦Àí Body ²¿·ÖÇÒºöÂÔ +---+ ·Ö¸ôÏß
+        ' åªå¤„ç† Body éƒ¨åˆ†ä¸”å¿½ç•¥ +---+ åˆ†éš”çº¿
         If isBody And InStr(line, "+--") = 0 And line <> "" Then
-            ' A. »ñÈ¡Ä¿±êÁĞÊı (»ùÓÚµÚÒ»ĞĞ±êÌâĞĞ)
+            ' A. è·å–ç›®æ ‡åˆ—æ•° (åŸºäºç¬¬ä¸€è¡Œæ ‡é¢˜è¡Œ)
             If targetPipes = 0 Then
                 If Left(line, 1) = "|" Then
-                    ' ¼ÆËãÁĞ·Ö¸ô·ûÊıÁ¿ (Split ºóµÄ UBound ¼´Îª | µÄÊıÁ¿£¬ÀıÈç |A| -> SplitµÃ3¸öÔªËØ, UBound=2, ¼´2¸ö|)
+                    ' è®¡ç®—åˆ—åˆ†éš”ç¬¦æ•°é‡ (Split åçš„ UBound å³ä¸º | çš„æ•°é‡ï¼Œä¾‹å¦‚ |A| -> Splitå¾—3ä¸ªå…ƒç´ , UBound=2, å³2ä¸ª|)
                     targetPipes = UBound(Split(line, "|"))
-                    ' Á¢¼´¼ÓÈë±êÌâĞĞ
+                    ' ç«‹å³åŠ å…¥æ ‡é¢˜è¡Œ
                     validRows(vCount) = SplitLine(line)
                     vCount = vCount + 1
                 End If
             Else
-                ' B. Êı¾İĞĞ´¦Àí (»ùÓÚ | ÊıÁ¿ÀÛ¼Ó)
-                ' 1. Ñ°ÕÒĞÂĞĞµÄÆğÊ¼ (Èç¹ûbuffer¿Õ)
+                ' B. æ•°æ®è¡Œå¤„ç† (åŸºäº | æ•°é‡ç´¯åŠ )
+                ' 1. å¯»æ‰¾æ–°è¡Œçš„èµ·å§‹ (å¦‚æœbufferç©º)
                 If currentBuffer = "" Then
                     If Left(line, 1) = "|" Then
                         currentBuffer = line
                     End If
                 Else
-                    ' 2. Èç¹ûbuffer²»¿Õ£¬ËµÃ÷´¦ÓÚ¶àĞĞÄ£Ê½£¬×·¼ÓÄÚÈİ
-                     ' ²¹¸ö»»ĞĞ·û»ò¿Õ¸ñ£¬ÊÓĞèÇó¶ø¶¨¡£ÎªÁË±£ÁôÃèÊö¸ñÊ½£¬ÕâÀïÓÃ¿Õ¸ñ»ò»»ĞĞ
+                    ' 2. å¦‚æœbufferä¸ç©ºï¼Œè¯´æ˜å¤„äºå¤šè¡Œæ¨¡å¼ï¼Œè¿½åŠ å†…å®¹
+                     ' è¡¥ä¸ªæ¢è¡Œç¬¦æˆ–ç©ºæ ¼ï¼Œè§†éœ€æ±‚è€Œå®šã€‚ä¸ºäº†ä¿ç•™æè¿°æ ¼å¼ï¼Œè¿™é‡Œç”¨ç©ºæ ¼æˆ–æ¢è¡Œ
                     currentBuffer = currentBuffer & vbLf & line
                 End If
-                ' 3. ¼ì²éÊÇ·ñ´ÕÆëÁË×ã¹»µÄ |
+                ' 3. æ£€æŸ¥æ˜¯å¦å‡‘é½äº†è¶³å¤Ÿçš„ |
                 If currentBuffer <> "" Then
                     bufferPipes = UBound(Split(currentBuffer, "|"))
-                    ' Èç¹û | ÊıÁ¿´ï±ê (>= targetPipes)£¬ËµÃ÷ÕâÒ»ĞĞ(¿ÉÄÜ¿ç¶àĞĞ)½áÊøÁË
+                    ' å¦‚æœ | æ•°é‡è¾¾æ ‡ (>= targetPipes)ï¼Œè¯´æ˜è¿™ä¸€è¡Œ(å¯èƒ½è·¨å¤šè¡Œ)ç»“æŸäº†
                     If bufferPipes >= targetPipes Then
                         validRows(vCount) = SplitLine(currentBuffer)
                         vCount = vCount + 1
-                        currentBuffer = "" ' Çå¿Õ£¬×¼±¸¶ÁÏÂÒ»ĞĞ
+                        currentBuffer = "" ' æ¸…ç©ºï¼Œå‡†å¤‡è¯»ä¸‹ä¸€è¡Œ
                     End If
                 End If
             End If
         End If
     Next
     If vCount = 0 Then Exit Function
-    ' ×ªÎª 2D ¾ØÕó
+    ' è½¬ä¸º 2D çŸ©é˜µ
     Dim r, c, colCount, mat
     colCount = UBound(validRows(0)) + 1
     ReDim mat(vCount, colCount)
@@ -102,7 +126,7 @@ Function GetSortedBOM(fPath)
             End If
         Next
     Next
-    ' Ã°ÅİÅÅĞò
+    ' å†’æ³¡æ’åº
     Dim j, k, tmp
     For r = 2 To vCount
         For j = r + 1 To vCount
@@ -115,20 +139,20 @@ Function GetSortedBOM(fPath)
     Next
     GetSortedBOM = mat
 End Function
-' --- ¸¨Öú£ºĞĞ·Ö¸î ---
+' --- è¾…åŠ©ï¼šè¡Œåˆ†å‰² ---
 Function SplitLine(s)
-    s = Mid(s, 2, Len(s) - 2) ' È¥Í·Î² |
+    s = Mid(s, 2, Len(s) - 2) ' å»å¤´å°¾ |
     Dim arr: arr = Split(s, "|")
     Dim i: For i = 0 To UBound(arr): arr(i) = Trim(arr(i)): Next
     SplitLine = arr
 End Function
-' --- ¸¨Öú£ºÅÅĞòÂß¼­ (Êı×ÖÓÅÏÈ > ÎÄ±¾ > ¿ÕÖµµæµ×) ---
+' --- è¾…åŠ©ï¼šæ’åºé€»è¾‘ (æ•°å­—ä¼˜å…ˆ > æ–‡æœ¬ > ç©ºå€¼å«åº•) ---
 Function ShouldSwap(v1, v2)
     ShouldSwap = False
     Dim e1: e1 = (v1 = "")
     Dim e2: e2 = (v2 = "")
-    If e1 And Not e2 Then ShouldSwap = True: Exit Function ' v1¿Õ£¬ÍùºóÅÅ
-    If e2 Then Exit Function                               ' v2¿Õ£¬²»¶¯£¨v1ÔÚv2Ç°£©
+    If e1 And Not e2 Then ShouldSwap = True: Exit Function ' v1ç©ºï¼Œå¾€åæ’
+    If e2 Then Exit Function                               ' v2ç©ºï¼Œä¸åŠ¨ï¼ˆv1åœ¨v2å‰ï¼‰
     If IsNumeric(v1) And IsNumeric(v2) Then
         If CDbl(v1) > CDbl(v2) Then ShouldSwap = True
     Else

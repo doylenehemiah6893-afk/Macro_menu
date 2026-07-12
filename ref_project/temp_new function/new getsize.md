@@ -1,10 +1,24 @@
+> [!CAUTION]
+> **Status:** `QUARANTINE`
+> **Execution:** `DO NOT EXECUTE`
+> **release:** `false`
+> **Provenance:** `UNKNOWN`；无许可证或再分发授权记录
+>
+> 已发现的风险：
+>
+> - 依赖 Excel COM、特定 `UserForm1` 控件、CATIA Product/Part、Selection、参数/Formula/Relations、HybridBody 和可写文件路径；
+> - 会启动并打开 Excel、关闭 `CATIA.DisplayFileAlerts`、新建 Product/Part 和大量参数/公式/几何集、复制粘贴组件并批量 `SaveAs`；
+> - 从过程开头使用全局 `On Error Resume Next`，没有事务、冲突预检或统一清理；失败时可能遗留隐藏 Excel 进程、打开文档、部分模型和被关闭的文件告警；
+> - 多个变量未声明，父节点 `Rn` 可能未赋值或沿用旧值，循环中直接修改 `i`，并假定文档名、层级、工作簿列和本地化对象名称始终匹配；
+> - `SaveAs` 缺少安全路径、扩展名和覆盖验证，重复创建参数/Formula/HybridBody 也可能失败或留下半成品；相关 KWA/Excel 能力和 R2018 行为均未验证。
+
 Public selection1 As Selection, selection2 As Selection
 Sub CATMain()
  On Error Resume Next
 	oPath = UserForm1.Path.Text
 	EbomName = UserForm1.TextBox6.Text
 Set xlApp = CreateObject("Excel.Application")
-	xlApp.Caption = "��ϸ"
+	xlApp.Caption = "明细"
 	xlApp.Workbooks.Open (EbomName)
     If Err.Number = 0 Then
 '    xlApp.Visible = True
@@ -58,7 +72,7 @@ For i = 3 To iCount
             part2.Nomenclature = xlSheet1.Cells(i, 5)
             part2.Revision = xlSheet1.Cells(i, 10)
             part2.DescriptionRef = xlSheet1.Cells(i, 19)
-            part2.Update    '�����ļ�
+            part2.Update    '更新文件
             Set productDocument2 = CATIA.Documents.Item(PrtName & ".CATProduct")
             productDocument2.SaveAs oPath & "\" & PrtName
         End If
@@ -86,7 +100,7 @@ For i = 3 To iCount
                 Set parameters2 = Product01.UserRefProperties
                 Set strParam1 = parameters2.CreateString("Material", "")
                 Set relations1 = Product01.Relations
-                Set formula1 = relations1.CreateFormula("��ʽ.9", "", strParam1, PrtName & "\Material")
+                Set formula1 = relations1.CreateFormula("公式.9", "", strParam1, PrtName & "\Material")
                 If InStr(PrtName, "Q") = 0 And InStr(PrtName, "J") = 0 And InStr(PrtName, "S") = 0 Then
                     Tk01 = xlSheet1.Cells(i, 8)
                     Set parameters3 = part1.Parameters
@@ -94,20 +108,20 @@ For i = 3 To iCount
                     Set parameters4 = Product01.UserRefProperties
                     Set length1 = parameters4.CreateDimension("Thickness", "LENGTH", 0#)
                     Set relations1 = Product01.Relations
-                    Set formula1 = relations1.CreateFormula("��ʽ.5", "", length1, PrtName & "\Thickness")
+                    Set formula1 = relations1.CreateFormula("公式.5", "", length1, PrtName & "\Thickness")
                 End If
                 Set parameters1 = part1.Parameters
                 Set dimension1 = parameters1.CreateDimension("Density", "DENSITY", 7860#)
                 Set dimension1 = parameters1.CreateDimension("Volume", "VOLUME", 0#)
                 Set relations1 = part1.Relations
-                Set formula1 = relations1.CreateFormula("��ʽ.1", "", dimension1, "smartVolume(`���������` )")
+                Set formula1 = relations1.CreateFormula("公式.1", "", dimension1, "smartVolume(`零件几何体` )")
                 Set dimension1 = parameters1.CreateDimension("Weight", "MASS", 0#)
                 Set relations1 = part1.Relations
-                Set formula1 = relations1.CreateFormula("��ʽ.3", "", dimension1, "Volume *Density ")
+                Set formula1 = relations1.CreateFormula("公式.3", "", dimension1, "Volume *Density ")
                 Set parameters1 = Product01.UserRefProperties
                 Set dimension1 = parameters1.CreateDimension("Weight", "MASS", 0#)
                 Set relations1 = Product01.Relations
-                Set formula1 = relations1.CreateFormula("��ʽ.7", "", dimension1, PrtName & "\Weight")
+                Set formula1 = relations1.CreateFormula("公式.7", "", dimension1, PrtName & "\Weight")
                 Set hybridBodies1 = part1.HybridBodies
                 Set hybridBody1 = hybridBodies1.Add()
                 hybridBody1.Name = "Information"
@@ -154,7 +168,7 @@ For i = 3 To iCount
                 Set hybridBody20 = hybridBodies1.Add()
                 hybridBody20.Name = "Final"
             End If
-            part2.Update    '�����ļ�
+            part2.Update    '更新文件
             Set productDocument2 = CATIA.Documents.Item(PrtName & ".CATPart")
             productDocument2.SaveAs oPath & "\" & PrtName
         End If
@@ -177,7 +191,7 @@ For i = 3 To iCount
     Set products3 = Nothing
     Set part2 = Nothing
 Next
-productDocument1.SaveAs oPath & "\" & CATIA.ActiveDocument.Name '& ".CATProduct"    '�����ļ�
+productDocument1.SaveAs oPath & "\" & CATIA.ActiveDocument.Name '& ".CATProduct"    '保存文件
 xlApp.Workbooks.Close
 CATIA.DisplayFileAlerts = True
 End Sub

@@ -1,3 +1,16 @@
+> [!WARNING]
+> **Status:** `REFERENCE`
+> **Target validation:** `REQUIRED` — 未在 CATIA V5-6R2018 / VBA7 64 位目标环境验证
+> **Provenance:** `UNKNOWN` — 仓库未提供可核验来源、许可证或再分发授权
+> **Release:** 不得因本文存在而推定可进入 Build Kit 或正式发布
+> **Execution:** `DO NOT EXECUTE` — 隔离验证和依赖批准前不得复制正文示例到项目或目标机
+>
+> 关键风险：示例依赖 `Scripting.Dictionary`（`scrrun.dll`）和
+> `System.Collections.ArrayList`（.NET Framework / `mscorlib` 的 COM 可见性）；二者在目标机的
+> 注册、位数、企业策略和实际行为均需单独验证。正文中的兼容性、性能和用法结论未经本项目测试，
+> 只能作为历史参考，不能据此增加生产依赖或推定内容可再分发。
+> 正文中的“推荐”只是历史原文措辞，不代表本项目当前建议。
+
 在VBA中，Dictionary (通常来自 Microsoft Scripting Runtime) 和 ArrayList (来自 .NET Framework 的 System.Collections) 是两种非常强大的数据结构，用于替代传统的数组。
 
 以下是它们在语法和特性上的详细对比和总结。

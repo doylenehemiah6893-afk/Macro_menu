@@ -1,3 +1,22 @@
+> [!CAUTION]
+> **文档状态：SUPERSEDED（历史实施计划）**
+> **核对基线：** 2026-07-13，Git `b0085868`
+> **当前 Authority：** [`Cls_DynaWD.cls`](../Src/Cls_DynaWD.cls)、[`cls_MnUI.cls`](../Src/cls_MnUI.cls)、[`A00_Menu.bas`](../Src/A00_Menu.bas) 及当前重构/恢复设计文档
+> **执行策略：** DO NOT EXECUTE。不得按正文步骤再次删除、迁移或复制方法；先以当前源码和构建期静态目录设计为准。
+> **许可证/安全边界：** 本计划未处理运行时 `VBProject` / `CodeModule` 自省、VBE 信任策略或可选能力隔离，不能作为生产安全或许可证证明。
+
+## 当前实施结果（不改写历史计划）
+
+| 原计划项 | 当前核对结果 |
+|---|---|
+| `Cls_DynaUIEngine.cls` | historical, absent；当前相关实现为 `Cls_DynaWD.cls`。 |
+| 删除 `LoadFromMenuTags` / `TryParseMenuModule` | 当前 `Src/` 已无这两个方法。 |
+| 删除 `SortDictListByModule` | 未完成：`Cls_DynaWD.cls` 仍保留该私有函数，当前未见调用方。 |
+| `cls_MnUI.ToDictionary()` 去除 `KCL.InitDic` | 已完成：当前直接创建 `Scripting.Dictionary`。 |
+| 提取 `New CAT_springWD` 工厂 | 未完成：当前 `Cls_DynaWD.Show` 仍直接 `New CAT_springWD`。 |
+| 修改 `A0TEST_Engine.bas` 调用 | historical, absent；当前 `Src/` 无此文件。 |
+| 保留 `A00_Menu` 运行时扫描 | 仅描述遗留实现，不是当前生产目标；当前设计要求构建期静态目录。 |
+
 # 解耦 cls_MnUI 与 Cls_DynaUIEngine
 
 ## 背景与问题
@@ -92,7 +111,7 @@ Public Function ToDictionary() As Object
 
 ### ① `Cls_DynaUIEngine.cls` — 删除菜单扫描相关代码
 
-#### [MODIFY] [Cls_DynaUIEngine.cls](file:///d:/catia/Macro_menu/Src/Cls_DynaUIEngine.cls)
+#### [MODIFY] `Cls_DynaUIEngine.cls`（historical, absent；当前相关实现：[Cls_DynaWD.cls](../Src/Cls_DynaWD.cls)）
 
 **删除以下内容（约 50 行）**：
 - `LoadFromMenuTags` 公开方法（整个方法体）
@@ -129,7 +148,7 @@ End Function
 
 ### ③ `cls_MnUI.cls` — 消除对 `KCL` 的依赖
 
-#### [MODIFY] [cls_MnUI.cls](file:///d:/catia/Macro_menu/Src/cls_MnUI.cls)
+#### [MODIFY] [cls_MnUI.cls](../Src/cls_MnUI.cls)
 
 **修改 `ToDictionary()` 方法**：
 ```vba
