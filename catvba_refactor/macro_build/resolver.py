@@ -137,16 +137,29 @@ def _component_members_have_origin(
     )
 
 
-def _binding_matches(actual: SourceMember, binding: dict[str, Any]) -> bool:
+def _binding_matches(
+    actual: SourceMember,
+    binding: dict[str, Any],
+    *,
+    allow_unavailable_blob_oid: bool,
+) -> bool:
     return (
         actual.path == binding.get("path")
-        and actual.blob_oid == binding.get("blob_oid")
+        and (
+            actual.blob_oid == binding.get("blob_oid")
+            or (allow_unavailable_blob_oid and actual.blob_oid is None)
+        )
         and actual.raw_sha256 == binding.get("raw_sha256")
         and actual.role == binding.get("role")
     )
 
 
-def _bindings_match_component(component: Component, value: Any) -> bool:
+def _bindings_match_component(
+    component: Component,
+    value: Any,
+    *,
+    allow_unavailable_blob_oid: bool,
+) -> bool:
     if not isinstance(value, list) or len(value) != len(component.members):
         return False
     bindings = [binding for binding in value if isinstance(binding, dict)]
@@ -159,7 +172,11 @@ def _bindings_match_component(component: Component, value: Any) -> bool:
             (
                 index
                 for index, member in enumerate(unused)
-                if _binding_matches(member, binding)
+                if _binding_matches(
+                    member,
+                    binding,
+                    allow_unavailable_blob_oid=allow_unavailable_blob_oid,
+                )
             ),
             None,
         )
@@ -297,6 +314,8 @@ def _matching_base_index(
     roots: tuple[tuple[str, Origin], ...],
     duplicate_source_ids: set[str],
     shadow_indexes: set[int],
+    *,
+    allow_unavailable_blob_oid: bool,
 ) -> int | None:
     bindings = record.get("base_members")
     component_type = record.get("component_type")
@@ -327,7 +346,11 @@ def _matching_base_index(
         component_index, component, member = matches[0]
         if component.origin is not Origin.UPSTREAM:
             return None
-        if not _binding_matches(member, binding):
+        if not _binding_matches(
+            member,
+            binding,
+            allow_unavailable_blob_oid=allow_unavailable_blob_oid,
+        ):
             return None
         selected.append((component_index, component, member))
 
@@ -344,7 +367,11 @@ def _matching_base_index(
         or base.component_type != record.get("component_type")
         or base.vb_name != record.get("vb_name")
         or not _roles_match_type(base)
-        or not _bindings_match_component(base, bindings)
+        or not _bindings_match_component(
+            base,
+            bindings,
+            allow_unavailable_blob_oid=allow_unavailable_blob_oid,
+        )
         or not _component_members_have_origin(base, Origin.UPSTREAM, roots)
     ):
         return None
@@ -500,6 +527,9 @@ def resolve_sources(
     records = _manifest_records(manifests)
     roots = _root_origins(manifests)
     known_packages = _package_ids(manifests)
+    # Worktree inventories are deliberately non-formal and carry no Git OIDs.
+    # Candidate inventories still require every available OID to match exactly.
+    allow_unavailable_blob_oid = not inventory.formal_eligible
 
     duplicate_inventory_ids = _duplicate_source_ids(components, diagnostics)
     duplicate_manifest_ids = _duplicate_manifest_ids(records, diagnostics)
@@ -591,7 +621,11 @@ def resolve_sources(
                 )
             )
             continue
-        if not _bindings_match_component(component, record.get("members")):
+        if not _bindings_match_component(
+            component,
+            record.get("members"),
+            allow_unavailable_blob_oid=allow_unavailable_blob_oid,
+        ):
             diagnostics.append(
                 _diagnostic(
                     "SOURCE_BINDING_MISMATCH",
@@ -640,6 +674,7 @@ def resolve_sources(
                 roots,
                 duplicate_inventory_ids,
                 shadow_indexes,
+                allow_unavailable_blob_oid=allow_unavailable_blob_oid,
             )
             if base_index is None:
                 diagnostics.append(

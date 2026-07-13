@@ -151,11 +151,12 @@ def _inventory(
     components: list[Component],
     *,
     diagnostics: tuple[Diagnostic, ...] = (),
+    formal_eligible: bool = True,
 ) -> Inventory:
     return Inventory(
         components=tuple(components),
         report=ValidationReport(diagnostics),
-        formal_eligible=True,
+        formal_eligible=formal_eligible,
     )
 
 
@@ -293,6 +294,70 @@ def test_resolves_explicit_origins_and_atomic_overrides_with_exact_bytes() -> No
     assert selected_form.members[0] is original_form.members[0]
     assert selected_form.members[1].data == b"local-form-resource"
     assert all(member.path.startswith("catvba_refactor/") for member in selected_form.members)
+
+
+def test_nonformal_worktree_members_resolve_without_git_object_identity() -> None:
+    components, records = _valid_fixture()
+    worktree_components = [
+        replace(
+            component,
+            members=tuple(
+                replace(member, blob_oid=None) for member in component.members
+            ),
+        )
+        for component in components
+    ]
+
+    resolved = resolve_sources(
+        _inventory(worktree_components, formal_eligible=False),
+        _manifests(records),
+    )
+
+    assert resolved.report.ok
+    assert [component.source_id for component in resolved.components] == [
+        "core.base-tool",
+        "core.menu-form",
+        "core.new-tool",
+        "core.upstream",
+        "shared.contract",
+    ]
+
+
+def test_formal_inventory_rejects_missing_git_object_identity() -> None:
+    components, records = _valid_fixture()
+    component = next(
+        component for component in components if component.source_id == "core.new-tool"
+    )
+    component_index = components.index(component)
+    components[component_index] = replace(
+        component,
+        members=(replace(component.members[0], blob_oid=None),),
+    )
+
+    resolved = resolve_sources(_inventory(components), _manifests(records))
+
+    assert "SOURCE_BINDING_MISMATCH" in _codes(resolved)
+
+
+def test_nonformal_worktree_members_still_reject_raw_hash_drift() -> None:
+    components, records = _valid_fixture()
+    component = next(
+        component for component in components if component.source_id == "core.new-tool"
+    )
+    component_index = components.index(component)
+    components[component_index] = replace(
+        component,
+        members=(
+            replace(component.members[0], blob_oid=None, raw_sha256="0" * 64),
+        ),
+    )
+
+    resolved = resolve_sources(
+        _inventory(components, formal_eligible=False),
+        _manifests(records),
+    )
+
+    assert "SOURCE_BINDING_MISMATCH" in _codes(resolved)
 
 
 @pytest.mark.parametrize(
