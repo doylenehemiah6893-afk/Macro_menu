@@ -289,12 +289,14 @@ def _duplicate_manifest_ids(
     return duplicates
 
 
-def _base_matches(
+def _matching_base_index(
     record: dict[str, Any],
     components: tuple[Component, ...],
     by_path: dict[str, list[tuple[int, Component, SourceMember]]],
     roots: tuple[tuple[str, Origin], ...],
-) -> bool:
+    duplicate_source_ids: set[str],
+    shadow_indexes: set[int],
+) -> int | None:
     bindings = record.get("base_members")
     component_type = record.get("component_type")
     expected = (
@@ -303,29 +305,29 @@ def _base_matches(
         else None
     )
     if not isinstance(bindings, list) or expected is None:
-        return False
+        return None
     binding_records = [binding for binding in bindings if isinstance(binding, dict)]
     if len(binding_records) != len(bindings):
-        return False
+        return None
     binding_roles = [binding.get("role") for binding in binding_records]
     if not all(isinstance(role, str) for role in binding_roles):
-        return False
+        return None
     if Counter(binding_roles) != expected:
-        return False
+        return None
 
     selected: list[tuple[int, Component, SourceMember]] = []
     for binding in binding_records:
         path = binding.get("path")
         if not isinstance(path, str):
-            return False
+            return None
         matches = by_path.get(path, [])
         if len(matches) != 1:
-            return False
+            return None
         component_index, component, member = matches[0]
         if component.origin is not Origin.UPSTREAM:
-            return False
+            return None
         if not _binding_matches(member, binding):
-            return False
+            return None
         selected.append((component_index, component, member))
 
     component_indexes = {
@@ -333,8 +335,9 @@ def _base_matches(
         for component_index, _component, _member in selected
     }
     if len(component_indexes) != 1:
-        return False
-    base = components[next(iter(component_indexes))]
+        return None
+    base_index = next(iter(component_indexes))
+    base = components[base_index]
     if (
         base.origin is not Origin.UPSTREAM
         or base.component_type != record.get("component_type")
@@ -343,8 +346,55 @@ def _base_matches(
         or not _bindings_match_component(base, bindings)
         or not _component_members_have_origin(base, Origin.UPSTREAM, roots)
     ):
-        return False
-    return True
+        return None
+    if base.source_id in duplicate_source_ids or base_index in shadow_indexes:
+        return None
+    return base_index
+
+
+def _overlay_side_conflicts(
+    candidates_by_index: dict[int, Component],
+    override_base_indexes: dict[int, int],
+    components: tuple[Component, ...],
+    diagnostics: list[Diagnostic],
+) -> set[str]:
+    overrides_by_base: dict[int, list[int]] = defaultdict(list)
+    for override_index, base_index in override_base_indexes.items():
+        if override_index in candidates_by_index:
+            overrides_by_base[base_index].append(override_index)
+
+    excluded: set[str] = set()
+    ordered_base_indexes = sorted(
+        overrides_by_base,
+        key=lambda index: _component_sort_key(components[index]),
+    )
+    for base_index in ordered_base_indexes:
+        override_indexes = overrides_by_base[base_index]
+        base_is_candidate = base_index in candidates_by_index
+        if len(override_indexes) == 1 and not base_is_candidate:
+            continue
+
+        conflicting_indexes = [*override_indexes]
+        if base_is_candidate:
+            conflicting_indexes.append(base_index)
+        source_ids = tuple(
+            sorted(candidates_by_index[index].source_id for index in conflicting_indexes)
+        )
+        excluded.update(source_ids)
+        base = components[base_index]
+        diagnostics.append(
+            _diagnostic(
+                "OVERLAY_SIDE_CONFLICT",
+                min(
+                    (member.path for member in base.members),
+                    default=base.source_id,
+                ),
+                "candidate selections do not choose one exclusive overlay side",
+                base_source_id=base.source_id,
+                source_ids=source_ids,
+            )
+        )
+    return excluded
 
 
 def _candidate_collisions(
@@ -485,6 +535,8 @@ def resolve_sources(
             )
 
     candidates: list[Component] = []
+    candidates_by_index: dict[int, Component] = {}
+    override_base_indexes: dict[int, int] = {}
     for record_index, record in records:
         source_id = record.get("source_id")
         if not isinstance(source_id, str) or source_id in duplicate_manifest_ids:
@@ -579,21 +631,26 @@ def resolve_sources(
             )
             continue
 
-        if component.origin is Origin.OVERRIDE and not _base_matches(
-            record,
-            components,
-            by_path,
-            roots,
-        ):
-            diagnostics.append(
-                _diagnostic(
-                    "OVERRIDE_STALE_BASE",
-                    _first_binding_path(record, "base_members"),
-                    "override base path, object, hash, role, type, or VB_Name drifted",
-                    source_id=source_id,
-                )
+        if component.origin is Origin.OVERRIDE:
+            base_index = _matching_base_index(
+                record,
+                components,
+                by_path,
+                roots,
+                duplicate_inventory_ids,
+                shadow_indexes,
             )
-            continue
+            if base_index is None:
+                diagnostics.append(
+                    _diagnostic(
+                        "OVERRIDE_STALE_BASE",
+                        _first_binding_path(record, "base_members"),
+                        "override base is missing, drifted, duplicated, or shadowed",
+                        source_id=source_id,
+                    )
+                )
+                continue
+            override_base_indexes[component_index] = base_index
 
         if component.disposition != "candidate":
             continue
@@ -634,14 +691,22 @@ def resolve_sources(
             )
             continue
         candidates.append(component)
+        candidates_by_index[component_index] = component
 
+    overlay_conflict_ids = _overlay_side_conflicts(
+        candidates_by_index,
+        override_base_indexes,
+        components,
+        diagnostics,
+    )
     collision_ids = _candidate_collisions(candidates, diagnostics)
+    excluded_ids = overlay_conflict_ids | collision_ids
     selected = tuple(
         sorted(
             (
                 component
                 for component in candidates
-                if component.source_id not in collision_ids
+                if component.source_id not in excluded_ids
             ),
             key=_component_sort_key,
         )

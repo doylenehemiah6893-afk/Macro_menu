@@ -436,6 +436,139 @@ def test_renamed_override_base_never_falls_back_to_upstream() -> None:
     )
 
 
+def test_override_rejects_base_with_duplicate_inventory_source_id() -> None:
+    components, records = _valid_fixture()
+    base = next(
+        component
+        for component in components
+        if component.source_id == "discovered-base-module"
+    )
+    components.append(
+        replace(
+            base,
+            members=(_member("Src/DuplicateBaseTool.bas", "source"),),
+        )
+    )
+
+    resolved = resolve_sources(_inventory(components), _manifests(records))
+
+    assert "DUPLICATE_SOURCE_ID" in _codes(resolved)
+    assert "OVERRIDE_STALE_BASE" in _codes(resolved)
+    assert "core.base-tool" not in {
+        component.source_id for component in resolved.components
+    }
+
+
+def test_override_rejects_base_with_portable_member_path_shadow() -> None:
+    components, records = _valid_fixture()
+    base = next(
+        component
+        for component in components
+        if component.source_id == "discovered-base-module"
+    )
+    components.append(
+        replace(
+            base,
+            source_id="discovered-shadow-base",
+            members=(_member("Src/BASETOOL.BAS", "source"),),
+        )
+    )
+
+    resolved = resolve_sources(_inventory(components), _manifests(records))
+
+    assert "SOURCE_PATH_SHADOW" in _codes(resolved)
+    assert "OVERRIDE_STALE_BASE" in _codes(resolved)
+    assert "core.base-tool" not in {
+        component.source_id for component in resolved.components
+    }
+
+
+def test_candidate_base_and_override_are_mutually_exclusive_across_packages() -> None:
+    components, records = _valid_fixture()
+    base_index = next(
+        index
+        for index, component in enumerate(components)
+        if component.source_id == "discovered-base-module"
+    )
+    candidate_base = replace(
+        components[base_index],
+        package_id="fleet-spa",
+        disposition="candidate",
+    )
+    components[base_index] = candidate_base
+    records.append(_record(candidate_base))
+
+    forward = resolve_sources(_inventory(components), _manifests(records))
+    reversed_order = resolve_sources(
+        _inventory(list(reversed(components))),
+        _manifests(list(reversed(records))),
+    )
+
+    assert _codes(forward) == ["OVERLAY_SIDE_CONFLICT"]
+    assert forward.report.diagnostics == reversed_order.report.diagnostics
+    for resolved in (forward, reversed_order):
+        assert {
+            "core.base-tool",
+            "discovered-base-module",
+        }.isdisjoint(component.source_id for component in resolved.components)
+
+
+def test_two_candidate_overrides_cannot_reuse_one_exact_base() -> None:
+    components, records = _valid_fixture()
+    base = next(
+        component
+        for component in components
+        if component.source_id == "discovered-base-module"
+    )
+    second_override = _component(
+        "fleet.base-tool",
+        Origin.OVERRIDE,
+        "standard_module",
+        "BaseTool",
+        (
+            _member(
+                "catvba_refactor/vba/overrides/FleetBaseTool.bas",
+                "source",
+            ),
+        ),
+        package_id="fleet-spa",
+    )
+    components.append(second_override)
+    records.append(_record(second_override, base=base))
+
+    forward = resolve_sources(_inventory(components), _manifests(records))
+    reversed_order = resolve_sources(
+        _inventory(list(reversed(components))),
+        _manifests(list(reversed(records))),
+    )
+
+    assert _codes(forward) == ["OVERLAY_SIDE_CONFLICT"]
+    assert forward.report.diagnostics == reversed_order.report.diagnostics
+    for resolved in (forward, reversed_order):
+        assert {"core.base-tool", "fleet.base-tool"}.isdisjoint(
+            component.source_id for component in resolved.components
+        )
+
+
+def test_one_override_remains_selected_over_a_retired_base() -> None:
+    components, records = _valid_fixture()
+    base_index = next(
+        index
+        for index, component in enumerate(components)
+        if component.source_id == "discovered-base-module"
+    )
+    retired_base = replace(components[base_index], disposition="retired")
+    components[base_index] = retired_base
+
+    resolved = resolve_sources(_inventory(components), _manifests(records))
+
+    assert resolved.report.ok
+    assert "core.base-tool" in {
+        component.source_id for component in resolved.components
+    }
+    assert retired_base in resolved.quarantined
+
+
 def test_duplicate_package_output_filename_excludes_both_components() -> None:
     first = _component(
         "core.first",
