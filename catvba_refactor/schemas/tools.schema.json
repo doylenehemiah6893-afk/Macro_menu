@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tools.schema.json",
+  "title": "Macro Menu static tool catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tools"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "tools": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/tool"}
+    }
+  },
+  "$defs": {
+    "stable_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._-]{2,63}$"
+    },
+    "string_set": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool_id",
+        "caption",
+        "group_id",
+        "package_id",
+        "module_name",
+        "entrypoint",
+        "document_types",
+        "required_capabilities",
+        "risk_level"
+      ],
+      "properties": {
+        "tool_id": {"$ref": "#/$defs/stable_id"},
+        "caption": {"type": "string", "minLength": 1},
+        "group_id": {"$ref": "#/$defs/stable_id"},
+        "package_id": {"$ref": "#/$defs/stable_id"},
+        "module_name": {"type": "string", "minLength": 1},
+        "entrypoint": {"type": "string", "minLength": 1},
+        "document_types": {
+          "allOf": [
+            {"$ref": "#/$defs/string_set"},
+            {"minItems": 1}
+          ]
+        },
+        "required_capabilities": {"$ref": "#/$defs/string_set"},
+        "risk_level": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {"package_id": "core", "classification": "CORE_CANDIDATE"},
+    {"package_id": "fleet-spa", "classification": "FLEET_EXTENSION_SPA"},
+    {"package_id": "fleet-fta", "classification": "FLEET_EXTENSION_FTA"}
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "verysolecd/Macro_menu",
+  "upstream_ref": "dev",
+  "fork_repository": "doylenehemiah6893-afk/Macro_menu",
+  "fork_dev_ref": "dev",
+  "work_repository": "doylenehemiah6893-afk/Macro_menu",
+  "work_branch": "codex/dev-review-report",
+  "governed_paths": [
+    ".python-version",
+    "pyproject.toml",
+    "uv.lock",
+    "Src",
+    "resources",
+    "catvba_refactor"
+  ]
+}

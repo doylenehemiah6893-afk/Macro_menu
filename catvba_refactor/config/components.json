@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "source_roots": [
+    {
+      "root_id": "upstream-src",
+      "origin": "upstream",
+      "path": "Src",
+      "extensions": [".bas", ".cls", ".frm", ".frx"],
+      "default_disposition": "quarantine"
+    }
+  ],
+  "components": []
+}
