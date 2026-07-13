@@ -22,6 +22,8 @@ FIXED_SOURCES = {
     "C_MMContext.cls",
     "C_MMResult.cls",
     "C_MMStateGuard.cls",
+    "MM_HealthCheck.bas",
+    "MM_DocumentSummary.bas",
 }
 
 MODULE_NAMES = {path.rsplit(".", 1)[0] for path in FIXED_SOURCES}
@@ -278,6 +280,12 @@ def test_public_runtime_entrypoints_have_one_clean_exit_path() -> None:
             "Public Function BuildResponse(",
         ),
         "C_MMButtonHandler.cls": ("Private Sub mButton_Click()",),
+        "MM_HealthCheck.bas": (
+            "Public Function RunHealthCheck(ByVal context As C_MMContext) As C_MMResult",
+        ),
+        "MM_DocumentSummary.bas": (
+            "Public Function RunDocumentSummary(ByVal context As C_MMContext) As C_MMResult",
+        ),
     }
     for name, signatures in checks.items():
         text = _text(name)
@@ -287,3 +295,172 @@ def test_public_runtime_entrypoints_have_one_clean_exit_path() -> None:
             assert match is not None
             body = text[start : start + match.end()]
             assert body.count("CleanExit:") == 1
+
+
+def _data_keys(name: str) -> list[str]:
+    return re.findall(r'Array\("([a-z0-9_.]+)",', _text(name))
+
+
+def test_healthcheck_reports_only_bounded_non_sensitive_core_facts() -> None:
+    text = _text("MM_HealthCheck.bas")
+    assert text.count(
+        "Public Function RunHealthCheck(ByVal context As C_MMContext) As C_MMResult"
+    ) == 1
+    for token in (
+        "MM_BuildInfo.MM_PROTOCOL_VERSION",
+        "MM_BuildInfo.MM_MANIFEST_DIGEST",
+        "MM_BuildInfo.MM_WORK_COMMIT",
+        "MM_BuildInfo.MM_WORK_TREE",
+        "MM_BuildInfo.MM_TOOL_VERSION",
+        "#If VBA7 Then",
+        "#If Win64 Then",
+        "MM_TryGet.TryGetCATIARelease",
+        '"core.status", "READY"',
+        '"tool.id", "core.healthcheck"',
+        "context.DocumentType",
+    ):
+        assert token in text
+    keys = _data_keys("MM_HealthCheck.bas")
+    assert keys == sorted(set(keys))
+    assert keys == [
+        "build.manifest_digest",
+        "build.protocol_version",
+        "build.tool_version",
+        "build.work_commit",
+        "build.work_tree",
+        "catia.release.available",
+        "catia.release.value",
+        "compile.vba7",
+        "compile.win64",
+        "context.document_type",
+        "core.status",
+        "tool.id",
+    ]
+    forbidden = (
+        "references",
+        "license",
+        "licensing",
+        "profile",
+        "spa",
+        "fta",
+        ".path",
+        "username",
+        ".name",
+        "update",
+        "save",
+        "open",
+        "selection.clear",
+    )
+    assert all(token not in text.casefold() for token in forbidden)
+
+
+def test_document_summary_is_read_only_and_strictly_bounds_selection_count() -> None:
+    text = _text("MM_DocumentSummary.bas")
+    assert text.count(
+        "Public Function RunDocumentSummary(ByVal context As C_MMContext) As C_MMResult"
+    ) == 1
+    for token in (
+        "If Not context.HasActiveDocument Then",
+        "MM_Error.ResultForCode(20",
+        "MM_Error.ResultForCode(0",
+        "MM_TryGet.TryGetDocumentSaved",
+        "MM_TryGet.TryGetDocumentReadOnly",
+        "MM_TryGet.TryGetSelectionCount",
+        "Private Const MAX_SELECTION_COUNT As Long = 10000",
+        "If selectionCount > MAX_SELECTION_COUNT Then",
+    ):
+        assert token in text
+    keys = _data_keys("MM_DocumentSummary.bas")
+    assert keys == sorted(set(keys))
+    assert keys == [
+        "context.document_type",
+        "document.read_only.available",
+        "document.read_only.value",
+        "document.saved.available",
+        "document.saved.value",
+        "selection.count",
+        "selection.count.available",
+        "selection.count.cap",
+        "selection.count.truncated",
+    ]
+    forbidden = (
+        r"\.update\b",
+        r"\.save(?:as)?\b",
+        r"\.open\b",
+        r"selection\s*\.\s*clear\b",
+        r"document\s*\.\s*name\b",
+        r"document\s*\.\s*path\b",
+        r"\bfullname\b",
+        r"\bpartnumber\b",
+        r"\bmeasure\w*\b",
+        r"\bworkbench\w*\b",
+        r"\bknowledge\w*\b",
+        r"\bformula\w*\b",
+        r"\brelation\w*\b",
+    )
+    assert all(re.search(pattern, text, re.IGNORECASE) is None for pattern in forbidden)
+
+
+@pytest.mark.parametrize(
+    ("signature", "reset", "access"),
+    [
+        (
+            "Public Function TryGetActiveDocument(ByVal applicationObject As Object, ByRef value As Object) As Boolean",
+            "Set value = Nothing",
+            "applicationObject.ActiveDocument",
+        ),
+        (
+            "Public Function TryGetActiveWindow(ByVal applicationObject As Object, ByRef value As Object) As Boolean",
+            "Set value = Nothing",
+            "applicationObject.ActiveWindow",
+        ),
+        (
+            "Public Function TryGetSelection(ByVal documentObject As Object, ByRef value As Object) As Boolean",
+            "Set value = Nothing",
+            "documentObject.Selection",
+        ),
+        (
+            "Public Function TryGetSelectionCount(ByVal selectionObject As Object, ByRef value As Long) As Boolean",
+            "value = 0",
+            "selectionObject.Count2",
+        ),
+        (
+            "Public Function TryGetDisplayFileAlerts(ByVal applicationObject As Object, ByRef value As Boolean) As Boolean",
+            "value = False",
+            "applicationObject.DisplayFileAlerts",
+        ),
+        (
+            "Public Function TryGetRefreshDisplay(ByVal applicationObject As Object, ByRef value As Boolean) As Boolean",
+            "value = False",
+            "applicationObject.RefreshDisplay",
+        ),
+        (
+            "Public Function TryGetCATIARelease(ByVal applicationObject As Object, ByRef value As String) As Boolean",
+            "value = vbNullString",
+            "applicationObject.SystemConfiguration.Release",
+        ),
+        (
+            "Public Function TryGetDocumentSaved(ByVal documentObject As Object, ByRef value As Boolean) As Boolean",
+            "value = False",
+            "documentObject.Saved",
+        ),
+        (
+            "Public Function TryGetDocumentReadOnly(ByVal documentObject As Object, ByRef value As Boolean) As Boolean",
+            "value = False",
+            "documentObject.ReadOnly",
+        ),
+    ],
+)
+def test_try_get_wrappers_reset_outputs_before_isolated_compatibility_reads(
+    signature: str, reset: str, access: str
+) -> None:
+    text = _text("MM_TryGet.bas")
+    start = text.index(signature)
+    end = text.index("End Function", start)
+    body = text[start:end]
+    assert body.count(reset) == 1
+    assert access in body
+    assert body.count("On Error Resume Next") == 1
+    assert body.index(reset) < body.index("On Error Resume Next") < body.index(access)
+    assert body.index(access) < body.index("errorNumber = Err.Number") < body.index("Err.Clear")
+    assert body.index("Err.Clear") < body.index("On Error GoTo 0")

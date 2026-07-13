@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -22,6 +23,10 @@ from catvba_refactor.macro_build.policy import (
     CORE_HARD_DENY_TOKENS,
     validate_catalog,
 )
+
+
+ROOT = Path(__file__).resolve().parents[2]
+CORE_SOURCE_ROOT = ROOT / "catvba_refactor" / "vba" / "new"
 
 
 def _snapshot() -> InputSnapshot:
@@ -187,6 +192,29 @@ def test_tool_entrypoint_requires_the_exact_core_context_result_abi(
             "TOOL_ENTRYPOINT_BINDING_INVALID"
         ]
         assert report.diagnostics[0].path == "tools.json#/tools/0/entrypoint"
+
+
+@pytest.mark.parametrize(
+    ("source_id", "module_name", "entrypoint"),
+    [
+        ("core.healthcheck", "MM_HealthCheck", "RunHealthCheck"),
+        ("core.document-summary", "MM_DocumentSummary", "RunDocumentSummary"),
+    ],
+)
+def test_first_core_tool_sources_pass_policy_with_exact_abi(
+    source_id: str, module_name: str, entrypoint: str
+) -> None:
+    text = (CORE_SOURCE_ROOT / f"{module_name}.bas").read_bytes().decode(
+        "cp936", errors="strict"
+    )
+    component = _component(source_id, "standard_module", module_name, text)
+    tool = _tool(
+        source_id,
+        module_name=module_name,
+        entrypoint=entrypoint,
+    )
+
+    assert validate_catalog(_catalog((component,), tools=(tool,))).ok
 
 
 def test_requires_option_explicit_and_reports_exact_source_location() -> None:
