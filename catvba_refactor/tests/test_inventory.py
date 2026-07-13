@@ -264,6 +264,36 @@ def test_exported_form_accepts_indented_ole_object_blob(tmp_path: Path) -> None:
     assert inventory.components[0].vb_name == "IndentedForm"
 
 
+@pytest.mark.parametrize(
+    "prefix",
+    [b"\v", b"\f"],
+    ids=["vertical-tab", "form-feed"],
+)
+def test_exported_form_rejects_vertical_ole_object_blob_whitespace(
+    tmp_path: Path,
+    prefix: bytes,
+) -> None:
+    form = (
+        b'VERSION 5.00\r\n'
+        b'Attribute VB_Name = "RejectedForm"\r\n'
+        + prefix
+        + b'OleObjectBlob = "RejectedForm.frx":0000\r\n'
+    )
+    tree = {
+        "Src/RejectedForm.frm": form,
+        "Src/RejectedForm.frx": b"resource",
+    }
+
+    inventory = scan_inputs(
+        _snapshot(),
+        _manifests(),
+        MemoryRepository(tmp_path, {UPSTREAM_COMMIT: tree}),
+    )
+
+    assert "FORM_OLE_BLOB_MISSING" in _codes(inventory)
+    assert inventory.components == ()
+
+
 def test_discovered_upstream_component_is_stably_quarantined(tmp_path: Path) -> None:
     data = b'Attribute VB_Name = "Unlisted"\r\n'
     repository = MemoryRepository(

@@ -32,7 +32,7 @@ VB_NAME = re.compile(
     re.I | re.M,
 )
 OLE_BLOB = re.compile(
-    r'^\s*OleObjectBlob\s*=\s*"([^":]+\.frx)":([0-9A-Fa-f]+)\s*$',
+    r'^[ \t]*OleObjectBlob\s*=\s*"([^":]+\.frx)":([0-9A-Fa-f]+)\s*$',
     re.MULTILINE,
 )
 
