@@ -97,7 +97,7 @@ def _codes(config_dir: Path, schema_dir: Path) -> list[str]:
     return [diagnostic.code for diagnostic in manifest_set.report.diagnostics]
 
 
-def test_committed_initial_manifests_are_quarantined_and_valid() -> None:
+def test_committed_core_manifests_are_first_cycle_only_and_valid() -> None:
     manifest_set = load_and_validate_config(CONFIG_DIR, SCHEMA_DIR)
 
     assert manifest_set.report.ok
@@ -118,16 +118,22 @@ def test_committed_initial_manifests_are_quarantined_and_valid() -> None:
             "catvba_refactor",
         ],
     }
-    assert manifest_set.components["source_roots"] == [
-        {
-            "root_id": "upstream-src",
-            "origin": "upstream",
-            "path": "Src",
-            "extensions": [".bas", ".cls", ".frm", ".frx"],
-            "default_disposition": "quarantine",
-        }
+    assert [root["origin"] for root in manifest_set.components["source_roots"]] == [
+        "upstream",
+        "new",
+        "override",
     ]
-    assert manifest_set.components["components"] == []
+    components = manifest_set.components["components"]
+    assert len(components) == 13
+    assert {component["package_id"] for component in components} == {"core"}
+    assert {component["disposition"] for component in components} == {"candidate"}
+    assert sum(component["component_type"] == "user_form" for component in components) == 1
+    form = next(
+        component for component in components if component["component_type"] == "user_form"
+    )
+    assert form["source_id"] == "core.menu-form"
+    assert [member["role"] for member in form["members"]] == ["frm", "frx"]
+    assert [member["role"] for member in form["base_members"]] == ["frm", "frx"]
     assert [package["package_id"] for package in manifest_set.packages["packages"]] == [
         "core",
         "fleet-spa",
@@ -138,7 +144,16 @@ def test_committed_initial_manifests_are_quarantined_and_valid() -> None:
         and "pass" not in json.dumps(package).lower()
         for package in manifest_set.packages["packages"]
     )
-    assert manifest_set.tools == {"schema_version": 1, "tools": []}
+    assert [tool["tool_id"] for tool in manifest_set.tools["tools"]] == [
+        "core.healthcheck",
+        "core.document-summary",
+    ]
+    assert all(
+        tool["package_id"] == "core"
+        and tool["required_capabilities"] == []
+        and tool["risk_level"] == "read-only"
+        for tool in manifest_set.tools["tools"]
+    )
     assert len(manifest_set.digest) == 64
 
 

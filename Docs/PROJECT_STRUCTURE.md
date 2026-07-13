@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：IMPLEMENTED A-ENVIRONMENT SLICE — 离线工具已实现；Core Runtime 与目标机工作未开始
+> 状态：IMPLEMENTED CORE SOURCE CANDIDATE — 离线工具与首轮 Core 源码绑定已实现；CATIA/目标机测试未运行
 >
 > 更新日期：2026-07-13
 >
@@ -13,7 +13,8 @@
 - `codex/dev-review-report` 是唯一重构写分支；
 - 所有本地 VBA、Python、配置、schema、测试和派生输出进入 `catvba_refactor/`；
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
-- 离线 Python、manifest/schema、CLI 和 pytest 已实现；没有获批 Runtime VBA、候选 CATVBA 或目标机证据。
+- 离线 Python、manifest/schema、CLI 和 pytest 已实现；首轮 Core Runtime 源码已固定为候选输入，但尚未生成或
+  验证 CATVBA，也没有 CATIA/目标机通过证据。
 
 ## 2. 仓库拓扑
 
@@ -38,11 +39,11 @@ Macro_menu/
 ├─ catvba_refactor/                   # 唯一本地实现命名空间
 │  ├─ README.md                       # 所有权、命令和状态
 │  ├─ vba/
-│  │  ├─ new/README.md                # Runtime 后续计划；当前仅边界
-│  │  ├─ overrides/README.md
+│  │  ├─ new/                         # 12 个首轮 Core 固定模块/类 + 边界说明
+│  │  ├─ overrides/                   # Cat_Macro_Menu_View.frm/.frx 原子 override + 边界说明
 │  │  └─ shared_contracts/README.md
 │  ├─ resources/README.md
-│  ├─ config/*.json                   # 四份严格 manifest；当前无 candidate component/tool
+│  ├─ config/*.json                   # 四份严格 manifest；13 个 Core component、2 个首轮 tool
 │  ├─ schemas/*.schema.json           # 四份输入 schema + 固定 initial-baseline evidence schema
 │  ├─ intake/
 │  │  ├─ README.md                    # 首次 no-content baseline 的证据边界
@@ -96,9 +97,9 @@ synthetic digest，也不得生成正式 snapshot、Build Kit 或 candidate。
 首个 Kit 不强制依赖复杂的 accepted-record 链；上游 intake 记录按独立规格建立。任何 upstream/fork
 cutoff 不一致都会阻断新的 candidate，但不会使旧 Kit 的历史证据消失。
 
-当前 clone 只有个人分支 ref，没有本地 `dev` ref。因此仓库 `check/build-kit` 以基础设施退出码 4
-失败关闭；工具不会猜 remote 别名、回退 `HEAD` 或创建 `dev`。临时端到端 fixture 显式创建隔离的本地
-`dev`，只验证引擎确定性，不能替代仓库 G0/G1 receipt。
+当前 clone 的只读本地 `dev` 固定在审定 cutoff `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；工作分支
+通过 manifest 将 12 个 `vba/new` 固定组件和一组完整 Form override 绑定到已提交 Git object。临时端到端
+fixture 只验证引擎确定性，不能替代仓库 G0/G1 receipt。
 
 ## 6. 组件与包
 
@@ -139,9 +140,9 @@ QUARANTINE
 1. 已完成恢复总架构和四份子规格复审；
 2. 已按 TDD 实现离线 Build Kit 计划：根项目、snapshot、schema、inventory、resolver、policy、generator、
    staging/verifier、只读 audit、CLI 和端到端 fixture；
-3. 当前四份 manifest 保持零 candidate component/tool，G0/G1 均为 `NOT_RUN`；
-4. 下一独立计划建立最小 Core Form override 与两个首轮工具；
-5. 取得只读 cutoff ref 后，从固定输入生成仓库 Build Kit；A 环境最高到 G1；
+3. 已建立最小 Core Form override、12 个固定模块/类和两个首轮工具，并精确绑定已提交 Git object；
+4. 当前 candidate 仅含 `core.healthcheck` 与 `core.document-summary`，不含 Fleet、Optional 或第二回合审计；
+5. 下一步从固定输入生成并复验仓库 Build Kit；A 环境最高到 G1，不能声称 CATIA Compile；
 6. 在 B28 完成 profile、SPA/FTA、安装和回滚门禁。
 
-离线实现不创建候选 CATVBA。Core Runtime、B28 与交付工作必须分别按已批准子规格继续。
+离线实现不会创建已验证 CATVBA。B28 与交付工作必须分别按已批准子规格继续。

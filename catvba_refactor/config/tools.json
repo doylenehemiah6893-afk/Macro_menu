@@ -1,1 +1,31 @@
-{"schema_version":1,"tools":[]}
+{
+  "schema_version": 1,
+  "tools": [
+    {
+      "tool_id": "core.healthcheck",
+      "caption": "Health Check",
+      "tooltip": "Report Core runtime readiness without changing CATIA state.",
+      "group_id": "core.general",
+      "group_caption": "Core",
+      "package_id": "core",
+      "module_name": "MM_HealthCheck",
+      "entrypoint": "RunHealthCheck",
+      "document_types": ["none", "CATPart", "CATProduct", "CATDrawing"],
+      "required_capabilities": [],
+      "risk_level": "read-only"
+    },
+    {
+      "tool_id": "core.document-summary",
+      "caption": "Document Summary",
+      "tooltip": "Summarize the active document without changing CATIA state.",
+      "group_id": "core.general",
+      "group_caption": "Core",
+      "package_id": "core",
+      "module_name": "MM_DocumentSummary",
+      "entrypoint": "RunDocumentSummary",
+      "document_types": ["none", "CATPart", "CATProduct", "CATDrawing"],
+      "required_capabilities": [],
+      "risk_level": "read-only"
+    }
+  ]
+}

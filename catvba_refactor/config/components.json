@@ -7,7 +7,263 @@
       "path": "Src",
       "extensions": [".bas", ".cls", ".frm", ".frx"],
       "default_disposition": "quarantine"
+    },
+    {
+      "root_id": "new-src",
+      "origin": "new",
+      "path": "catvba_refactor/vba/new",
+      "extensions": [".bas", ".cls", ".frm", ".frx"],
+      "default_disposition": "quarantine"
+    },
+    {
+      "root_id": "override-src",
+      "origin": "override",
+      "path": "catvba_refactor/vba/overrides",
+      "extensions": [".bas", ".cls", ".frm", ".frx"],
+      "default_disposition": "quarantine"
     }
   ],
-  "components": []
+  "components": [
+    {
+      "source_id": "core.entry",
+      "origin": "new",
+      "component_type": "standard_module",
+      "vb_name": "MM_Entry",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/MM_Entry.bas",
+          "blob_oid": "d505b25a115eaeda4cfaa0d329bfeb4e41596f6f",
+          "raw_sha256": "d2d656f1aedd09f3810ea44aad2ff5a779382d2331590b4b51f089b00c81a1d6",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.menu-presenter",
+      "origin": "new",
+      "component_type": "standard_module",
+      "vb_name": "MM_MenuPresenter",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/MM_MenuPresenter.bas",
+          "blob_oid": "02f3c97932879431dc942fd3be2f06755a6220ba",
+          "raw_sha256": "770267018b7e38045108e82ef798b3cbc326725da0a45efc862055a6531691d8",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.protocol",
+      "origin": "new",
+      "component_type": "standard_module",
+      "vb_name": "MM_Protocol",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/MM_Protocol.bas",
+          "blob_oid": "22bc89bffa8046735561e9a3710f365cf15a7d3a",
+          "raw_sha256": "d47064a0e353c4d762b1551c581bfbe30ad40dee64ea484a2d3f3be9562f4b84",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.error",
+      "origin": "new",
+      "component_type": "standard_module",
+      "vb_name": "MM_Error",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/MM_Error.bas",
+          "blob_oid": "d7826c84425210443b5913e4bf1c26008612993a",
+          "raw_sha256": "ca460488d18a0ff946498dc2c97c05e3c918f3b37335fee71f9fc455ab23d175",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.log",
+      "origin": "new",
+      "component_type": "standard_module",
+      "vb_name": "MM_Log",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/MM_Log.bas",
+          "blob_oid": "0b2102b943c31e114d80783507c2c3b765002d58",
+          "raw_sha256": "a7c19b01832b3db4fc7359e803f4813a3e922b9721c27ba8e2c7c8197683b832",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.try-get",
+      "origin": "new",
+      "component_type": "standard_module",
+      "vb_name": "MM_TryGet",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/MM_TryGet.bas",
+          "blob_oid": "ba6ac5b32c517f59fa627d23bfeeed3acd292a08",
+          "raw_sha256": "17fcff630c6cfa0c6d905a23c5643a67175347d166d18f40c7647074c4e6bff5",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.button-handler",
+      "origin": "new",
+      "component_type": "class_module",
+      "vb_name": "C_MMButtonHandler",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/C_MMButtonHandler.cls",
+          "blob_oid": "32f2de4f13768125bc51b5101efe5fc4c4aab909",
+          "raw_sha256": "ae632e29108108abed5e59df5dc20e009a50340ae9c9ac11ff0162452a49b5ab",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.context",
+      "origin": "new",
+      "component_type": "class_module",
+      "vb_name": "C_MMContext",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/C_MMContext.cls",
+          "blob_oid": "1ba763c8bbafde176a721affd5131abac432afd9",
+          "raw_sha256": "d57bee14c146103a43fc86c0463182814551659a0d78401b0575956082806496",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.result",
+      "origin": "new",
+      "component_type": "class_module",
+      "vb_name": "C_MMResult",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/C_MMResult.cls",
+          "blob_oid": "df4c4769b345b9fb0cdbf46cf59897b4e3d1e950",
+          "raw_sha256": "aebcf2486a807a4782a57e4dc30f1483be4bcf3162a3c4f5059215b4dad5d8f7",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.state-guard",
+      "origin": "new",
+      "component_type": "class_module",
+      "vb_name": "C_MMStateGuard",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/C_MMStateGuard.cls",
+          "blob_oid": "d8318c49d34ee043697b6d1dfacc0ec5cee351bc",
+          "raw_sha256": "c67bd3cd41ea30fcc04baf34bb62fecd8780d2a6d77aa69d8a9b66f52a42f40e",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.healthcheck",
+      "origin": "new",
+      "component_type": "standard_module",
+      "vb_name": "MM_HealthCheck",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/MM_HealthCheck.bas",
+          "blob_oid": "db99947295df45c9619627fa3f60c1effc90f8e7",
+          "raw_sha256": "614137869f0f7cb50c7fe6333d8811207c9193138c3afc0cd79a8abb23c98187",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.document-summary",
+      "origin": "new",
+      "component_type": "standard_module",
+      "vb_name": "MM_DocumentSummary",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/new/MM_DocumentSummary.bas",
+          "blob_oid": "c2ca025828d000971e634e3689ae85ebdd15a501",
+          "raw_sha256": "4cdc8b0ac512d33c605c84e5026fb709084d4ae6a10321de33c3344007a2ac64",
+          "role": "source"
+        }
+      ]
+    },
+    {
+      "source_id": "core.menu-form",
+      "origin": "override",
+      "component_type": "user_form",
+      "vb_name": "Cat_Macro_Menu_View",
+      "package_id": "core",
+      "disposition": "candidate",
+      "encoding_decision": "cp936",
+      "members": [
+        {
+          "path": "catvba_refactor/vba/overrides/Cat_Macro_Menu_View.frm",
+          "blob_oid": "a06df583e0e1efa25c90181ab904a1049b92e860",
+          "raw_sha256": "d8a0e90b028244e134033b2957cfa1b2c7f011d37ea3b91a21a8b7c19b24803b",
+          "role": "frm"
+        },
+        {
+          "path": "catvba_refactor/vba/overrides/Cat_Macro_Menu_View.frx",
+          "blob_oid": "f5dfa5ed39a3ca1af9aff3b10c375e85ae52149c",
+          "raw_sha256": "12529f95a32b090015bb4d7f623aa53545cfb3226048c86c47b8e92224e5942e",
+          "role": "frx"
+        }
+      ],
+      "base_members": [
+        {
+          "path": "Src/Cat_Macro_Menu_View.frm",
+          "blob_oid": "3e2e906f5cc4602b36338a932d05df4f6e215db2",
+          "raw_sha256": "322bfca07f9fc27b0fcaf1dc84727cbbd1ebf35c08b6b7a25442a20197aaac9a",
+          "role": "frm"
+        },
+        {
+          "path": "Src/Cat_Macro_Menu_View.frx",
+          "blob_oid": "f5dfa5ed39a3ca1af9aff3b10c375e85ae52149c",
+          "raw_sha256": "12529f95a32b090015bb4d7f623aa53545cfb3226048c86c47b8e92224e5942e",
+          "role": "frx"
+        }
+      ]
+    }
+  ]
 }

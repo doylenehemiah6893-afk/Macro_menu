@@ -19,6 +19,63 @@ _SCHEMA_NAMES = (
     "tools.schema.json",
 )
 
+_CORE_NEW_COMPONENTS = (
+    ("core.entry", "standard_module", "MM_Entry", "MM_Entry.bas"),
+    (
+        "core.menu-presenter",
+        "standard_module",
+        "MM_MenuPresenter",
+        "MM_MenuPresenter.bas",
+    ),
+    ("core.protocol", "standard_module", "MM_Protocol", "MM_Protocol.bas"),
+    ("core.error", "standard_module", "MM_Error", "MM_Error.bas"),
+    ("core.log", "standard_module", "MM_Log", "MM_Log.bas"),
+    ("core.try-get", "standard_module", "MM_TryGet", "MM_TryGet.bas"),
+    (
+        "core.button-handler",
+        "class_module",
+        "C_MMButtonHandler",
+        "C_MMButtonHandler.cls",
+    ),
+    ("core.context", "class_module", "C_MMContext", "C_MMContext.cls"),
+    ("core.result", "class_module", "C_MMResult", "C_MMResult.cls"),
+    (
+        "core.state-guard",
+        "class_module",
+        "C_MMStateGuard",
+        "C_MMStateGuard.cls",
+    ),
+    (
+        "core.healthcheck",
+        "standard_module",
+        "MM_HealthCheck",
+        "MM_HealthCheck.bas",
+    ),
+    (
+        "core.document-summary",
+        "standard_module",
+        "MM_DocumentSummary",
+        "MM_DocumentSummary.bas",
+    ),
+)
+
+_CORE_TOOLS = (
+    (
+        "core.healthcheck",
+        "Health Check",
+        "MM_HealthCheck",
+        "RunHealthCheck",
+        ["none", "CATPart", "CATProduct", "CATDrawing"],
+    ),
+    (
+        "core.document-summary",
+        "Document Summary",
+        "MM_DocumentSummary",
+        "RunDocumentSummary",
+        ["none", "CATPart", "CATProduct", "CATDrawing"],
+    ),
+)
+
 
 def _git(repo: Path, *arguments: str) -> str:
     completed = subprocess.run(
@@ -29,6 +86,16 @@ def _git(repo: Path, *arguments: str) -> str:
         text=True,
     )
     return completed.stdout.strip()
+
+
+def _git_bytes(repo: Path, *arguments: str) -> bytes:
+    completed = subprocess.run(
+        ("git", *arguments),
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    return completed.stdout
 
 
 def _blob_oid(data: bytes) -> str:
@@ -193,6 +260,142 @@ def _create_fixture_repository(tmp_path: Path) -> tuple[Path, Path, bytes]:
     _git(repo, "branch", "dev")
     assert _git(repo, "rev-parse", "dev") == _git(repo, "rev-parse", "HEAD")
     return repo, module_path, module
+
+
+def test_production_core_manifests_bind_only_the_committed_first_cycle() -> None:
+    repo = Path(__file__).resolve().parents[2]
+    config = repo / "catvba_refactor" / "config"
+    components_document = json.loads(
+        (config / "components.json").read_text(encoding="utf-8")
+    )
+    tools_document = json.loads(
+        (config / "tools.json").read_text(encoding="utf-8")
+    )
+
+    assert components_document["source_roots"] == [
+        {
+            "root_id": "upstream-src",
+            "origin": "upstream",
+            "path": "Src",
+            "extensions": [".bas", ".cls", ".frm", ".frx"],
+            "default_disposition": "quarantine",
+        },
+        {
+            "root_id": "new-src",
+            "origin": "new",
+            "path": "catvba_refactor/vba/new",
+            "extensions": [".bas", ".cls", ".frm", ".frx"],
+            "default_disposition": "quarantine",
+        },
+        {
+            "root_id": "override-src",
+            "origin": "override",
+            "path": "catvba_refactor/vba/overrides",
+            "extensions": [".bas", ".cls", ".frm", ".frx"],
+            "default_disposition": "quarantine",
+        },
+    ]
+
+    records = components_document["components"]
+    assert [record["source_id"] for record in records] == [
+        *[item[0] for item in _CORE_NEW_COMPONENTS],
+        "core.menu-form",
+    ]
+    for record, (source_id, component_type, vb_name, filename) in zip(
+        records[:-1], _CORE_NEW_COMPONENTS, strict=True
+    ):
+        path = f"catvba_refactor/vba/new/{filename}"
+        assert record == {
+            "source_id": source_id,
+            "origin": "new",
+            "component_type": component_type,
+            "vb_name": vb_name,
+            "package_id": "core",
+            "disposition": "candidate",
+            "encoding_decision": "cp936",
+            "members": [
+                {
+                    "path": path,
+                    "blob_oid": _git(repo, "rev-parse", f"HEAD:{path}"),
+                    "raw_sha256": hashlib.sha256(
+                        _git_bytes(repo, "show", f"HEAD:{path}")
+                    ).hexdigest(),
+                    "role": "source",
+                }
+            ],
+        }
+
+    form = records[-1]
+    local_form_paths = (
+        ("catvba_refactor/vba/overrides/Cat_Macro_Menu_View.frm", "frm"),
+        ("catvba_refactor/vba/overrides/Cat_Macro_Menu_View.frx", "frx"),
+    )
+    base_form_paths = (
+        ("Src/Cat_Macro_Menu_View.frm", "frm"),
+        ("Src/Cat_Macro_Menu_View.frx", "frx"),
+    )
+
+    def committed_bindings(
+        revision: str, paths: tuple[tuple[str, str], ...]
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "path": path,
+                "blob_oid": _git(repo, "rev-parse", f"{revision}:{path}"),
+                "raw_sha256": hashlib.sha256(
+                    _git_bytes(repo, "show", f"{revision}:{path}")
+                ).hexdigest(),
+                "role": role,
+            }
+            for path, role in paths
+        ]
+
+    assert form == {
+        "source_id": "core.menu-form",
+        "origin": "override",
+        "component_type": "user_form",
+        "vb_name": "Cat_Macro_Menu_View",
+        "package_id": "core",
+        "disposition": "candidate",
+        "encoding_decision": "cp936",
+        "members": committed_bindings("HEAD", local_form_paths),
+        "base_members": committed_bindings(
+            "abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad", base_form_paths
+        ),
+    }
+    assert all(
+        record["package_id"] == "core"
+        and record["disposition"] == "candidate"
+        and not record["source_id"].startswith(("fleet.", "optional."))
+        for record in records
+    )
+
+    tools = tools_document["tools"]
+    assert [tool["tool_id"] for tool in tools] == [item[0] for item in _CORE_TOOLS]
+    for tool, (
+        tool_id,
+        caption,
+        module_name,
+        entrypoint,
+        document_types,
+    ) in zip(tools, _CORE_TOOLS, strict=True):
+        assert tool == {
+            "tool_id": tool_id,
+            "caption": caption,
+            "tooltip": (
+                "Report Core runtime readiness without changing CATIA state."
+                if tool_id == "core.healthcheck"
+                else "Summarize the active document without changing CATIA state."
+            ),
+            "group_id": "core.general",
+            "group_caption": "Core",
+            "package_id": "core",
+            "module_name": module_name,
+            "entrypoint": entrypoint,
+            "document_types": document_types,
+            "required_capabilities": [],
+            "risk_level": "read-only",
+        }
 
 
 def test_candidate_kit_is_deterministic_and_dirty_tree_fails_closed(
