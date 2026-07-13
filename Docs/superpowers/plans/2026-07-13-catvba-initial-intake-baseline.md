@@ -219,6 +219,7 @@ git commit -m "docs: define initial intake baseline evidence"
 
 **Files:**
 - Create: `catvba_refactor/intake/records/2026-07-13-initial-baseline.json`
+- Modify: `catvba_refactor/tests/test_intake_baseline.py`
 - Modify: `Docs/STATUS.md`
 - Modify: `catvba_refactor/config/README.md`
 - Modify: `catvba_refactor/macro_build/README.md`
@@ -281,7 +282,33 @@ UV_CACHE_DIR=/tmp/uv-cache uv run pytest catvba_refactor/tests/test_inventory.py
 
 Expected: both CLI commands exit 0 with `formal_eligible=true`, 77 discovered upstream components, zero candidate components/tools, and no Form/FRX or portable-path diagnostic; pytest passes. This is A-environment static evidence only. Remove only the temporary directory after capturing the results.
 
-- [ ] **Step 5: Write and validate the exact initial baseline record**
+- [ ] **Step 5: Add a failing test for the repository record**
+
+Add the exact record path and a test that reads the committed JSON rather than only a helper value:
+
+```python
+RECORD_PATH = (
+    Path(__file__).parents[1]
+    / "intake"
+    / "records"
+    / "2026-07-13-initial-baseline.json"
+)
+
+
+def test_repository_initial_baseline_record_matches_schema() -> None:
+    record = json.loads(RECORD_PATH.read_text(encoding="utf-8"))
+    assert list(_validator().iter_errors(record)) == []
+```
+
+Run:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run pytest catvba_refactor/tests/test_intake_baseline.py::test_repository_initial_baseline_record_matches_schema -q
+```
+
+Expected: FAIL with `FileNotFoundError` because the record does not exist.
+
+- [ ] **Step 6: Write and validate the exact initial baseline record**
 
 Create the record with the full `work_pre_intake_commit` captured in Step 1, the fixed cutoff, the two known tree OIDs, and all schema constants from Task 2. Validate it with:
 
@@ -291,14 +318,14 @@ UV_CACHE_DIR=/tmp/uv-cache uv run pytest catvba_refactor/tests/test_intake_basel
 
 Expected: PASS and the repository record itself is included as the test fixture loaded from disk.
 
-- [ ] **Step 6: Commit the record before moving the local ref**
+- [ ] **Step 7: Commit the record before moving the local ref**
 
 ```bash
-git add catvba_refactor/intake/records/2026-07-13-initial-baseline.json
+git add catvba_refactor/intake/records/2026-07-13-initial-baseline.json catvba_refactor/tests/test_intake_baseline.py
 git commit -m "docs: accept initial upstream dev baseline"
 ```
 
-- [ ] **Step 7: Atomically create, never overwrite, the local dev ref**
+- [ ] **Step 8: Atomically create, never overwrite, the local dev ref**
 
 Run exactly:
 
@@ -309,7 +336,7 @@ git rev-parse refs/heads/dev
 
 Expected: creation succeeds and resolves to the exact accepted cutoff. Do not checkout `dev`; do not push it.
 
-- [ ] **Step 8: Verify the repository's new fail-closed state**
+- [ ] **Step 9: Verify the repository's new fail-closed state**
 
 Run:
 
@@ -326,7 +353,7 @@ Expected:
 - `build-kit` exits 3 with `NO_BUILDABLE_COMPONENTS` and creates no completed Kit;
 - no command writes `Src/`, `resources/`, remote refs, `main`, or remote `dev`.
 
-- [ ] **Step 9: Update current status without promoting gates**
+- [ ] **Step 10: Update current status without promoting gates**
 
 Update the four status/README files to record the accepted cutoff and local `dev` ref, remove the obsolete exit-4 statement, and preserve:
 
@@ -340,7 +367,7 @@ release_eligible=false
 
 Also replace the obsolete `STATUS` phrase that Core Runtime MVP still needs spec approval with: the Core spec is approved and its implementation plan is next.
 
-- [ ] **Step 10: Run full verification and commit status evidence**
+- [ ] **Step 11: Run full verification and commit status evidence**
 
 Run:
 
