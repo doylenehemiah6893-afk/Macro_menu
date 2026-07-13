@@ -1,6 +1,6 @@
 # CATVBA 上游 Intake 与 Fork 同步设计
 
-> 状态：DRAFT — 待用户书面复审
+> 状态：APPROVED — 用户已于 2026-07-13 书面确认
 >
 > 上位规格：[CATVBA R2018 恢复总架构设计](2026-07-13-catvba-r2018-recovery-design.md)
 
@@ -117,4 +117,3 @@ record 的文件 path、blob OID 和 raw SHA-256 由包含它的后续提交复�
 - intake 与业务功能分批提交；
 - 已绑定证据的历史不被 rebase/force-push；
 - 同步失败只阻断新的 candidate，不破坏旧 Kit 的历史可验证性。
-
