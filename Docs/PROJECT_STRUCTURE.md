@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：APPROVED DIRECTION — 上游镜像、唯一本地命名空间和唯一工作分支；DRAFT — 子规格实施细节
+> 状态：APPROVED DESIGN — 上游镜像、命名空间、五份规格；实施尚未开始
 >
 > 更新日期：2026-07-13
 >
@@ -127,12 +127,12 @@ QUARANTINE
 
 ## 8. 规格与实施顺序
 
-1. 复审恢复总架构和四份子规格；
-2. 用户书面批准后，编写离线 Build Kit 实施计划；
+1. 已完成恢复总架构和四份子规格复审；
+2. 已编写离线 Build Kit 实施计划，等待执行方式确认；
 3. 先修复 Git 元数据和根 Python 项目配置；
 4. TDD 实现 inventory/schema/resolver；
 5. 建立最小 Core Form override 与两个首轮工具；
 6. 生成 Build Kit；A 环境最高到 G1；
 7. 在 B28 完成 profile、SPA/FTA、安装和回滚门禁。
 
-在规格复审前，不创建真实 manifest/schema、Python 实现、VBA 候选或 CATVBA。
+在实施计划开始执行前，不创建真实 manifest/schema、Python 实现、VBA 候选或 CATVBA。
