@@ -444,6 +444,7 @@ def generate_sources(
         members=(member,),
         package_id=GENERATED_PACKAGE_ID,
         disposition="candidate",
+        encoding_decision="cp936",
     )
 
     path_report = validate_portable_paths((member.path,))

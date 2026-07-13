@@ -195,6 +195,7 @@ def _identity_matches(component: Component, record: dict[str, Any]) -> bool:
         and component.origin.value == record.get("origin")
         and component.component_type == record.get("component_type")
         and component.vb_name == record.get("vb_name")
+        and component.encoding_decision == record.get("encoding_decision")
     )
 
 

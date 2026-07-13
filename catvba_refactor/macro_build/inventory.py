@@ -771,6 +771,7 @@ def _explicit_components(
                         else None
                     ),
                     disposition=str(record.get("disposition")),
+                    encoding_decision=declared_encoding,
                 ),
                 side=selected_root.side,
             )
@@ -798,6 +799,7 @@ def _discovered_component(
             members=members,
             package_id=None,
             disposition=raw.root.default_disposition,
+            encoding_decision=None,
         ),
         side=raw.root.side,
     )

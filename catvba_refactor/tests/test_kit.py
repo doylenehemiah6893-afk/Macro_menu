@@ -80,6 +80,7 @@ def _module(
         members=(_member(path, data),),
         package_id=package_id,
         disposition="candidate",
+        encoding_decision=None,
     )
 
 
@@ -108,6 +109,7 @@ def _form() -> Component:
         ),
         package_id="core",
         disposition="candidate",
+        encoding_decision=None,
     )
 
 
@@ -175,6 +177,7 @@ def _catalog(*, with_form: bool = False) -> tuple[ResolvedCatalog, bytes]:
         members=(_member("Src/Legacy.bas", quarantine_data),),
         package_id=None,
         disposition="quarantine",
+        encoding_decision=None,
     )
     components = (module, _form()) if with_form else (module,)
     resolved = ResolvedSourceSet(
@@ -186,6 +189,50 @@ def _catalog(*, with_form: bool = False) -> tuple[ResolvedCatalog, bytes]:
     catalog = assemble_catalog(_snapshot(), resolved, generated, _manifests())
     assert catalog.report.ok
     return catalog, quarantine_data
+
+
+def test_explicit_encoding_decision_is_bound_into_verifiable_kit(
+    tmp_path: Path,
+) -> None:
+    data = (
+        b'Attribute VB_Name = "SafeModule"\r\n'
+        b"Option Explicit\r\n"
+        b"'\xc2\xa9\r\n"
+        b"Public Sub Run()\r\n"
+        b"End Sub\r\n"
+    )
+    kit_ids: list[str] = []
+    for decision in ("cp936", "utf-8"):
+        component = replace(
+            _module(),
+            members=(
+                _member("catvba_refactor/vba/new/SafeModule.bas", data),
+            ),
+            encoding_decision=decision,
+        )
+        catalog = assemble_catalog(
+            _snapshot(),
+            ResolvedSourceSet(
+                components=(component,),
+                quarantined=(),
+                report=ValidationReport(),
+            ),
+            GeneratedSourceSet(components=(), report=ValidationReport()),
+            _manifests(),
+        )
+        assert catalog.report.ok
+
+        receipt = stage_build_kit(catalog, tmp_path / decision)
+        kit_dir = Path(receipt.kit_dir)
+        catalog_record = _json(kit_dir / "catalog.json")["components"][0]
+        hash_record = _json(kit_dir / "receipts/hashes.json")["members"][0]
+
+        assert catalog_record["encoding_decision"] == decision
+        assert hash_record["encoding_decision"] == decision
+        assert verify_build_kit(kit_dir).ok
+        kit_ids.append(receipt.kit_id)
+
+    assert len(set(kit_ids)) == 2
 
 
 def _json(path: Path) -> Any:
@@ -389,6 +436,7 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
                 "vb_name": "SafeForm",
                 "package_id": "core",
                 "disposition": "candidate",
+                "encoding_decision": None,
                 "members": [
                     {
                         "path": "catvba_refactor/vba/new/SafeForm.frm",
@@ -419,6 +467,7 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
                 "vb_name": "SafeModule",
                 "package_id": "core",
                 "disposition": "candidate",
+                "encoding_decision": None,
                 "members": [
                     {
                         "path": "catvba_refactor/vba/new/SafeModule.bas",
@@ -449,7 +498,7 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
     }
     assert identity == expected_identity
     independent_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
-    assert independent_id == "kit-b8aaec76d1e3919d2ada"
+    assert independent_id == "kit-4a6b9ce405d1f9b0a5ec"
     assert receipt.kit_id == independent_id
 
     manifest_bytes = (kit_dir / "kit-manifest.json").read_bytes()

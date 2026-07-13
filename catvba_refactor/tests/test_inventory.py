@@ -651,6 +651,7 @@ def test_ambiguous_text_requires_and_respects_manifest_encoding_decision(
     assert _codes(rejected) == ["ENC_AMBIGUOUS"]
     assert rejected.components == ()
     assert accepted.report.ok
+    assert accepted.components[0].encoding_decision == "cp936"
     assert accepted.components[0].members[0].data == data
 
 

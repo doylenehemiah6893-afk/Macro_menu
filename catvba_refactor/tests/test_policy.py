@@ -80,6 +80,7 @@ def _component(
         ),
         package_id=package_id,
         disposition="candidate",
+        encoding_decision=None,
     )
 
 
@@ -386,6 +387,7 @@ def test_binary_frx_is_never_decoded_or_lexically_scanned() -> None:
         members=(frm, binary),
         package_id="core",
         disposition="candidate",
+        encoding_decision=None,
     )
 
     assert validate_catalog(_catalog((form,))).ok
@@ -408,6 +410,7 @@ def test_undecodable_source_fails_closed_with_stable_diagnostic() -> None:
         members=(member,),
         package_id="core",
         disposition="candidate",
+        encoding_decision=None,
     )
 
     report = validate_catalog(_catalog((component,)))
@@ -464,12 +467,13 @@ def test_policy_accepts_inventory_decided_ambiguous_cp936_without_replacement() 
         members=(member,),
         package_id="core",
         disposition="candidate",
+        encoding_decision="cp936",
     )
 
     assert validate_catalog(_catalog((component,))).ok
 
 
-def test_policy_unions_and_deduplicates_findings_across_ambiguous_decodings() -> None:
+def test_policy_rejects_ambiguous_source_without_encoding_decision() -> None:
     data = (
         b'Attribute VB_Name = "AmbiguousDenied"\r\n'
         b"Option Explicit\r\n"
@@ -493,12 +497,13 @@ def test_policy_unions_and_deduplicates_findings_across_ambiguous_decodings() ->
         members=(member,),
         package_id="core",
         disposition="candidate",
+        encoding_decision=None,
     )
 
     report = validate_catalog(_catalog((component,)))
 
     assert [(item.code, item.details) for item in report.diagnostics] == [
-        ("CORE_TOKEN_DENIED", {"line": 5, "token": "VBProject"})
+        ("POLICY_SOURCE_ENCODING", {"line": 1, "token": "ENC_AMBIGUOUS"})
     ]
 
 

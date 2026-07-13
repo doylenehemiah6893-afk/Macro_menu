@@ -86,6 +86,7 @@ def _module(
         ),
         package_id=package_id,
         disposition="candidate",
+        encoding_decision=None,
     )
 
 

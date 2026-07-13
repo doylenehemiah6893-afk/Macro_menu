@@ -47,6 +47,7 @@ def _component(
         members=members,
         package_id=package_id,
         disposition=disposition,
+        encoding_decision=None,
     )
 
 

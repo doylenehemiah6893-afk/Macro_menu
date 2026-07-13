@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
+from .encoding import decode_vba
+from .errors import SourceError
 from .model import (
     Component,
     Diagnostic,
@@ -271,35 +273,11 @@ def _is_binary_frx(member: SourceMember) -> bool:
     return member.role == "frx" or PurePosixPath(member.path).suffix.casefold() == ".frx"
 
 
-def _try_decode(data: bytes, encoding: str) -> str | None:
-    try:
-        return data.decode(encoding, errors="strict")
-    except UnicodeDecodeError:
-        return None
-
-
-def _policy_text_variants(data: bytes) -> tuple[str, ...]:
-    """Return every strict policy text interpretation accepted by inventory.
-
-    Inventory owns any explicit UTF-8/CP936 decision. That decision is not
-    copied into the exact domain models, so policy examines every possible
-    sanitized ASCII surface for ambiguous bytes and unions the findings.
-    """
-    if data.startswith(b"\xef\xbb\xbf"):
-        text = _try_decode(data[3:], "utf-8")
-        return () if text is None else (text,)
-    if data.isascii():
-        return (data.decode("ascii"),)
-
-    candidates = (
-        _try_decode(data, "utf-8"),
-        _try_decode(data, "cp936"),
-    )
-    unique: dict[str, None] = {}
-    for candidate in candidates:
-        if candidate is not None:
-            unique.setdefault(candidate, None)
-    return tuple(unique)
+def _policy_text_variants(
+    data: bytes, declared_encoding: str | None
+) -> tuple[str, ...]:
+    """Decode exactly the text identity already decided by inventory."""
+    return (decode_vba(data, declared_encoding).text,)
 
 
 def _decode_sources(
@@ -310,15 +288,18 @@ def _decode_sources(
         for member in component.members:
             if _is_binary_frx(member):
                 continue
-            variants = _policy_text_variants(member.data)
-            if not variants:
+            try:
+                variants = _policy_text_variants(
+                    member.data, component.encoding_decision
+                )
+            except SourceError as error:
                 diagnostics.append(
                     _diagnostic(
                         "POLICY_SOURCE_ENCODING",
                         member.path,
                         "VBA policy source cannot be decoded without replacement",
                         line=1,
-                        token="ENC_INVALID",
+                        token=str(error),
                     )
                 )
                 continue

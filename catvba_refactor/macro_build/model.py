@@ -72,6 +72,7 @@ class Component:
     members: tuple[SourceMember, ...]
     package_id: str | None
     disposition: str
+    encoding_decision: str | None
 
 
 @dataclass(frozen=True)

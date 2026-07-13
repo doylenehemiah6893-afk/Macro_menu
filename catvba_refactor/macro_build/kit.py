@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping, Sequence
 
 from .canonical import canonical_json_bytes, sha256_bytes
+from .encoding import decode_vba
 from .errors import InfrastructureError, SourceError
 from .generator import (
     GENERATED_PATH,
@@ -135,6 +136,7 @@ _COMPONENT_FIELDS = frozenset(
         "vb_name",
         "package_id",
         "disposition",
+        "encoding_decision",
         "members",
     }
 )
@@ -220,6 +222,7 @@ def _component_sort_key(component: Component) -> tuple[Any, ...]:
         component.vb_name,
         component.component_type,
         component.origin.value,
+        component.encoding_decision or "",
         tuple(_member_sort_key(member) for member in component.members),
     )
 
@@ -263,6 +266,7 @@ def _component_document_sort_key(
         text_field("vb_name"),
         text_field("component_type"),
         text_field("origin"),
+        text_field("encoding_decision"),
         member_keys,
     )
 
@@ -386,6 +390,7 @@ def _component_record(component: Component) -> dict[str, Any]:
         "vb_name": component.vb_name,
         "package_id": component.package_id,
         "disposition": component.disposition,
+        "encoding_decision": component.encoding_decision,
         "members": [
             _member_record(member)
             for member in sorted(component.members, key=_member_sort_key)
@@ -597,6 +602,7 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
         vb_name = component["vb_name"]
         component_type = component["component_type"]
         origin = component["origin"]
+        encoding_decision = component["encoding_decision"]
         if type(source_id) is not str or _STABLE_ID.fullmatch(source_id) is None:
             add("CATALOG_RECORD_INVALID", f"{path}/source_id", "source_id is invalid")
         else:
@@ -611,6 +617,15 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
             add("CATALOG_RECORD_INVALID", f"{path}/component_type", "component type is invalid")
         if type(origin) is not str or origin not in {"upstream", "new", "override", "shared", "generated"}:
             add("CATALOG_RECORD_INVALID", f"{path}/origin", "component origin is invalid")
+        if encoding_decision is not None and (
+            type(encoding_decision) is not str
+            or encoding_decision not in {"utf-8", "cp936"}
+        ):
+            add(
+                "CATALOG_RECORD_INVALID",
+                f"{path}/encoding_decision",
+                "component encoding decision is invalid",
+            )
         if component["disposition"] != "candidate":
             add("CATALOG_RECORD_INVALID", f"{path}/disposition", "only candidate components may be published")
         members = component["members"]
@@ -908,6 +923,7 @@ def _layout(
                         "staged_path": staged_path,
                         "raw_sha256": member.raw_sha256,
                         "role": member.role,
+                        "encoding_decision": component.encoding_decision,
                     }
                 )
         files[f"import-order/{package_id}.txt"] = (
@@ -1643,7 +1659,13 @@ def _verify_hash_manifest(
 def _verify_hash_receipt(
     files: Mapping[str, bytes], value: Any, diagnostics: list[Diagnostic]
 ) -> None:
-    if not isinstance(value, dict) or value.get("algorithm") != "sha256":
+    if (
+        type(value) is not dict
+        or set(value) != {"schema_version", "algorithm", "members"}
+        or value.get("schema_version") != 1
+        or type(value.get("schema_version")) is not int
+        or value.get("algorithm") != "sha256"
+    ):
         diagnostics.append(
             _verification_diagnostic(
                 "HASH_RECEIPT_MALFORMED",
@@ -1664,7 +1686,14 @@ def _verify_hash_receipt(
         return
     seen: set[str] = set()
     for index, record in enumerate(members):
-        if not isinstance(record, dict):
+        if type(record) is not dict or set(record) != {
+            "source_id",
+            "source_path",
+            "staged_path",
+            "raw_sha256",
+            "role",
+            "encoding_decision",
+        }:
             diagnostics.append(
                 _verification_diagnostic(
                     "HASH_RECEIPT_MALFORMED",
@@ -1675,7 +1704,18 @@ def _verify_hash_receipt(
             continue
         path = record.get("staged_path")
         digest = record.get("raw_sha256")
-        if not isinstance(path, str) or not isinstance(digest, str):
+        decision = record.get("encoding_decision")
+        if (
+            not isinstance(path, str)
+            or not isinstance(digest, str)
+            or (
+                decision is not None
+                and (
+                    type(decision) is not str
+                    or decision not in {"utf-8", "cp936"}
+                )
+            )
+        ):
             diagnostics.append(
                 _verification_diagnostic(
                     "HASH_RECEIPT_MALFORMED",
@@ -1790,6 +1830,7 @@ def _expected_catalog_graph(
             continue
         source_id = component.get("source_id")
         package_id = component.get("package_id")
+        encoding_decision = component.get("encoding_decision")
         members = component.get("members")
         if (
             component.get("disposition") != "candidate"
@@ -1859,6 +1900,7 @@ def _expected_catalog_graph(
                     "staged_path": staged_path,
                     "raw_sha256": raw_sha256,
                     "role": role,
+                    "encoding_decision": encoding_decision,
                 }
             )
 
@@ -2028,27 +2070,20 @@ def _verify_expected_graph(
                 )
 
 
-def _vba_text_variants(data: bytes) -> tuple[str, ...]:
-    """Return every strict text interpretation relevant to ASCII identities."""
-    if data.startswith(b"\xef\xbb\xbf"):
-        try:
-            return (data[3:].decode("utf-8", errors="strict"),)
-        except UnicodeDecodeError:
-            return ()
-    if data.isascii():
-        return (data.decode("ascii"),)
-
-    unique: dict[str, None] = {}
-    for encoding in ("utf-8", "cp936"):
-        try:
-            unique.setdefault(data.decode(encoding, errors="strict"), None)
-        except UnicodeDecodeError:
-            continue
-    return tuple(unique)
+def _vba_text_variants(
+    data: bytes, declared_encoding: str | None
+) -> tuple[str, ...]:
+    """Decode exactly the text identity bound into the catalog."""
+    try:
+        return (decode_vba(data, declared_encoding).text,)
+    except SourceError:
+        return ()
 
 
-def _parsed_vba_identity(data: bytes) -> tuple[str | None, tuple[str, ...], str | None]:
-    variants = _vba_text_variants(data)
+def _parsed_vba_identity(
+    data: bytes, declared_encoding: str | None
+) -> tuple[str | None, tuple[str, ...], str | None]:
+    variants = _vba_text_variants(data, declared_encoding)
     if not variants:
         return None, (), "source has no strict UTF-8/CP936 interpretation"
     names: list[str] = []
@@ -2160,7 +2195,9 @@ def _verify_component_identities(
         texts: tuple[str, ...] = ()
         if primary is not None:
             staged_path, data = primary
-            parsed_name, texts, parse_error = _parsed_vba_identity(data)
+            parsed_name, texts, parse_error = _parsed_vba_identity(
+                data, raw_component["encoding_decision"]
+            )
             if parse_error is not None:
                 _component_identity_diagnostic(
                     diagnostics,
@@ -2213,6 +2250,7 @@ def _verify_component_identities(
             members=tuple(members),
             package_id=package_id,
             disposition=raw_component["disposition"],
+            encoding_decision=raw_component["encoding_decision"],
         )
         domain_components.append(component)
         if component.origin is Origin.GENERATED:
@@ -2335,6 +2373,7 @@ def _verify_embedded_policy(
                 members=tuple(members),
                 package_id=raw_component["package_id"],
                 disposition=raw_component["disposition"],
+                encoding_decision=raw_component["encoding_decision"],
             )
         )
     policy = validate_catalog(
