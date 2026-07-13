@@ -553,6 +553,29 @@ def _udt_exposure_findings(
                 )
 
 
+def _module_scope_entrypoint_lines(
+    source: _SourceText, entrypoint_pattern: re.Pattern[str]
+) -> tuple[int, ...]:
+    lines: list[int] = []
+    procedure_depth = 0
+    for statement in _logical_statements(source.lines):
+        text = statement.text
+        if _PROCEDURE_END.fullmatch(text):
+            procedure_depth = max(0, procedure_depth - 1)
+            continue
+        if _PROCEDURE_START.match(text) is None:
+            continue
+
+        # A declaration starts its procedure after its own module-scope
+        # eligibility has been determined. Tracking depth (rather than a
+        # boolean) keeps malformed nested declarations contained until every
+        # corresponding End statement has been observed.
+        if procedure_depth == 0 and entrypoint_pattern.match(text) is not None:
+            lines.append(statement.line)
+        procedure_depth += 1
+    return tuple(lines)
+
+
 def _tool_binding_findings(
     catalog: ResolvedCatalog,
     sources: tuple[_SourceText, ...],
@@ -653,12 +676,9 @@ def _tool_binding_findings(
         variants = source_variants.get(id(component), [])
         variant_matches: list[tuple[int, ...]] = []
         for source in variants:
-            lines = tuple(
-                statement.line
-                for statement in _logical_statements(source.lines)
-                if entrypoint_pattern.match(statement.text) is not None
+            variant_matches.append(
+                _module_scope_entrypoint_lines(source, entrypoint_pattern)
             )
-            variant_matches.append(lines)
         if not variant_matches or any(
             len(lines) != 1 for lines in variant_matches
         ):

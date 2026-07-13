@@ -750,6 +750,65 @@ def test_valid_tool_may_bind_to_exact_public_function_entrypoint() -> None:
 
 
 @pytest.mark.parametrize(
+    "body",
+    [
+        (
+            "Public Sub Outer()\r\n"
+            "Public Sub Nested()\r\n"
+            "End Sub\r\n"
+            "Public Sub Run()\r\n"
+            "End Sub\r\n"
+            "End Sub\r\n"
+        ),
+        (
+            "Public Sub Outer(): Public Function Nested() As Variant: "
+            "End Function: Public Sub Run(): End Sub: End Sub\r\n"
+        ),
+    ],
+)
+def test_tool_entrypoint_nested_inside_a_procedure_is_not_module_scope(
+    body: str,
+) -> None:
+    module = _component(
+        "core.nested-entrypoint",
+        "standard_module",
+        "SafeModule",
+        _source(body),
+    )
+
+    report = validate_catalog(_catalog((module,), tools=(_tool(),)))
+
+    assert [item.code for item in report.diagnostics] == [
+        "TOOL_ENTRYPOINT_BINDING_INVALID"
+    ]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Public Sub Run()\r\nEnd Sub\r\n",
+        (
+            "Private Function Prepare() As Boolean\r\n"
+            "End Function\r\n"
+            "Public Sub Run()\r\n"
+            "End Sub\r\n"
+        ),
+    ],
+)
+def test_tool_entrypoint_module_scope_declarations_are_accepted(
+    body: str,
+) -> None:
+    module = _component(
+        "core.module-entrypoint",
+        "standard_module",
+        "SafeModule",
+        _source(body),
+    )
+
+    assert validate_catalog(_catalog((module,), tools=(_tool(),))).ok
+
+
+@pytest.mark.parametrize(
     ("tools", "expected_code", "expected_path"),
     [
         (
