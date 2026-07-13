@@ -315,6 +315,7 @@ git commit -m "feat: bind core target test cases"
 - Modify: `catvba_refactor/config/components.json`
 - Modify: `catvba_refactor/config/tools.json`
 - Modify: `catvba_refactor/tests/test_manifests.py`
+- Modify: `catvba_refactor/tests/test_core_runtime_sources.py`
 - Modify: `catvba_refactor/tests/test_end_to_end.py`
 - Modify: `Docs/PROJECT_STRUCTURE.md`
 
@@ -387,7 +388,7 @@ Both use required capabilities `[]`, risk `read-only`, explicit tooltip/group ca
 - [ ] **Step 4: Verify and commit manifest bindings**
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run pytest catvba_refactor/tests/test_manifests.py catvba_refactor/tests/test_inventory.py catvba_refactor/tests/test_resolver.py catvba_refactor/tests/test_policy.py catvba_refactor/tests/test_generator.py catvba_refactor/tests/test_end_to_end.py -q
+UV_CACHE_DIR=/tmp/uv-cache uv run pytest catvba_refactor/tests/test_manifests.py catvba_refactor/tests/test_inventory.py catvba_refactor/tests/test_resolver.py catvba_refactor/tests/test_policy.py catvba_refactor/tests/test_generator.py catvba_refactor/tests/test_core_runtime_sources.py catvba_refactor/tests/test_end_to_end.py -q
 git diff --check
 git add catvba_refactor/config/components.json catvba_refactor/config/tools.json catvba_refactor/tests/test_end_to_end.py Docs/PROJECT_STRUCTURE.md
 git commit -m "feat: bind core runtime candidates"
