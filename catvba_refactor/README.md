@@ -2,8 +2,8 @@
 
 本目录是 `codex/dev-review-report` 的唯一本地 CATVBA 恢复实现命名空间。
 
-离线 Build Kit 工具、manifest/schema 和 pytest 已实现。Runtime VBA 仍只有所有权边界；没有仓库级
-Build Kit、可信 CATVBA、CATIA Compile 或许可证证据。
+离线 Build Kit 工具、manifest/schema、pytest 和首个 Core Runtime MVP 已实现。已有仓库级源码 Kit、
+但没有返回 CATVBA、CATIA Compile、References、许可证 checkout 或运行证据。
 
 ## 所有权
 
@@ -15,9 +15,9 @@ Build Kit、可信 CATVBA、CATIA Compile 或许可证证据。
 ## 当前结构
 
 ```text
-vba/new/               本地新增完整 VBA 组件（后续计划）
-vba/overrides/         绑定上游基线的完整组件替代（后续计划）
-vba/shared_contracts/  经批准的小型跨包协议组件（后续计划）
+vba/new/               本地新增的 12 个完整 Core VBA 固定组件
+vba/overrides/         绑定上游基线的 Core Form `.frm/.frx` 完整替代
+vba/shared_contracts/  经批准的小型跨包协议组件（当前无生产 candidate）
 resources/             本地受管资源
 config/                project/components/packages/tools JSON manifests
 schemas/               对应四份严格 JSON Schema
@@ -35,9 +35,13 @@ dist/                   可再生归档，不入 Git
 uv sync --frozen
 uv run pytest -q
 uv run macro-menu-build --help
-uv run macro-menu-build check --worktree --format json
+uv run macro-menu-build inventory --format json
+uv run macro-menu-build check --format json
+uv run macro-menu-build build-kit --format json
 ```
 
-命令必须从仓库根项目运行。当前 clone 缺本地 `dev` ref，最后一条会返回基础设施退出码 4；这是明确的
-fail-closed 状态，不应以 `HEAD` 或自动写 `dev` 绕过。fixture 的 worktree check 会返回 0 且
-`formal_eligible=false`，但不会生成 Kit。
+命令必须从仓库根项目运行。当前固定证据提交 `2645033a` 生成
+`kit-134ecc68d131cdff743b`：16 个 component、2 个 tool，目录/ZIP verifier 均通过，双构建字节一致。
+该 Kit 只包含 Core 源码；`fleet-spa`/`fleet-fta` 是隔离的 package 政策记录，当前 import-order 为空。
+目标机要求至少一项 AB3/HD2/MD2，并额外具备 SPA 和 FTA；这些权益和隔离行为仍待 B28 证据。
+详细哈希、清单、命令和证据上限见 `Docs/STATUS.md`。

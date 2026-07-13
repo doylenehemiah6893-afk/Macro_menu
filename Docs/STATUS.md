@@ -34,12 +34,12 @@
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
-| 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、pytest；VBA Runtime 目录仍只有边界说明 |
+| 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 总架构和四份子规格已于 2026-07-13 获用户书面确认 |
-| 实施计划 | 离线 Build Kit 计划 Tasks 1–12 和首次 baseline intake 已实施；已批准 Core Runtime MVP 的实施计划是下一项 |
+| 实施计划 | 离线 Build Kit、baseline intake 和 Core Runtime MVP A 环境切片已实施 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | `uv run pytest -q`：414 passed；端到端 fixture 双构建得到相同 Kit/ZIP |
-| 当前仓库 CLI | `inventory/check` exit 0、`formal_eligible=true`、零获批 candidate；`build-kit` exit 3 `NO_BUILDABLE_COMPONENTS`，未生成 Kit |
+| 离线测试 | 证据提交 `2645033a25e770fe9855b67e05bdefce42bc1c6a`：`uv run pytest -q` 为 589 passed |
+| 当前仓库 CLI | `inventory` 发现 90 个：13 个获批固定 candidate + 77 个 quarantine；`check`/Kit catalog 由 generator 加入 3 个组件后为 16 个 component、2 个 tool |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
 ## 3. 遗留证据
@@ -64,8 +64,8 @@
 
 | Gate | 状态 | 原因 |
 |---|---|---|
-| G0 INPUT-FROZEN | `NOT_RUN` | baseline 已接受，但尚无获批 Core candidate bindings，未生成仓库输入冻结 receipt |
-| G1 KIT-READY | `NOT_RUN` | 无仓库 Kit；仓库 manifest 尚无获批 Core component/tool |
+| G0 INPUT-FROZEN | `PASS` | 证据绑定 Git `2645033a25e770fe9855b67e05bdefce42bc1c6a`、tree `0b283db266ad7fd7ddcbaec992cea2f273f52032`；源码/manifest/blob/SHA 闭合 |
+| G1 KIT-READY | `PASS` | 两次独立构建字节一致，两目录+两 ZIP 均通过 `verify-kit`；仅表示 A 环境离线 Kit 就绪 |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -73,19 +73,87 @@
 | G6 SECURITY-PILOT-READY | `BLOCKED` | 缺回传审计、安全包装、试点和回滚 |
 | G7 RELEASE-APPROVED | `BLOCKED` | 缺全部上游门和正式审批 |
 
-fixture PASS、目录或文档存在都不表示仓库 Gate 通过。
+此处 G0/G1 `PASS` 仅由固定 Git 输入、生成收据和可复算的离线 Kit 支撑。它们不是 CATIA
+Compile、References、许可证 checkout、UI 或运行通过。
 
-## 6. A 环境验证记录
+## 6. A 环境 Core Kit 证据
+
+本记录精确绑定源/证据提交
+`2645033a25e770fe9855b67e05bdefce42bc1c6a`，而不是后续只更改文档的提交。该提交 tree 为
+`0b283db266ad7fd7ddcbaec992cea2f273f52032`。构建输出位于临时目录，不进入 Git。
+
+### 6.1 结果与身份
+
+| 项目 | 结果 |
+|---|---|
+| `uv sync --frozen` | PASS，22 packages audited |
+| `uv run pytest -q` | 589 passed，19 条第三方 deprecation warnings |
+| `inventory --format json` | `ok=true`、`formal_eligible=true`；90 个 discovered = 13 个获批固定 candidate + 77 个 quarantine；零 diagnostics |
+| `check --format json` | `ok=true`、`formal_eligible=true`；13 个固定 candidate + 3 个 generated = `component_count=16`；2 个 tool；零 diagnostics |
+| Kit ID | `kit-134ecc68d131cdff743b` |
+| catalog SHA-256 | `134ecc68d131cdff743b221a878e2666b88b8353d17f128da6b5705455ccacfe` |
+| manifest SHA-256 | `645f9e5d2a9c6069651fd12cfae95c941a23d35765e7f53b89c6acf3b9d26442` |
+| manifest digest | `74b31cec68b7a268eeaeb4d2c08ac9fe7c875740a1bf06a589cd85b8621709f9` |
+| ZIP SHA-256 | `e6ec490827dd78c4e9e0e83650591a7f46d71892160c1da4284b0e80501a54c7` |
+| 确定性 | 双构建的 Kit ID、catalog bytes、manifest SHA、ZIP SHA 和 ZIP bytes 全部相同 |
+| verifier | 构建 1 目录/ZIP、构建 2 目录/ZIP：4/4 `ok=true`、零 diagnostics |
+
+### 6.2 精确内容
+
+manifest 精确批准 13 个固定 candidate component 和 2 个 tool；generator 再加入 3 个确定生成
+component，因而 checked/built catalog 共 16 个 component。Form 是一个 component，
+但以相邻 `.frm/.frx` 两个文件 staging，因此 `packages/core/source/` 共 17 个文件成员。
+
+- 固定：`C_MMButtonHandler`、`C_MMContext`、`C_MMResult`、`C_MMStateGuard`、
+  `Cat_Macro_Menu_View`、`MM_DocumentSummary`、`MM_Entry`、`MM_Error`、`MM_HealthCheck`、
+  `MM_Log`、`MM_MenuPresenter`、`MM_Protocol`、`MM_TryGet`；
+- 生成：`MM_BuildInfo`、`MM_Dispatch`、`MM_MenuCatalog`；
+- 工具：`core.healthcheck` → `MM_HealthCheck.RunHealthCheck`，
+  `core.document-summary` → `MM_DocumentSummary.RunDocumentSummary`；两者均为 `read-only`，
+  `required_capabilities=[]`。
+
+Core staging 不含上游 legacy、第二回合、Fleet、Optional、Office、VBIDE、网络、`Shell`、SPA 或 FTA
+component。Catalog 保留物理隔离的 `fleet-spa`/`fleet-fta` package 政策记录，但它们的 import-order
+为空且没有扩展 component 进入 Core Kit。
+
+### 6.3 实际命令与临时路径
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv sync --frozen
+UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q
+UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build inventory --format json | tee /tmp/macro-menu-core-2645033-inventory.json
+UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build check --format json | tee /tmp/macro-menu-core-2645033-check.json
+UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build --output-root /tmp/macro-menu-core-2645033-build-1.1dbCf7 build-kit --format json | tee /tmp/macro-menu-core-2645033-receipt-1.l4tLEB.json
+UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build --output-root /tmp/macro-menu-core-2645033-build-2.UYfGUJ build-kit --format json | tee /tmp/macro-menu-core-2645033-receipt-2.X2CkWj.json
+UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build verify-kit /tmp/macro-menu-core-2645033-build-1.1dbCf7/kit-134ecc68d131cdff743b --format json
+UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build verify-kit /tmp/macro-menu-core-2645033-build-1.1dbCf7/kit-134ecc68d131cdff743b.zip --format json
+UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build verify-kit /tmp/macro-menu-core-2645033-build-2.UYfGUJ/kit-134ecc68d131cdff743b --format json
+UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build verify-kit /tmp/macro-menu-core-2645033-build-2.UYfGUJ/kit-134ecc68d131cdff743b.zip --format json
+```
+
+原始 JSON 收据临时写入
+`/tmp/macro-menu-core-2645033-receipt-1.l4tLEB.json` 和
+`/tmp/macro-menu-core-2645033-receipt-2.X2CkWj.json`。另行用 `cmp --silent`/`jq -er` 比较上述五项
+确定性身份，均 exit 0。
+
+### 6.4 证据上限
+
+target-test-plan 共 30 个 case，全部 `status=not-run`；`compile_status=not-run`、
+`target_build_required=true`、`release_eligible=false`。本工作区没有 CATIA，因此不得从静态 VBA 源码、
+Python PASS 或已验证 Kit 推导 CATIA Compile、References、许可证、UI、运行或发布结论。目标资格
+仍是 `(AB3 OR HD2 OR MD2) AND SPA AND FTA`；SPA/FTA 保持与 Core 物理隔离，其失败隔离证据尚未执行。
+
+## 7. 已完成的早期 A 环境验证
 
 | 检查 | 2026-07-13 结果 | 结论边界 |
 |---|---|---|
 | `uv sync --frozen` | PASS | 根项目/lock 可复现；不是 CATIA 环境验证 |
-| `uv run pytest -q` | 414 passed | Python、政策、intake、审计和打包逻辑通过 |
+| `uv run pytest -q` | 当时 414 passed | Python、政策、intake、审计和打包逻辑的早期基线 |
 | `test_end_to_end.py` | PASS | 临时 Git 仓库双构建的 kit ID、catalog、SHA256SUMS、ZIP bytes/hash 相同；目录/ZIP 均通过 verifier |
 | fixture dirty candidate | exit 3，错误 JSON 写入 stderr；无 Kit/输出目录 | governed tree 漂移失败关闭 |
 | fixture worktree check | exit 0，`formal_eligible=false` | 只作诊断，不产生 Kit |
-| 当前 clone `inventory/check` | exit 0，`formal_eligible=true`，77 个上游组件、零获批 candidate component/tool | accepted baseline 可复现；不把零 candidate 升级为 G0/G1 |
-| 当前 clone `build-kit` | exit 3，`NO_BUILDABLE_COMPONENTS`；无 Kit/输出目录 | 失败关闭，不生成空或伪造 Kit |
+| 早期 clone `inventory/check` | exit 0，`formal_eligible=true`，77 个上游组件、零获批 candidate component/tool | accepted baseline 可复现；当时不能升级 G0/G1 |
+| 早期 clone `build-kit` | exit 3，`NO_BUILDABLE_COMPONENTS`；无 Kit/输出目录 | 当时的失败关闭证据，已由第 6 节真实 Core Kit 证据取代 |
 
 首次 baseline intake 已分别只读查询 fork 与上游 `dev`，两者均指向
 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；严格 record 已提交，本地 `refs/heads/dev` 仅在所有
@@ -93,12 +161,13 @@ fixture PASS、目录或文档存在都不表示仓库 Gate 通过。
 `main/dev`。上述测试未启动 CATIA、未写 CATVBA、未证明 References/API/许可证/UI；始终保持
 `compile_status=not-run`、`release_eligible=false`。
 
-## 7. 当前下一动作
+## 8. 当前下一动作
 
-Core Runtime MVP 规格已经批准；下一步编写其日期化实施计划，再按 TDD 实现审定组件和工具、写入
-manifest 并重新执行 G0/G1。不得用 fixture、空包、零 candidate 或 `HEAD` 回退升级仓库状态。
+Core Runtime MVP A 环境切片已到 G1。下一步是在受控 B28 空白工程执行 G2/G3：环境声明、
+References 证据、按 import-order 导入、Compile、保存、关闭/重启并回传审计制品。不得在无 CATIA
+的本工作区将这些步骤标记为完成。
 
-## 8. 外部阻塞
+## 9. 外部阻塞
 
 - 正式 Windows、R2018 SP/HF、DS VBA/VBE；
 - P-AB3/P-HD2/P-MD2 精确 DSLS entitlement 和隔离方式；

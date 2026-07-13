@@ -8,7 +8,8 @@
 
 本分支正在把原有单体 CATVBA 恢复为源码优先、可离线审查、可在 CATIA V5-6R2018（R28/B28）和
 VBA7 64 位目标机从空白工程重建与现场调试的交付体系。A 环境离线 Build Kit 引擎、CLI、严格
-manifest/schema、只读 CATVBA 审计和 pytest fixture 已实现；Core Runtime 源码与目标机证据仍未实现。
+manifest/schema、只读 CATVBA 审计和 Core Runtime MVP 已实现。证据提交 `2645033a` 的真实
+Core Kit 已完成双构建、四路 verifier 和字节确定性校验；目标机 Compile/运行证据仍未实现。
 
 ## 当前目标环境
 
@@ -40,7 +41,7 @@ Eligible license = (AB3 OR HD2 OR MD2) AND SPA AND FTA
 | fork `codex/dev-review-report` | 唯一重构写分支 |
 | 根 `pyproject.toml/uv.lock/.python-version` | 唯一 Python 项目与依赖真源 |
 | `Src/`、`resources/` | intake-only 上游镜像 |
-| `catvba_refactor/` | 本地离线工具、配置、schema、测试和未来 VBA overlay 的实现命名空间 |
+| `catvba_refactor/` | 本地离线工具、配置、schema、测试和 VBA overlay 实现命名空间 |
 | 根目录两个 `.catvba` | legacy evidence only |
 | `LicenseReset.catvbs` | quarantine |
 | `ref_project/`、`DrawFunc/`、`artifacts/` | reference/history，release=false |
@@ -62,7 +63,9 @@ uv run macro-menu-build audit-catvba <returned.catvba> --expect <kit-manifest.js
 uv run pytest -q
 ```
 
-当前仓库的 `components.json` 和 `tools.json` 没有获批 candidate，因此没有仓库级 Build Kit，G1 仍为
-`NOT_RUN`。本工作区 clone 也没有本地 `dev` ref；需要该 ref 的 `check/build-kit` 会按设计返回 Git
-基础设施退出码 4，绝不回退到 `HEAD` 或写 fork `main/dev`。临时 Git fixture 已验证 candidate 双构建、
-目录/ZIP 校验和 dirty/worktree 失败关闭；这只是 Python 离线证据，不是 CATIA Compile 或许可证证据。
+当前 manifest 精确批准 13 个固定 Core candidate component 和两个首回合只读工具：
+`core.healthcheck` 与 `core.document-summary`。Generator 加入 3 个确定生成 component，所以 checked/built
+catalog 为 16 个 component、2 个 tool。证据 Kit 为 `kit-134ecc68d131cdff743b`，ZIP SHA-256 为
+`e6ec490827dd78c4e9e0e83650591a7f46d71892160c1da4284b0e80501a54c7`；完整命令、清单和边界见
+[Docs/STATUS.md](Docs/STATUS.md)。G0/G1 已有 A 环境 `PASS` 证据，但 `compile_status=not-run`、
+`release_eligible=false`，30 个目标 case 全部 `not-run`；G2–G7 仍 `BLOCKED`。
