@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import io
 import json
+import ctypes
+import errno
+import math
 import os
 import re
 import shutil
@@ -12,7 +14,6 @@ import unicodedata
 import uuid
 import zipfile
 from collections import Counter
-from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -64,20 +65,104 @@ _JSON_FILES = {
 _HASH_LINE = re.compile(r"^([0-9a-f]{64})  (.+)$")
 _SIDECAR_LINE = re.compile(r"^([0-9a-f]{64})  ([^/\\]+\.zip)\n$")
 _MEMBER_ROLE_ORDER = {"frm": 0, "frx": 1, "source": 2}
+_STABLE_ID = re.compile(r"^[a-z][a-z0-9._-]{2,63}$")
+_VBA_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
+_OID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_TOOL_VERSION = re.compile(
+    r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
+_WINDOWS_INVALID = frozenset('<>:"|?*')
+_PACKAGE_FIELDS = frozenset(
+    {"package_id", "classification", "additional_deny_tokens", "reference_allowlist"}
+)
+_PACKAGE_CLASSIFICATIONS = frozenset(
+    {
+        "CORE_CANDIDATE",
+        "FLEET_EXTENSION_SPA",
+        "FLEET_EXTENSION_FTA",
+        "BASELINE_EXTENSION_CANDIDATE",
+        "CATIA_LICENSED_OPTIONAL_CANDIDATE",
+        "EXTERNAL_INTEGRATION_OPTIONAL",
+        "DEVTOOLS",
+        "QUARANTINE",
+    }
+)
+_TOOL_FIELDS = frozenset(
+    {
+        "tool_id",
+        "caption",
+        "group_id",
+        "package_id",
+        "module_name",
+        "entrypoint",
+        "document_types",
+        "required_capabilities",
+        "risk_level",
+    }
+)
+_SNAPSHOT_FIELDS = frozenset(
+    {
+        "mode",
+        "upstream_commit",
+        "fork_dev_commit",
+        "work_commit",
+        "work_tree",
+        "manifest_digest",
+        "tool_version",
+        "formal_eligible",
+    }
+)
+_COMPONENT_FIELDS = frozenset(
+    {
+        "source_id",
+        "origin",
+        "component_type",
+        "vb_name",
+        "package_id",
+        "disposition",
+        "members",
+    }
+)
+_MEMBER_FIELDS = frozenset({"path", "blob_oid", "raw_sha256", "role"})
+_POLICY_FIELDS = frozenset({"compile_status", "diagnostics"})
 
 
 def _json_safe(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, dict):
-        return {str(key): _json_safe(nested) for key, nested in value.items()}
-    if isinstance(value, (tuple, list)):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, set):
-        return sorted((_json_safe(item) for item in value), key=repr)
-    if value is None or isinstance(value, (str, int, float, bool)):
+    """Return an exact JSON value or fail closed.
+
+    Catalog identity must never depend on Python repr(), implicit key coercion,
+    filesystem objects, or extension types.  Exact built-in JSON types are the
+    only accepted boundary values.
+    """
+    if value is None or type(value) in {str, bool, int}:
         return value
-    return repr(value)
+    if type(value) is float:
+        if math.isfinite(value):
+            return value
+        raise _source_error("CATALOG_RECORD_INVALID", "non-finite number")
+    if type(value) is list:
+        return [_json_safe(item) for item in value]
+    if type(value) is dict:
+        if any(type(key) is not str for key in value):
+            raise _source_error("CATALOG_RECORD_INVALID", "non-string JSON key")
+        return {key: _json_safe(nested) for key, nested in value.items()}
+    raise _source_error(
+        "CATALOG_RECORD_INVALID", f"unsupported JSON type {type(value).__name__}"
+    )
+
+
+def _diagnostic_json(value: Any) -> Any:
+    """Normalize code-owned diagnostic detail without repr-based ordering."""
+    if isinstance(value, tuple):
+        return [_diagnostic_json(item) for item in value]
+    if isinstance(value, set):
+        values = [_diagnostic_json(item) for item in value]
+        return sorted(values, key=canonical_json_bytes)
+    try:
+        return _json_safe(value)
+    except SourceError:
+        return {"unsupported_type": type(value).__name__}
 
 
 def _diagnostic_record(diagnostic: Diagnostic) -> dict[str, Any]:
@@ -87,7 +172,7 @@ def _diagnostic_record(diagnostic: Diagnostic) -> dict[str, Any]:
         "path": diagnostic.path,
     }
     if diagnostic.details:
-        record["details"] = _json_safe(diagnostic.details)
+        record["details"] = _diagnostic_json(diagnostic.details)
     return record
 
 
@@ -217,13 +302,8 @@ def assemble_catalog(
 def _snapshot_record(snapshot: InputSnapshot) -> dict[str, Any]:
     return {
         "mode": snapshot.mode.value,
-        "upstream_repository": snapshot.upstream_repository,
-        "upstream_ref": snapshot.upstream_ref,
         "upstream_commit": snapshot.upstream_commit,
-        "fork_repository": snapshot.fork_repository,
         "fork_dev_commit": snapshot.fork_dev_commit,
-        "work_repository": snapshot.work_repository,
-        "work_branch": snapshot.work_branch,
         "work_commit": snapshot.work_commit,
         "work_tree": snapshot.work_tree,
         "manifest_digest": snapshot.manifest_digest,
@@ -311,6 +391,296 @@ def _infrastructure_error(
     return error
 
 
+def _looks_pathlike(value: str) -> bool:
+    return (
+        value.startswith(("/", "\\"))
+        or re.match(r"^[A-Za-z]:", value) is not None
+    )
+
+
+def _has_control(value: str) -> bool:
+    return any(ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F for character in value)
+
+
+def _strict_path_code(path: Any) -> str | None:
+    if type(path) is not str or not path:
+        return "PATH_EMPTY"
+    if path.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", path):
+        return "PATH_ABSOLUTE"
+    if "\\" in path:
+        return "PATH_BACKSLASH"
+    if any(character in _WINDOWS_INVALID for character in path):
+        return "PATH_INVALID_CHARACTER"
+    if _has_control(path):
+        return "PATH_INVALID_CHARACTER"
+    try:
+        path.encode("utf-8", errors="strict")
+    except UnicodeEncodeError:
+        return "PATH_INVALID_UTF8"
+    return None
+
+
+def _record_keys_error(
+    value: Any, allowed: frozenset[str], required: frozenset[str]
+) -> str | None:
+    if type(value) is not dict:
+        return "record is not an exact JSON object"
+    keys = set(value)
+    if any(type(key) is not str for key in value):
+        return "record contains a non-string key"
+    missing = sorted(required - keys)
+    extra = sorted(keys - allowed)
+    if missing:
+        return f"missing fields: {','.join(missing)}"
+    if extra:
+        return f"unknown fields: {','.join(extra)}"
+    return None
+
+
+def _string_list_error(value: Any, *, nonempty: bool = False) -> str | None:
+    if type(value) is not list or (nonempty and not value):
+        return "field must be a JSON array with the required entries"
+    if any(type(item) is not str or not item or _has_control(item) for item in value):
+        return "array entries must be non-empty controlled strings"
+    if any(_looks_pathlike(item) for item in value):
+        return "non-path field contains an absolute/drive/UNC-looking value"
+    if len(value) != len(set(value)):
+        return "array entries must be unique"
+    return None
+
+
+def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
+    """Validate the immutable catalog boundary shared by creator and verifier."""
+    findings: list[tuple[str, str, str]] = []
+
+    def add(code: str, path: str, message: str) -> None:
+        findings.append((code, path, message))
+
+    try:
+        _json_safe(value)
+    except SourceError as error:
+        add("CATALOG_RECORD_INVALID", "catalog.json", str(error))
+        return findings
+
+    top_fields = frozenset(
+        {"schema_version", "snapshot", "components", "packages", "tools", "policy_evidence"}
+    )
+    error = _record_keys_error(value, top_fields, top_fields)
+    if error is not None:
+        add("CATALOG_RECORD_INVALID", "catalog.json", error)
+        return findings
+    if value["schema_version"] != 1 or type(value["schema_version"]) is not int:
+        add("CATALOG_RECORD_INVALID", "catalog.json#/schema_version", "schema_version must be integer 1")
+
+    snapshot = value["snapshot"]
+    error = _record_keys_error(snapshot, _SNAPSHOT_FIELDS, _SNAPSHOT_FIELDS)
+    if error is not None:
+        add("CATALOG_RECORD_INVALID", "catalog.json#/snapshot", error)
+    else:
+        if snapshot["mode"] != "candidate":
+            add("CATALOG_RECORD_INVALID", "catalog.json#/snapshot/mode", "snapshot mode must be candidate")
+        if snapshot["formal_eligible"] is not True:
+            add("CATALOG_RECORD_INVALID", "catalog.json#/snapshot/formal_eligible", "snapshot must be formally eligible")
+        for field in ("upstream_commit", "fork_dev_commit", "work_commit", "work_tree"):
+            field_value = snapshot[field]
+            if type(field_value) is not str or _OID.fullmatch(field_value) is None:
+                add("CATALOG_RECORD_INVALID", f"catalog.json#/snapshot/{field}", "snapshot Git object ID is invalid")
+        digest = snapshot["manifest_digest"]
+        if type(digest) is not str or _DIGEST.fullmatch(digest) is None:
+            add("CATALOG_RECORD_INVALID", "catalog.json#/snapshot/manifest_digest", "manifest digest is invalid")
+        version = snapshot["tool_version"]
+        if type(version) is not str or _TOOL_VERSION.fullmatch(version) is None:
+            add("CATALOG_RECORD_INVALID", "catalog.json#/snapshot/tool_version", "tool version is invalid")
+
+    packages = value["packages"]
+    package_ids: list[str] = []
+    if type(packages) is not list or not packages:
+        add("CATALOG_RECORD_INVALID", "catalog.json#/packages", "catalog requires packages")
+        packages = []
+    for index, package in enumerate(packages):
+        path = f"catalog.json#/packages/{index}"
+        error = _record_keys_error(
+            package, _PACKAGE_FIELDS, frozenset({"package_id", "classification"})
+        )
+        if error is not None:
+            add("CATALOG_RECORD_INVALID", path, error)
+            continue
+        package_id = package["package_id"]
+        if type(package_id) is not str or _STABLE_ID.fullmatch(package_id) is None:
+            add("CATALOG_RECORD_INVALID", f"{path}/package_id", "package_id is invalid")
+        else:
+            package_ids.append(package_id)
+        classification = package["classification"]
+        if type(classification) is not str or classification not in _PACKAGE_CLASSIFICATIONS:
+            add("CATALOG_RECORD_INVALID", f"{path}/classification", "package classification is invalid")
+        for field in ("additional_deny_tokens", "reference_allowlist"):
+            if field in package:
+                list_error = _string_list_error(package[field])
+                if list_error is not None:
+                    add("CATALOG_RECORD_INVALID", f"{path}/{field}", list_error)
+    if package_ids != sorted(package_ids) or len(package_ids) != len(set(package_ids)):
+        add("CATALOG_RECORD_INVALID", "catalog.json#/packages", "package IDs must be unique and sorted")
+    package_id_set = set(package_ids)
+
+    components = value["components"]
+    source_ids: list[str] = []
+    component_bindings: list[tuple[str, str, str]] = []
+    output_paths: list[str] = []
+    if type(components) is not list or not components:
+        add("CATALOG_RECORD_INVALID", "catalog.json#/components", "catalog requires a non-empty component array")
+        components = []
+    for index, component in enumerate(components):
+        path = f"catalog.json#/components/{index}"
+        error = _record_keys_error(component, _COMPONENT_FIELDS, _COMPONENT_FIELDS)
+        if error is not None:
+            add("CATALOG_RECORD_INVALID", path, error)
+            continue
+        source_id = component["source_id"]
+        package_id = component["package_id"]
+        vb_name = component["vb_name"]
+        component_type = component["component_type"]
+        origin = component["origin"]
+        if type(source_id) is not str or _STABLE_ID.fullmatch(source_id) is None:
+            add("CATALOG_RECORD_INVALID", f"{path}/source_id", "source_id is invalid")
+        else:
+            source_ids.append(source_id)
+        if type(package_id) is not str or _STABLE_ID.fullmatch(package_id) is None:
+            add("CATALOG_RECORD_INVALID", f"{path}/package_id", "package_id is invalid")
+        elif package_id not in package_id_set:
+            add("CATALOG_RECORD_INVALID", f"{path}/package_id", "component package is unknown")
+        if type(vb_name) is not str or _VBA_NAME.fullmatch(vb_name) is None:
+            add("CATALOG_RECORD_INVALID", f"{path}/vb_name", "VBA component name is invalid")
+        if type(component_type) is not str or component_type not in {"standard_module", "class_module", "user_form"}:
+            add("CATALOG_RECORD_INVALID", f"{path}/component_type", "component type is invalid")
+        if type(origin) is not str or origin not in {"upstream", "new", "override", "shared", "generated"}:
+            add("CATALOG_RECORD_INVALID", f"{path}/origin", "component origin is invalid")
+        if component["disposition"] != "candidate":
+            add("CATALOG_RECORD_INVALID", f"{path}/disposition", "only candidate components may be published")
+        members = component["members"]
+        if type(members) is not list or not members:
+            add("CATALOG_RECORD_INVALID", f"{path}/members", "component requires members")
+            members = []
+        roles: list[str] = []
+        form_stems: list[str] = []
+        for member_index, member in enumerate(members):
+            member_path = f"{path}/members/{member_index}"
+            error = _record_keys_error(member, _MEMBER_FIELDS, _MEMBER_FIELDS)
+            if error is not None:
+                add("CATALOG_RECORD_INVALID", member_path, error)
+                continue
+            source_path = member["path"]
+            role = member["role"]
+            raw_sha256 = member["raw_sha256"]
+            blob_oid = member["blob_oid"]
+            path_code = _strict_path_code(source_path)
+            if path_code is not None:
+                add(path_code, f"{member_path}/path", "source member path is not portable")
+            elif (
+                type(source_path) is str
+                and unicodedata.normalize("NFC", source_path) != source_path
+            ):
+                add(
+                    "PATH_NOT_NFC",
+                    f"{member_path}/path",
+                    "source member path must be NFC normalized",
+                )
+            elif type(source_path) is str and validate_portable_paths((source_path,)).diagnostics:
+                finding = validate_portable_paths((source_path,)).diagnostics[0]
+                add(finding.code, f"{member_path}/path", finding.message)
+            if type(raw_sha256) is not str or _DIGEST.fullmatch(raw_sha256) is None:
+                add("CATALOG_RECORD_INVALID", f"{member_path}/raw_sha256", "source digest is invalid")
+            if blob_oid is None:
+                if origin != "generated":
+                    add("CATALOG_RECORD_INVALID", f"{member_path}/blob_oid", "only generated sources may omit a Git blob ID")
+            elif type(blob_oid) is not str or _OID.fullmatch(blob_oid) is None:
+                add("CATALOG_RECORD_INVALID", f"{member_path}/blob_oid", "Git blob ID is invalid")
+            if type(role) is not str or role not in {"source", "frm", "frx"}:
+                add("CATALOG_RECORD_INVALID", f"{member_path}/role", "member role is invalid")
+            else:
+                roles.append(role)
+            if type(source_path) is str and type(package_id) is str:
+                normalized_name = unicodedata.normalize(
+                    "NFC", PurePosixPath(source_path).name
+                )
+                suffix = PurePosixPath(normalized_name).suffix.casefold()
+                output_paths.append(f"packages/{package_id}/source/{normalized_name}")
+                if role == "frm" and suffix == ".frm":
+                    form_stems.append(PurePosixPath(normalized_name).stem)
+                elif role == "frx" and suffix == ".frx":
+                    form_stems.append(PurePosixPath(normalized_name).stem)
+                elif role == "source":
+                    expected_suffix = ".bas" if component_type == "standard_module" else ".cls"
+                    if component_type == "user_form" or suffix != expected_suffix:
+                        add("CATALOG_RECORD_INVALID", f"{member_path}/path", "member extension does not match component type")
+                else:
+                    add("FORM_BINDING_INVALID", member_path, "Form roles require matching .frm/.frx files")
+        if component_type == "user_form":
+            if roles != ["frm", "frx"] or len(form_stems) != 2 or len(set(form_stems)) != 1:
+                add("FORM_BINDING_INVALID", f"{path}/members", "user form requires adjacent frm/frx members with the same NFC stem")
+        elif roles != ["source"]:
+            add("CATALOG_RECORD_INVALID", f"{path}/members", "module requires exactly one source member")
+        if type(package_id) is str and type(vb_name) is str and type(component_type) is str:
+            component_bindings.append((package_id, vb_name, component_type))
+    if len(source_ids) != len(set(source_ids)):
+        add("CATALOG_RECORD_INVALID", "catalog.json#/components", "source IDs must be unique")
+
+    path_report = validate_portable_paths(output_paths)
+    for finding in path_report.diagnostics:
+        add(finding.code, finding.path, finding.message)
+    for output_path in output_paths:
+        path_code = _strict_path_code(output_path)
+        if path_code is not None:
+            add(path_code, output_path, "staged source path is not portable")
+
+    tools = value["tools"]
+    tool_ids: list[str] = []
+    if type(tools) is not list:
+        add("CATALOG_RECORD_INVALID", "catalog.json#/tools", "tools must be an array")
+        tools = []
+    for index, tool in enumerate(tools):
+        path = f"catalog.json#/tools/{index}"
+        error = _record_keys_error(tool, _TOOL_FIELDS, _TOOL_FIELDS)
+        if error is not None:
+            add("CATALOG_RECORD_INVALID", path, error)
+            continue
+        for field in ("tool_id", "group_id", "package_id"):
+            field_value = tool[field]
+            if type(field_value) is not str or _STABLE_ID.fullmatch(field_value) is None:
+                add("CATALOG_RECORD_INVALID", f"{path}/{field}", f"{field} is invalid")
+        if type(tool["tool_id"]) is str:
+            tool_ids.append(tool["tool_id"])
+        for field in ("module_name", "entrypoint"):
+            field_value = tool[field]
+            if type(field_value) is not str or _VBA_NAME.fullmatch(field_value) is None:
+                add("CATALOG_RECORD_INVALID", f"{path}/{field}", f"{field} is not a legal VBA name")
+        for field in ("caption", "risk_level"):
+            field_value = tool[field]
+            if type(field_value) is not str or not field_value or _has_control(field_value) or _looks_pathlike(field_value):
+                add("CATALOG_RECORD_INVALID", f"{path}/{field}", f"{field} is invalid or path-looking")
+        for field, nonempty in (("document_types", True), ("required_capabilities", False)):
+            list_error = _string_list_error(tool[field], nonempty=nonempty)
+            if list_error is not None:
+                add("CATALOG_RECORD_INVALID", f"{path}/{field}", list_error)
+        package_id = tool["package_id"]
+        binding = (package_id, tool["module_name"], "standard_module")
+        if (
+            type(package_id) is not str
+            or package_id not in package_id_set
+            or component_bindings.count(binding) != 1
+        ):
+            add("CATALOG_RECORD_INVALID", f"{path}/module_name", "tool must bind one standard module in its package")
+    if tool_ids != sorted(tool_ids) or len(tool_ids) != len(set(tool_ids)):
+        add("CATALOG_RECORD_INVALID", "catalog.json#/tools", "tool IDs must be unique and sorted")
+
+    policy = value["policy_evidence"]
+    error = _record_keys_error(policy, _POLICY_FIELDS, _POLICY_FIELDS)
+    if error is not None:
+        add("CATALOG_RECORD_INVALID", "catalog.json#/policy_evidence", error)
+    elif policy != {"compile_status": "not-run", "diagnostics": []}:
+        add("CATALOG_RECORD_INVALID", "catalog.json#/policy_evidence", "published static policy evidence must remain not-run and clean")
+    return findings
+
+
 def _package_ids(catalog: ResolvedCatalog) -> tuple[str, ...]:
     return tuple(sorted(
         record["package_id"]
@@ -321,7 +691,9 @@ def _package_ids(catalog: ResolvedCatalog) -> tuple[str, ...]:
 
 def _output_member_path(component: Component, member: SourceMember) -> str:
     assert component.package_id is not None
-    source_name = PurePosixPath(member.path.replace("\\", "/")).name
+    source_name = unicodedata.normalize(
+        "NFC", PurePosixPath(member.path.replace("\\", "/")).name
+    )
     return f"packages/{component.package_id}/source/{source_name}"
 
 
@@ -338,42 +710,52 @@ def _preflight(catalog: ResolvedCatalog) -> tuple[dict[str, Any], bytes, str]:
     if not catalog.components:
         raise _source_error("NO_BUILDABLE_COMPONENTS")
 
-    package_ids = _package_ids(catalog)
-    if len(package_ids) != len(set(package_ids)):
-        raise _source_error("DUPLICATE_PACKAGE_ID")
-
-    member_paths: list[str] = []
-    output_paths: list[str] = []
+    # Authenticate exact source bytes and the hard CATVBA exclusion before
+    # deriving any identity or reporting secondary structural findings.
     for component in catalog.components:
-        if (
-            component.disposition != "candidate"
-            or component.origin is Origin.QUARANTINE
-        ):
-            raise _source_error("NON_CANDIDATE_COMPONENT", component.source_id)
-        if component.package_id not in package_ids:
-            raise _source_error("PACKAGE_BINDING_INVALID", component.source_id)
-        if not component.members:
-            raise _source_error("EMPTY_COMPONENT", component.source_id)
         for member in component.members:
+            if type(member.path) is str and _is_catvba_path(member.path):
+                raise _source_error("CATVBA_FORBIDDEN", member.path)
+            if type(member.data) is not bytes:
+                raise _source_error("CATALOG_RECORD_INVALID", "source data must be exact bytes")
             if sha256_bytes(member.data) != member.raw_sha256:
                 raise _source_error("SOURCE_HASH_MISMATCH", member.path)
-            if _is_catvba_path(member.path):
-                raise _source_error("CATVBA_FORBIDDEN", member.path)
-            member_paths.append(member.path)
-            output_paths.append(_output_member_path(component, member))
 
-    path_report = validate_portable_paths((*package_ids, *member_paths))
-    if path_report.diagnostics:
-        finding = path_report.diagnostics[0]
-        raise _source_error(finding.code, finding.path)
-    output_report = validate_portable_paths(output_paths)
-    if output_report.diagnostics:
-        finding = output_report.diagnostics[0]
-        raise _source_error(finding.code, finding.path)
-    if any(_is_catvba_path(path) for path in output_paths):
-        raise _source_error("CATVBA_FORBIDDEN")
+    try:
+        identity = _identity_payload(catalog)
+    except (TypeError, ValueError) as error:
+        raise _source_error(
+            "CATALOG_RECORD_INVALID", type(error).__name__
+        ) from error
+    validation_errors = _catalog_document_errors(identity)
+    if validation_errors:
+        code, path, message = next(
+            (
+                finding
+                for finding in validation_errors
+                if finding[0] == "FORM_BINDING_INVALID"
+            ),
+            validation_errors[0],
+        )
+        if code not in {"FORM_BINDING_INVALID"} and not code.startswith("PATH_"):
+            code = "CATALOG_RECORD_INVALID"
+        raise _source_error(code, f"{path}: {message}")
 
-    identity = _identity_payload(catalog)
+    fresh_policy = validate_catalog(
+        ResolvedCatalog(
+            snapshot=catalog.snapshot,
+            components=catalog.components,
+            packages=catalog.packages,
+            tools=catalog.tools,
+            report=ValidationReport(),
+        )
+    )
+    if fresh_policy.diagnostics:
+        raise _source_error(
+            "CATALOG_POLICY_INVALID",
+            ",".join(item.code for item in fresh_policy.diagnostics),
+        )
+
     catalog_bytes = canonical_json_bytes(identity)
     kit_id = "kit-" + sha256_bytes(catalog_bytes)[:20]
     return identity, catalog_bytes, kit_id
@@ -417,7 +799,10 @@ def _layout(
                 staged_path = _output_member_path(component, member)
                 files[staged_path] = member.data
                 import_name = PurePosixPath(staged_path).name
-                import_names.append(import_name)
+                # CATIA imports the .frm; the adjacent .frx is a binary sidecar
+                # retained and hashed but is never itself an import operation.
+                if member.role != "frx":
+                    import_names.append(import_name)
                 staged_members.append(
                     {
                         "source_id": component.source_id,
@@ -549,7 +934,26 @@ def _prepare_output_root(output_root: Path) -> Path:
         locks.mkdir(mode=0o700, exist_ok=True)
     except OSError as error:
         raise _infrastructure_error("LOCK_DIRECTORY_FAILED", cause=error)
-    if locks.is_symlink() or not locks.is_dir():
+    try:
+        lock_status = locks.lstat()
+    except OSError as error:
+        raise _infrastructure_error("LOCK_DIRECTORY_FAILED", cause=error)
+    if not stat.S_ISDIR(lock_status.st_mode) or stat.S_ISLNK(lock_status.st_mode):
+        raise _infrastructure_error("LOCK_DIRECTORY_UNSAFE")
+    # Lock-name ownership is trusted only inside this explicit protection
+    # boundary: current effective UID and exact owner-only 0700 permissions.
+    if lock_status.st_uid != os.geteuid():
+        raise _infrastructure_error("LOCK_DIRECTORY_UNSAFE", "wrong owner")
+    try:
+        os.chmod(locks, 0o700, follow_symlinks=False)
+        lock_status = locks.lstat()
+    except OSError as error:
+        raise _infrastructure_error("LOCK_DIRECTORY_FAILED", cause=error)
+    if (
+        not stat.S_ISDIR(lock_status.st_mode)
+        or lock_status.st_uid != os.geteuid()
+        or stat.S_IMODE(lock_status.st_mode) != 0o700
+    ):
         raise _infrastructure_error("LOCK_DIRECTORY_UNSAFE")
     return root
 
@@ -567,15 +971,21 @@ def _acquire_lock(root: Path, kit_id: str) -> tuple[Path, int, os.stat_result]:
     except OSError as error:
         raise _infrastructure_error("KIT_LOCK_FAILED", kit_id, cause=error)
     try:
-        os.write(descriptor, f"{kit_id}\n".encode("ascii"))
-        os.fsync(descriptor)
         status = os.fstat(descriptor)
     except OSError as error:
-        os.close(descriptor)
         try:
-            path.unlink()
+            os.close(descriptor)
         except OSError:
             pass
+        raise _infrastructure_error("KIT_LOCK_FAILED", kit_id, cause=error)
+    try:
+        os.write(descriptor, f"{kit_id}\n".encode("ascii"))
+        os.fsync(descriptor)
+    except OSError as error:
+        try:
+            _release_own_lock(path, descriptor, status)
+        except InfrastructureError as cleanup_error:
+            raise cleanup_error from error
         raise _infrastructure_error("KIT_LOCK_FAILED", kit_id, cause=error)
     return path, descriptor, status
 
@@ -584,22 +994,31 @@ def _release_own_lock(
     path: Path, descriptor: int, acquired_status: os.stat_result
 ) -> None:
     try:
-        os.close(descriptor)
-    except OSError:
-        pass
-    try:
         current = path.lstat()
-    except OSError:
-        return
-    if (
+    except OSError as error:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        raise _infrastructure_error(
+            "KIT_LOCK_OWNERSHIP_LOST", os.fspath(path), cause=error
+        )
+    owned = (
         current.st_dev == acquired_status.st_dev
         and current.st_ino == acquired_status.st_ino
         and stat.S_ISREG(current.st_mode)
-    ):
+    )
+    if not owned:
         try:
-            path.unlink()
+            os.close(descriptor)
         except OSError:
             pass
+        raise _infrastructure_error("KIT_LOCK_OWNERSHIP_LOST", os.fspath(path))
+    try:
+        path.unlink()
+        os.close(descriptor)
+    except OSError as error:
+        raise _infrastructure_error("KIT_LOCK_RELEASE_FAILED", cause=error)
 
 
 def _write_file(path: Path, data: bytes) -> None:
@@ -617,6 +1036,49 @@ def _write_file(path: Path, data: bytes) -> None:
                 raise OSError("short write")
             view = view[written:]
         os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _read_regular_nofollow(path: Path) -> bytes:
+    """Read one authenticated regular-file inode without following a symlink."""
+    try:
+        before = path.lstat()
+    except OSError as error:
+        raise _infrastructure_error("FILE_READ_FAILED", os.fspath(path), cause=error)
+    if stat.S_ISLNK(before.st_mode):
+        raise _infrastructure_error("SYMLINK_ENTRY", os.fspath(path))
+    if not stat.S_ISREG(before.st_mode):
+        raise _infrastructure_error("NON_REGULAR_ENTRY", os.fspath(path))
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise _infrastructure_error("FILE_READ_FAILED", os.fspath(path), cause=error)
+    try:
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_dev != before.st_dev
+            or opened.st_ino != before.st_ino
+        ):
+            raise _infrastructure_error("FILE_IDENTITY_CHANGED", os.fspath(path))
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+        if opened.st_dev != after.st_dev or opened.st_ino != after.st_ino:
+            raise _infrastructure_error("FILE_IDENTITY_CHANGED", os.fspath(path))
+        return b"".join(chunks)
+    except OSError as error:
+        raise _infrastructure_error("FILE_READ_FAILED", os.fspath(path), cause=error)
     finally:
         os.close(descriptor)
 
@@ -653,7 +1115,7 @@ def _regular_files(root: Path) -> dict[str, bytes]:
             )
             if relative != path.relative_to(root).as_posix():
                 raise _infrastructure_error("PATH_NOT_NFC", relative)
-            result[relative] = path.read_bytes()
+            result[relative] = _read_regular_nofollow(path)
     return dict(sorted(result.items()))
 
 
@@ -712,21 +1174,100 @@ def _same_directory(expected_root: Path, actual_root: Path) -> bool:
         return False
 
 
-def _safe_remove_tree(path: Path) -> None:
+def _remove_tree(path: Path) -> None:
     try:
-        if path.is_symlink():
-            path.unlink()
-        elif path.exists():
-            shutil.rmtree(path)
-    except OSError:
-        pass
+        status = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(status.st_mode):
+        path.unlink()
+    elif stat.S_ISDIR(status.st_mode):
+        shutil.rmtree(path)
+    else:
+        raise OSError("temporary tree was replaced by a non-directory")
 
 
-def _safe_unlink(path: Path) -> None:
+def _unlink_temp(path: Path) -> None:
     try:
         path.unlink()
-    except OSError:
-        pass
+    except FileNotFoundError:
+        return
+
+
+def _lexists(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _publish_directory_noreplace(source: Path, destination: Path) -> None:
+    """Atomically publish a directory without an overwrite-capable fallback.
+
+    Linux renameat2(RENAME_NOREPLACE) is the only directory commit primitive
+    used here.  Platforms without that guarantee fail closed rather than
+    reintroducing a check-then-rename race.
+    """
+    function = getattr(ctypes.CDLL(None, use_errno=True), "renameat2", None)
+    if function is None:
+        raise _infrastructure_error("ATOMIC_NOREPLACE_UNAVAILABLE")
+    function.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    function.restype = ctypes.c_int
+    result = function(
+        -100,
+        os.fsencode(source),
+        -100,
+        os.fsencode(destination),
+        1,
+    )
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise _infrastructure_error("KIT_OUTPUT_COLLISION", destination.name)
+    if error_number in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP}:
+        raise _infrastructure_error("ATOMIC_NOREPLACE_UNAVAILABLE")
+    error = OSError(error_number, os.strerror(error_number), os.fspath(destination))
+    raise _infrastructure_error("KIT_PUBLISH_FAILED", destination.name, cause=error)
+
+
+def _publish_file_noreplace(source: Path, destination: Path) -> None:
+    """Publish a regular file by atomic hard-link creation (never overwrite)."""
+    try:
+        os.link(source, destination, follow_symlinks=False)
+    except FileExistsError as error:
+        raise _infrastructure_error(
+            "KIT_OUTPUT_COLLISION", destination.name, cause=error
+        )
+    except OSError as error:
+        raise _infrastructure_error(
+            "KIT_PUBLISH_FAILED", destination.name, cause=error
+        )
+
+
+def _publish_or_match_file(
+    temporary: Path, destination: Path, expected: bytes, kit_id: str
+) -> None:
+    if _lexists(destination):
+        try:
+            actual = _read_regular_nofollow(destination)
+        except (OSError, InfrastructureError) as error:
+            raise _infrastructure_error(
+                "KIT_ID_CONTENT_MISMATCH", kit_id, cause=error
+            )
+        if actual != expected:
+            raise _infrastructure_error("KIT_ID_CONTENT_MISMATCH", kit_id)
+        _unlink_temp(temporary)
+        return
+    _publish_file_noreplace(temporary, destination)
+    _unlink_temp(temporary)
 
 
 def stage_build_kit(
@@ -743,10 +1284,11 @@ def stage_build_kit(
     temp_dir: Path | None = None
     temp_zip: Path | None = None
     temp_sidecar: Path | None = None
-    published: list[Path] = []
     final_dir = root / kit_id
     zip_path = root / f"{kit_id}.zip"
     sidecar_path = root / f"{kit_id}.zip.sha256"
+    receipt: BuildKitReceipt | None = None
+    pending: BaseException | None = None
     try:
         temp_dir = Path(tempfile.mkdtemp(prefix=f".{kit_id}.tmp-", dir=root))
         _assert_contained(root, temp_dir)
@@ -778,67 +1320,59 @@ def stage_build_kit(
         _write_file(temp_zip, archive_bytes)
         _write_file(temp_sidecar, sidecar_bytes)
 
-        if final_dir.exists() or final_dir.is_symlink():
-            if (
-                not _same_directory(temp_dir, final_dir)
-                or not zip_path.is_file()
-                or zip_path.is_symlink()
-                or zip_path.read_bytes() != archive_bytes
-                or not sidecar_path.is_file()
-                or sidecar_path.is_symlink()
-                or sidecar_path.read_bytes() != sidecar_bytes
-            ):
+        if _lexists(final_dir):
+            if not _same_directory(temp_dir, final_dir):
                 raise _infrastructure_error("KIT_ID_CONTENT_MISMATCH", kit_id)
-            _safe_remove_tree(temp_dir)
+            _remove_tree(temp_dir)
             temp_dir = None
-            _safe_unlink(temp_zip)
-            temp_zip = None
-            _safe_unlink(temp_sidecar)
-            temp_sidecar = None
         else:
-            if zip_path.exists() or sidecar_path.exists():
-                raise _infrastructure_error("KIT_OUTPUT_COLLISION", kit_id)
-            os.replace(temp_zip, zip_path)
-            temp_zip = None
-            published.append(zip_path)
-            os.replace(temp_sidecar, sidecar_path)
-            temp_sidecar = None
-            published.append(sidecar_path)
-            os.replace(temp_dir, final_dir)
+            # The fully self-verified primary directory is the commit point.
+            # ZIP and sidecar are deterministic resumable derivatives.
+            _publish_directory_noreplace(temp_dir, final_dir)
             temp_dir = None
-            published.append(final_dir)
 
-        return BuildKitReceipt(
+        assert temp_zip is not None and temp_sidecar is not None
+        _publish_or_match_file(temp_zip, zip_path, archive_bytes, kit_id)
+        temp_zip = None
+        _publish_or_match_file(temp_sidecar, sidecar_path, sidecar_bytes, kit_id)
+        temp_sidecar = None
+
+        receipt = BuildKitReceipt(
             kit_id=kit_id,
             kit_dir=os.fspath(final_dir),
             zip_path=os.fspath(zip_path),
             zip_sha256=archive_sha256,
             manifest_sha256=manifest_sha256,
         )
-    except (SourceError, InfrastructureError):
-        for path in reversed(published):
-            if path.is_dir() and not path.is_symlink():
-                _safe_remove_tree(path)
-            else:
-                _safe_unlink(path)
-        raise
+    except (SourceError, InfrastructureError) as error:
+        pending = error
     except Exception as error:
-        for path in reversed(published):
-            if path.is_dir() and not path.is_symlink():
-                _safe_remove_tree(path)
-            else:
-                _safe_unlink(path)
-        raise _infrastructure_error(
+        pending = _infrastructure_error(
             "KIT_STAGE_FAILED", type(error).__name__, cause=error
         )
     finally:
-        if temp_dir is not None:
-            _safe_remove_tree(temp_dir)
-        if temp_zip is not None:
-            _safe_unlink(temp_zip)
-        if temp_sidecar is not None:
-            _safe_unlink(temp_sidecar)
-        _release_own_lock(lock_path, lock_descriptor, lock_status)
+        cleanup_error: BaseException | None = None
+        try:
+            if temp_dir is not None:
+                _remove_tree(temp_dir)
+            if temp_zip is not None:
+                _unlink_temp(temp_zip)
+            if temp_sidecar is not None:
+                _unlink_temp(temp_sidecar)
+        except OSError as error:
+            cleanup_error = _infrastructure_error(
+                "KIT_CLEANUP_FAILED", type(error).__name__, cause=error
+            )
+        try:
+            _release_own_lock(lock_path, lock_descriptor, lock_status)
+        except InfrastructureError as error:
+            cleanup_error = error
+        if cleanup_error is not None:
+            raise cleanup_error from pending
+    if pending is not None:
+        raise pending
+    assert receipt is not None
+    return receipt
 
 
 def _verification_diagnostic(
@@ -849,10 +1383,11 @@ def _verification_diagnostic(
 
 def _path_diagnostics(name: str) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
-    if "\\" in name:
+    strict_code = _strict_path_code(name)
+    if strict_code is not None:
         diagnostics.append(
             _verification_diagnostic(
-                "PATH_BACKSLASH", name, "archive paths must use POSIX separators"
+                strict_code, name, "entry path is not Windows-portable"
             )
         )
     if unicodedata.normalize("NFC", name) != name:
@@ -883,9 +1418,24 @@ def _parse_canonical_json(
     data = files.get(name)
     if data is None:
         return None
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    def reject_constant(value: str) -> Any:
+        raise ValueError(f"non-finite JSON number: {value}")
+
     try:
-        value = json.loads(data.decode("ascii"))
-    except (UnicodeError, json.JSONDecodeError) as error:
+        value = json.loads(
+            data.decode("ascii"),
+            object_pairs_hook=unique_object,
+            parse_constant=reject_constant,
+        )
+    except (UnicodeError, json.JSONDecodeError, ValueError) as error:
         diagnostics.append(
             _verification_diagnostic(
                 "JSON_MALFORMED", name, f"canonical JSON cannot be parsed: {type(error).__name__}"
@@ -1187,7 +1737,9 @@ def _expected_catalog_graph(
                     )
                 )
                 continue
-            name = PurePosixPath(source_path.replace("\\", "/")).name
+            name = unicodedata.normalize(
+                "NFC", PurePosixPath(source_path.replace("\\", "/")).name
+            )
             staged_path = f"packages/{package_id}/source/{name}"
             if staged_path in source_hashes:
                 diagnostics.append(
@@ -1200,7 +1752,8 @@ def _expected_catalog_graph(
                 continue
             source_hashes[staged_path] = raw_sha256
             expected[staged_path] = None
-            import_names[package_id].append(name)
+            if role != "frx":
+                import_names[package_id].append(name)
             staged_members.append(
                 {
                     "source_id": source_id,
@@ -1349,7 +1902,9 @@ def _verify_expected_graph(
                 digest = member.get("raw_sha256")
                 if not isinstance(source_path, str) or not isinstance(digest, str):
                     continue
-                name = PurePosixPath(source_path.replace("\\", "/")).name
+                name = unicodedata.normalize(
+                    "NFC", PurePosixPath(source_path.replace("\\", "/")).name
+                )
                 staged_path = f"packages/{package_id}/source/{name}"
                 data = files.get(staged_path)
                 if data is not None and sha256_bytes(data) != digest:
@@ -1372,16 +1927,114 @@ def _verify_expected_graph(
                 _verification_diagnostic(
                     "EXTRA_DIRECTORY", name, "directory is not part of the kit layout"
                 )
+                )
+
+
+def _verify_embedded_policy(
+    files: Mapping[str, bytes],
+    catalog: dict[str, Any],
+    diagnostics: list[Diagnostic],
+) -> None:
+    """Re-run static policy from authenticated embedded source bytes.
+
+    The stored empty policy evidence is not itself trusted.  Reconstructing the
+    exact domain graph closes self-consistent catalog/tool/source bypasses.
+    """
+    raw_snapshot = catalog["snapshot"]
+    snapshot = InputSnapshot(
+        mode=SnapshotMode.CANDIDATE,
+        upstream_repository="identity-only",
+        upstream_ref="identity-only",
+        upstream_commit=raw_snapshot["upstream_commit"],
+        fork_repository="identity-only",
+        fork_dev_commit=raw_snapshot["fork_dev_commit"],
+        work_repository="identity-only",
+        work_branch="identity-only",
+        work_commit=raw_snapshot["work_commit"],
+        work_tree=raw_snapshot["work_tree"],
+        manifest_digest=raw_snapshot["manifest_digest"],
+        tool_version=raw_snapshot["tool_version"],
+        formal_eligible=True,
+    )
+    components: list[Component] = []
+    for raw_component in catalog["components"]:
+        members: list[SourceMember] = []
+        for raw_member in raw_component["members"]:
+            name = unicodedata.normalize(
+                "NFC", PurePosixPath(raw_member["path"]).name
             )
+            staged_path = (
+                f"packages/{raw_component['package_id']}/source/{name}"
+            )
+            data = files.get(staged_path)
+            if data is None:
+                return
+            members.append(
+                SourceMember(
+                    path=raw_member["path"],
+                    blob_oid=raw_member["blob_oid"],
+                    raw_sha256=raw_member["raw_sha256"],
+                    role=raw_member["role"],
+                    data=data,
+                )
+            )
+        components.append(
+            Component(
+                source_id=raw_component["source_id"],
+                origin=Origin(raw_component["origin"]),
+                component_type=raw_component["component_type"],
+                vb_name=raw_component["vb_name"],
+                members=tuple(members),
+                package_id=raw_component["package_id"],
+                disposition=raw_component["disposition"],
+            )
+        )
+    policy = validate_catalog(
+        ResolvedCatalog(
+            snapshot=snapshot,
+            components=tuple(components),
+            packages=tuple(catalog["packages"]),
+            tools=tuple(catalog["tools"]),
+            report=ValidationReport(),
+        )
+    )
+    for finding in policy.diagnostics:
+        diagnostics.append(
+            _verification_diagnostic(
+                "CATALOG_POLICY_INVALID",
+                finding.path,
+                "embedded catalog does not reproduce clean static policy evidence",
+                policy_code=finding.code,
+            )
+        )
+        diagnostics.append(
+            _verification_diagnostic(
+                "CATALOG_MALFORMED",
+                finding.path,
+                "embedded component/package/tool graph fails static binding policy",
+                policy_code=finding.code,
+            )
+        )
 
 
 def _verify_file_map(
-    files: Mapping[str, bytes], directories: set[str] | None = None
+    files: Mapping[str, bytes],
+    directories: set[str] | None = None,
+    *,
+    container_name: str | None = None,
+    zip_container: bool = False,
 ) -> tuple[Diagnostic, ...]:
     diagnostics: list[Diagnostic] = []
     names = tuple(files)
     for name in names:
         diagnostics.extend(_path_diagnostics(name))
+    path_report = validate_portable_paths(names)
+    for finding in path_report.diagnostics:
+        diagnostics.append(
+            _verification_diagnostic(
+                finding.code, finding.path, finding.message
+            )
+        )
     portable_counts: Counter[str] = Counter()
     for name in names:
         try:
@@ -1416,6 +2069,16 @@ def _verify_file_map(
     expected_id: str | None = None
     if isinstance(catalog, dict):
         expected_id = "kit-" + sha256_bytes(canonical_json_bytes(catalog))[:20]
+        catalog_errors = _catalog_document_errors(catalog)
+        for code, path, message in catalog_errors:
+            diagnostics.append(
+                _verification_diagnostic(
+                    "CATALOG_MALFORMED",
+                    path,
+                    message,
+                    catalog_code=code,
+                )
+            )
         policy = catalog.get("policy_evidence")
         if not isinstance(policy, dict) or policy.get("compile_status") != "not-run":
             diagnostics.append(
@@ -1425,9 +2088,11 @@ def _verify_file_map(
                     "static policy compile status must remain not-run",
                 )
             )
-        _verify_expected_graph(
-            files, catalog, expected_id, diagnostics, directories
-        )
+        if not catalog_errors:
+            _verify_expected_graph(
+                files, catalog, expected_id, diagnostics, directories
+            )
+            _verify_embedded_policy(files, catalog, diagnostics)
         if isinstance(policy, dict) and policy.get("diagnostics") != []:
             diagnostics.append(
                 _verification_diagnostic(
@@ -1436,6 +2101,16 @@ def _verify_file_map(
                     "published kit cannot contain policy diagnostics",
                 )
             )
+        if container_name is not None:
+            required_name = f"{expected_id}.zip" if zip_container else expected_id
+            if container_name != required_name:
+                diagnostics.append(
+                    _verification_diagnostic(
+                        "WRONG_CONTAINER_NAME",
+                        container_name,
+                        "container name does not exactly bind the canonical kit ID",
+                    )
+                )
     if isinstance(manifest, dict):
         if expected_id is not None and manifest.get("kit_id") != expected_id:
             diagnostics.append(
@@ -1488,6 +2163,8 @@ def _verify_file_map(
         )
     elif isinstance(marker, dict):
         valid_marker = (
+            set(marker) == {"complete", "kit_id", "sha256sums_sha256"}
+            and
             marker.get("complete") is True
             and expected_id is not None
             and marker.get("kit_id") == expected_id
@@ -1517,17 +2194,23 @@ def _directory_file_map(
     files: dict[str, bytes] = {}
     diagnostics: list[Diagnostic] = []
     directories: set[str] = set()
-    if path.is_symlink():
+
+    ancestor = _symlink_ancestor(path)
+    if ancestor is not None:
         return (
             files,
             [
                 _verification_diagnostic(
-                    "SYMLINK_ENTRY", os.fspath(path), "kit directory cannot be a symlink"
+                    "SYMLINK_ANCESTOR",
+                    os.fspath(ancestor),
+                    "kit input has a symlink ancestor",
                 )
             ],
             directories,
         )
-    if not path.is_dir():
+    try:
+        root_status = path.lstat()
+    except OSError:
         return (
             files,
             [
@@ -1537,49 +2220,183 @@ def _directory_file_map(
             ],
             directories,
         )
-    for directory, directory_names, file_names in os.walk(path, followlinks=False):
-        base = Path(directory)
-        for name in tuple(directory_names):
-            child = base / name
-            relative = child.relative_to(path).as_posix()
-            diagnostics.extend(_path_diagnostics(relative))
-            if child.is_symlink():
-                diagnostics.append(
-                    _verification_diagnostic(
-                        "SYMLINK_ENTRY", relative, "kit contains a symlink directory"
-                    )
+    if stat.S_ISLNK(root_status.st_mode):
+        return (
+            files,
+            [
+                _verification_diagnostic(
+                    "SYMLINK_ENTRY", os.fspath(path), "kit directory cannot be a symlink"
                 )
-                directory_names.remove(name)
-            else:
-                directories.add(relative)
-        for name in file_names:
-            child = base / name
-            relative = child.relative_to(path).as_posix()
+            ],
+            directories,
+        )
+    if not stat.S_ISDIR(root_status.st_mode):
+        return (
+            files,
+            [
+                _verification_diagnostic(
+                    "KIT_PATH_INVALID", os.fspath(path), "kit path is not a directory or ZIP"
+                )
+            ],
+            directories,
+        )
+
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        root_descriptor = os.open(path, flags)
+        opened_root = os.fstat(root_descriptor)
+    except OSError as error:
+        diagnostics.append(
+            _verification_diagnostic(
+                "KIT_READ_ERROR", os.fspath(path), f"cannot open kit root: {type(error).__name__}"
+            )
+        )
+        return files, diagnostics, directories
+    if (
+        opened_root.st_dev != root_status.st_dev
+        or opened_root.st_ino != root_status.st_ino
+        or not stat.S_ISDIR(opened_root.st_mode)
+    ):
+        os.close(root_descriptor)
+        diagnostics.append(
+            _verification_diagnostic(
+                "FILE_IDENTITY_CHANGED", os.fspath(path), "kit root changed while opening"
+            )
+        )
+        return files, diagnostics, directories
+
+    def visit(descriptor: int, prefix: str) -> None:
+        try:
+            names = sorted(os.listdir(descriptor))
+        except OSError as error:
+            diagnostics.append(
+                _verification_diagnostic(
+                    "KIT_READ_ERROR", prefix or ".", f"cannot list kit directory: {type(error).__name__}"
+                )
+            )
+            return
+        for name in names:
+            relative = f"{prefix}/{name}" if prefix else name
             diagnostics.extend(_path_diagnostics(relative))
             try:
-                status = child.lstat()
-                if stat.S_ISLNK(status.st_mode):
+                before = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            except OSError as error:
+                diagnostics.append(
+                    _verification_diagnostic(
+                        "KIT_READ_ERROR", relative, f"cannot inspect kit entry: {type(error).__name__}"
+                    )
+                )
+                continue
+            if stat.S_ISLNK(before.st_mode):
+                diagnostics.append(
+                    _verification_diagnostic(
+                        "SYMLINK_ENTRY", relative, "kit contains a symlink entry"
+                    )
+                )
+                continue
+            if stat.S_ISDIR(before.st_mode):
+                directories.add(relative)
+                try:
+                    child_descriptor = os.open(name, flags, dir_fd=descriptor)
+                    opened = os.fstat(child_descriptor)
+                except OSError as error:
                     diagnostics.append(
                         _verification_diagnostic(
-                            "SYMLINK_ENTRY", relative, "kit contains a symlink file"
+                            "KIT_READ_ERROR", relative, f"cannot open kit directory: {type(error).__name__}"
                         )
                     )
                     continue
-                if not stat.S_ISREG(status.st_mode):
+                if (
+                    not stat.S_ISDIR(opened.st_mode)
+                    or opened.st_dev != before.st_dev
+                    or opened.st_ino != before.st_ino
+                ):
                     diagnostics.append(
                         _verification_diagnostic(
-                            "NON_REGULAR_ENTRY", relative, "kit entry is not a regular file"
+                            "FILE_IDENTITY_CHANGED", relative, "kit directory changed while opening"
+                        )
+                    )
+                    os.close(child_descriptor)
+                    continue
+                try:
+                    visit(child_descriptor, relative)
+                finally:
+                    os.close(child_descriptor)
+                continue
+            if not stat.S_ISREG(before.st_mode):
+                diagnostics.append(
+                    _verification_diagnostic(
+                        "NON_REGULAR_ENTRY", relative, "kit entry is not a regular file"
+                    )
+                )
+                continue
+            file_flags = os.O_RDONLY
+            if hasattr(os, "O_CLOEXEC"):
+                file_flags |= os.O_CLOEXEC
+            if hasattr(os, "O_NOFOLLOW"):
+                file_flags |= os.O_NOFOLLOW
+            try:
+                file_descriptor = os.open(name, file_flags, dir_fd=descriptor)
+                opened = os.fstat(file_descriptor)
+                if (
+                    not stat.S_ISREG(opened.st_mode)
+                    or opened.st_dev != before.st_dev
+                    or opened.st_ino != before.st_ino
+                ):
+                    diagnostics.append(
+                        _verification_diagnostic(
+                            "FILE_IDENTITY_CHANGED", relative, "kit file changed while opening"
+                        )
+                    )
+                    os.close(file_descriptor)
+                    continue
+                chunks: list[bytes] = []
+                while True:
+                    chunk = os.read(file_descriptor, 1024 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                after = os.fstat(file_descriptor)
+                os.close(file_descriptor)
+                if opened.st_dev != after.st_dev or opened.st_ino != after.st_ino:
+                    diagnostics.append(
+                        _verification_diagnostic(
+                            "FILE_IDENTITY_CHANGED", relative, "kit file changed while reading"
                         )
                     )
                     continue
-                files[relative] = child.read_bytes()
+                files[relative] = b"".join(chunks)
             except OSError as error:
                 diagnostics.append(
                     _verification_diagnostic(
                         "KIT_READ_ERROR", relative, f"cannot read kit entry: {type(error).__name__}"
                     )
                 )
+    try:
+        visit(root_descriptor, "")
+    finally:
+        os.close(root_descriptor)
     return files, diagnostics, directories
+
+
+def _symlink_ancestor(path: Path) -> Path | None:
+    absolute = _absolute(path)
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:-1]:
+        current /= part
+        try:
+            status = current.lstat()
+        except OSError:
+            return None
+        if stat.S_ISLNK(status.st_mode):
+            return current
+    return None
 
 
 def _zip_file_map(
@@ -1587,8 +2404,28 @@ def _zip_file_map(
 ) -> tuple[dict[str, bytes], list[Diagnostic], None]:
     files: dict[str, bytes] = {}
     diagnostics: list[Diagnostic] = []
+    ancestor = _symlink_ancestor(path)
+    if ancestor is not None:
+        diagnostics.append(
+            _verification_diagnostic(
+                "SYMLINK_ANCESTOR", os.fspath(ancestor), "ZIP input has a symlink ancestor"
+            )
+        )
+        return files, diagnostics, None
     try:
-        with zipfile.ZipFile(path) as archive:
+        container_bytes = _read_regular_nofollow(path)
+    except InfrastructureError as error:
+        code = str(error).split(":", 1)[0]
+        diagnostics.append(
+            _verification_diagnostic(
+                code if code in {"SYMLINK_ENTRY", "NON_REGULAR_ENTRY"} else "ZIP_INVALID",
+                os.fspath(path),
+                "ZIP input is not an authenticated regular file",
+            )
+        )
+        return files, diagnostics, None
+    try:
+        with zipfile.ZipFile(io.BytesIO(container_bytes)) as archive:
             if archive.comment:
                 diagnostics.append(
                     _verification_diagnostic(
@@ -1596,6 +2433,17 @@ def _zip_file_map(
                     )
                 )
             infos = archive.infolist()
+            info_names = [info.filename for info in infos]
+            if info_names != sorted(info_names) or any(
+                unicodedata.normalize("NFC", name) != name for name in info_names
+            ):
+                diagnostics.append(
+                    _verification_diagnostic(
+                        "ZIP_ENTRY_ORDER_INVALID",
+                        "<archive>",
+                        "ZIP entry names must be unique sorted NFC paths",
+                    )
+                )
             counts = Counter(info.filename for info in infos)
             for name, count in sorted(counts.items()):
                 if count > 1:
@@ -1645,7 +2493,7 @@ def _zip_file_map(
                     )
                     continue
                 files.setdefault(name, data)
-    except (OSError, zipfile.BadZipFile) as error:
+    except (OSError, RuntimeError, zipfile.BadZipFile) as error:
         diagnostics.append(
             _verification_diagnostic(
                 "ZIP_INVALID", os.fspath(path), f"cannot open ZIP: {type(error).__name__}"
@@ -1653,13 +2501,36 @@ def _zip_file_map(
         )
         return files, diagnostics, None
 
-    sidecar = path.with_name(path.name + ".sha256")
     try:
-        sidecar_data = sidecar.read_bytes()
-    except OSError:
+        canonical_container = _zip_bytes(files)
+    except (InfrastructureError, OSError, ValueError) as error:
         diagnostics.append(
             _verification_diagnostic(
-                "ZIP_SIDECAR_MISSING", sidecar.name, "ZIP SHA-256 sidecar is missing"
+                "ZIP_NOT_CANONICAL", path.name, f"ZIP cannot be reconstructed canonically: {type(error).__name__}"
+            )
+        )
+    else:
+        if canonical_container != container_bytes:
+            diagnostics.append(
+                _verification_diagnostic(
+                    "ZIP_NOT_CANONICAL", path.name, "ZIP bytes differ from the canonical deterministic representation"
+                )
+            )
+
+    sidecar = path.with_name(path.name + ".sha256")
+    try:
+        sidecar_data = _read_regular_nofollow(sidecar)
+    except InfrastructureError as error:
+        code = str(error).split(":", 1)[0]
+        diagnostics.append(
+            _verification_diagnostic(
+                (
+                    "SYMLINK_ENTRY"
+                    if code == "SYMLINK_ENTRY"
+                    else "ZIP_SIDECAR_MISSING"
+                ),
+                sidecar.name,
+                "ZIP SHA-256 sidecar is missing or unsafe",
             )
         )
     else:
@@ -1675,31 +2546,31 @@ def _zip_file_map(
                 )
             )
         else:
-            try:
-                actual = sha256_bytes(path.read_bytes())
-            except OSError as error:
+            actual = sha256_bytes(container_bytes)
+            if match.group(1) != actual:
                 diagnostics.append(
                     _verification_diagnostic(
-                        "ZIP_READ_ERROR", path.name, f"cannot hash ZIP: {type(error).__name__}"
+                        "ZIP_SIDECAR_MISMATCH", sidecar.name, "ZIP SHA-256 sidecar does not match"
                     )
                 )
-            else:
-                if match.group(1) != actual:
-                    diagnostics.append(
-                        _verification_diagnostic(
-                            "ZIP_SIDECAR_MISMATCH", sidecar.name, "ZIP SHA-256 sidecar does not match"
-                        )
-                    )
     return files, diagnostics, None
 
 
 def verify_build_kit(path: str | os.PathLike[str]) -> VerificationReport:
     """Verify a staged directory or deterministic ZIP without extracting it."""
     candidate = Path(path)
-    if candidate.suffix.casefold() == ".zip" and not candidate.is_dir():
+    is_zip = candidate.suffix.casefold() == ".zip"
+    if is_zip:
         files, diagnostics, directories = _zip_file_map(candidate)
     else:
         files, diagnostics, directories = _directory_file_map(candidate)
-    diagnostics.extend(_verify_file_map(files, directories))
+    diagnostics.extend(
+        _verify_file_map(
+            files,
+            directories,
+            container_name=candidate.name,
+            zip_container=is_zip,
+        )
+    )
     stable = _stable_diagnostics((diagnostics,))
     return VerificationReport(ok=not stable, diagnostics=stable)

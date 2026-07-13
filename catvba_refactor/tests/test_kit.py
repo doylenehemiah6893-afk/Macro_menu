@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import math
 import os
 import shutil
 import stat
@@ -209,6 +211,56 @@ def _rewrite_integrity(kit_dir: Path, kit_id: str) -> None:
     )
 
 
+def _write_zip_sidecar(path: Path, data: bytes) -> None:
+    path.write_bytes(data)
+    path.with_name(path.name + ".sha256").write_bytes(
+        f"{hashlib.sha256(data).hexdigest()}  {path.name}\n".encode("ascii")
+    )
+
+
+def _fixed_zip(files: dict[str, bytes], names: list[str] | None = None) -> bytes:
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name in names or sorted(files):
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            info.extra = b""
+            info.comment = b""
+            archive.writestr(info, files[name])
+    return stream.getvalue()
+
+
+def _rebind_catalog_identity(kit_dir: Path, mutator: Any) -> str:
+    catalog_path = kit_dir / "catalog.json"
+    catalog = _json(catalog_path)
+    mutator(catalog)
+    catalog_bytes = canonical_json_bytes(catalog)
+    kit_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
+    catalog_path.write_bytes(catalog_bytes)
+
+    manifest = _json(kit_dir / "kit-manifest.json")
+    manifest["kit_id"] = kit_id
+    manifest["identity_sha256"] = hashlib.sha256(catalog_bytes).hexdigest()
+    manifest["manifest_digest"] = catalog["snapshot"].get("manifest_digest")
+    (kit_dir / "kit-manifest.json").write_bytes(canonical_json_bytes(manifest))
+
+    resolution = _json(kit_dir / "receipts/source-resolution.json")
+    resolution["kit_id"] = kit_id
+    resolution["components"] = catalog.get("components", [])
+    (kit_dir / "receipts/source-resolution.json").write_bytes(
+        canonical_json_bytes(resolution)
+    )
+    evidence = _json(kit_dir / "evidence-templates/target-verification.json")
+    evidence["kit_id"] = kit_id
+    (kit_dir / "evidence-templates/target-verification.json").write_bytes(
+        canonical_json_bytes(evidence)
+    )
+    _rewrite_integrity(kit_dir, kit_id)
+    return kit_id
+
+
 def test_assemble_catalog_is_stable_and_excludes_quarantine() -> None:
     catalog, _quarantine_data = _catalog(with_form=True)
 
@@ -271,13 +323,87 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
     assert all(quarantine_data not in path.read_bytes() for path in kit_dir.rglob("*") if path.is_file())
 
     order = (kit_dir / "import-order/core.txt").read_bytes()
-    assert order == b"SafeForm.frm\nSafeForm.frx\nSafeModule.bas\n"
+    assert order == b"SafeForm.frm\nSafeModule.bas\n"
     assert b"\r" not in order
 
     catalog_bytes = (kit_dir / "catalog.json").read_bytes()
     identity = json.loads(catalog_bytes)
     assert catalog_bytes == canonical_json_bytes(identity)
+    expected_identity = {
+        "schema_version": 1,
+        "snapshot": {
+            "mode": "candidate",
+            "upstream_commit": "1" * 40,
+            "fork_dev_commit": "2" * 40,
+            "work_commit": "3" * 40,
+            "work_tree": "4" * 40,
+            "manifest_digest": "5" * 64,
+            "tool_version": "0.1.0",
+            "formal_eligible": True,
+        },
+        "components": [
+            {
+                "source_id": "core.safe-form",
+                "origin": "new",
+                "component_type": "user_form",
+                "vb_name": "SafeForm",
+                "package_id": "core",
+                "disposition": "candidate",
+                "members": [
+                    {
+                        "path": "catvba_refactor/vba/new/SafeForm.frm",
+                        "blob_oid": "a" * 40,
+                        "raw_sha256": hashlib.sha256(
+                            by_path["catvba_refactor/vba/new/SafeForm.frm"]
+                        ).hexdigest(),
+                        "role": "frm",
+                    },
+                    {
+                        "path": "catvba_refactor/vba/new/SafeForm.frx",
+                        "blob_oid": "a" * 40,
+                        "raw_sha256": hashlib.sha256(
+                            by_path["catvba_refactor/vba/new/SafeForm.frx"]
+                        ).hexdigest(),
+                        "role": "frx",
+                    },
+                ],
+            },
+            {
+                "source_id": "core.safe-module",
+                "origin": "new",
+                "component_type": "standard_module",
+                "vb_name": "SafeModule",
+                "package_id": "core",
+                "disposition": "candidate",
+                "members": [
+                    {
+                        "path": "catvba_refactor/vba/new/SafeModule.bas",
+                        "blob_oid": "a" * 40,
+                        "raw_sha256": hashlib.sha256(
+                            by_path["catvba_refactor/vba/new/SafeModule.bas"]
+                        ).hexdigest(),
+                        "role": "source",
+                    }
+                ],
+            },
+        ],
+        "packages": [
+            {
+                "package_id": "core",
+                "classification": "CORE_CANDIDATE",
+                "reference_allowlist": ["VBA", "CATIA V5 Interfaces"],
+            },
+            {
+                "package_id": "fleet-spa",
+                "classification": "FLEET_EXTENSION_SPA",
+            },
+        ],
+        "tools": [_tool()],
+        "policy_evidence": {"compile_status": "not-run", "diagnostics": []},
+    }
+    assert identity == expected_identity
     independent_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
+    assert independent_id == "kit-3e3ea2d766fb03f507bd"
     assert receipt.kit_id == independent_id
 
     manifest_bytes = (kit_dir / "kit-manifest.json").read_bytes()
@@ -585,18 +711,19 @@ def test_zip_verifier_rejects_duplicate_unsafe_non_nfc_and_symlink_entries(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "malicious.zip"
-    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as archive:
-        archive.writestr("duplicate.txt", b"one")
-        archive.writestr("duplicate.txt", b"two")
-        archive.writestr("../escape.txt", b"escape")
-        archive.writestr("/absolute.txt", b"absolute")
-        archive.writestr("back\\slash.txt", b"backslash")
-        archive.writestr("Re\u0301sume\u0301.txt", b"non-nfc")
-        archive.writestr("OLD.CATVBA", b"forbidden")
-        link = zipfile.ZipInfo("link")
-        link.create_system = 3
-        link.external_attr = (stat.S_IFLNK | 0o777) << 16
-        archive.writestr(link, b"catalog.json")
+    with pytest.warns(UserWarning, match="Duplicate name"):
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as archive:
+            archive.writestr("duplicate.txt", b"one")
+            archive.writestr("duplicate.txt", b"two")
+            archive.writestr("../escape.txt", b"escape")
+            archive.writestr("/absolute.txt", b"absolute")
+            archive.writestr("back\\slash.txt", b"backslash")
+            archive.writestr("Re\u0301sume\u0301.txt", b"non-nfc")
+            archive.writestr("OLD.CATVBA", b"forbidden")
+            link = zipfile.ZipInfo("link")
+            link.create_system = 3
+            link.external_attr = (stat.S_IFLNK | 0o777) << 16
+            archive.writestr(link, b"catalog.json")
 
     codes = _codes(path)
     assert {
@@ -636,3 +763,424 @@ def test_manifest_digest_mismatch_is_carried_as_stable_catalog_diagnostic() -> N
     assert [item.code for item in catalog.report.diagnostics] == [
         "MANIFEST_DIGEST_MISMATCH"
     ]
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [b"secret", Path("/secret"), object(), math.nan, {1: "not-a-string-key"}],
+)
+def test_manual_catalog_rejects_noncanonical_or_secret_package_fields(
+    tmp_path: Path, invalid: Any
+) -> None:
+    catalog, _ = _catalog()
+    package = dict(catalog.packages[0])
+    package["secret_path"] = invalid
+    bypass = replace(
+        catalog,
+        packages=(package, *catalog.packages[1:]),
+        report=ValidationReport(),
+    )
+
+    with pytest.raises(SourceError, match="CATALOG_RECORD_INVALID"):
+        stage_build_kit(bypass, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_id", "Bad ID"),
+        ("package_id", "Bad/Package"),
+        ("vb_name", "9BadName"),
+        ("component_type", "document_module"),
+    ],
+)
+def test_manual_component_identity_is_revalidated_before_output(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    catalog, _ = _catalog()
+    bad_component = replace(catalog.components[0], **{field: value})
+    bypass = replace(
+        catalog,
+        components=(bad_component,),
+        tools=(),
+        report=ValidationReport(),
+    )
+
+    with pytest.raises(SourceError, match="CATALOG_RECORD_INVALID"):
+        stage_build_kit(bypass, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "new/Bad:Name.bas",
+        "new/Bad<Name.bas",
+        "new/control\x80.bas",
+        "C:/absolute.bas",
+        "//server/share/SafeModule.bas",
+    ],
+)
+def test_creator_rejects_windows_unsafe_member_names(
+    tmp_path: Path, path: str
+) -> None:
+    catalog, _ = _catalog()
+    bypass = _replace_first_member_path(catalog, path)
+
+    with pytest.raises(SourceError, match="PATH_"):
+        stage_build_kit(bypass, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("kind", ["missing-frx", "wrong-role", "wrong-stem"])
+def test_creator_rejects_malformed_form_bundles(
+    tmp_path: Path, kind: str
+) -> None:
+    catalog, _ = _catalog(with_form=True)
+    form = catalog.components[0]
+    if kind == "missing-frx":
+        form = replace(form, members=(form.members[0],))
+    elif kind == "wrong-role":
+        form = replace(
+            form,
+            members=(form.members[0], replace(form.members[1], role="source")),
+        )
+    else:
+        form = replace(
+            form,
+            members=(
+                form.members[0],
+                replace(form.members[1], path="new/Other.frx"),
+            ),
+        )
+    bypass = replace(
+        catalog,
+        components=(form, *catalog.components[1:]),
+        report=ValidationReport(),
+    )
+
+    with pytest.raises(SourceError, match="FORM_BINDING_INVALID"):
+        stage_build_kit(bypass, tmp_path / "out")
+
+
+def test_snapshot_repository_labels_do_not_change_immutable_kit_identity(
+    tmp_path: Path,
+) -> None:
+    first, _ = _catalog()
+    noisy_snapshot = replace(
+        first.snapshot,
+        upstream_repository="/home/alice/private/upstream",
+        upstream_ref="refs/users/alice/private",
+        fork_repository="C:/Users/Alice/fork",
+        work_repository="//server/private/work",
+        work_branch="secret-user-branch",
+    )
+    second = replace(first, snapshot=noisy_snapshot)
+
+    first_receipt = stage_build_kit(first, tmp_path / "one")
+    second_receipt = stage_build_kit(second, tmp_path / "two")
+    assert second_receipt.kit_id == first_receipt.kit_id
+    assert Path(second_receipt.zip_path).read_bytes() == Path(
+        first_receipt.zip_path
+    ).read_bytes()
+
+
+def test_directory_and_zip_container_names_are_bound_to_catalog_id(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "out")
+    renamed_dir = tmp_path / "renamed-directory"
+    shutil.copytree(receipt.kit_dir, renamed_dir)
+    assert "WRONG_CONTAINER_NAME" in _codes(renamed_dir)
+
+    original_zip = Path(receipt.zip_path)
+    renamed_zip = tmp_path / "renamed.zip"
+    _write_zip_sidecar(renamed_zip, original_zip.read_bytes())
+    assert "WRONG_CONTAINER_NAME" in _codes(renamed_zip)
+
+
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda value: value["snapshot"].update(mode="worktree"),
+        lambda value: value["snapshot"].update(formal_eligible=False),
+        lambda value: value["snapshot"].update(work_branch="secret"),
+        lambda value: value.update(components=[]),
+        lambda value: value["packages"][0].update(secret="/private"),
+        lambda value: value["tools"][0].update(module_name="9Bad"),
+        lambda value: value["tools"][0].update(entrypoint="Missing"),
+        lambda value: value["components"][0]["members"][0].update(
+            path="new/Re\u0301sume\u0301.bas"
+        ),
+        lambda value: value["policy_evidence"].update(extra="pass"),
+    ],
+)
+def test_verifier_rejects_self_consistent_untrusted_catalogs(
+    tmp_path: Path, mutator: Any
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+    kit_id = _rebind_catalog_identity(candidate, mutator)
+    bound = tmp_path / kit_id
+    candidate.rename(bound)
+
+    assert "CATALOG_MALFORMED" in _codes(bound)
+
+
+def test_manual_and_embedded_type_confusion_fail_closed(tmp_path: Path) -> None:
+    catalog, _ = _catalog()
+    package = dict(catalog.packages[0])
+    package["classification"] = []
+    bypass = replace(
+        catalog,
+        packages=(package, *catalog.packages[1:]),
+        report=ValidationReport(),
+    )
+    with pytest.raises(SourceError, match="CATALOG_RECORD_INVALID"):
+        stage_build_kit(bypass, tmp_path / "manual")
+
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+    kit_id = _rebind_catalog_identity(
+        candidate,
+        lambda value: value["packages"][0].update(classification=[]),
+    )
+    bound = tmp_path / kit_id
+    candidate.rename(bound)
+    assert "CATALOG_MALFORMED" in _codes(bound)
+
+
+def test_verifier_reruns_static_policy_on_self_consistent_sources(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+    source = candidate / "packages/core/source/SafeModule.bas"
+    denied = (
+        b'Attribute VB_Name = "SafeModule"\r\n'
+        b"Option Explicit\r\n"
+        b"Public Sub Run()\r\n"
+        b'    Shell "forbidden"\r\n'
+        b"End Sub\r\n"
+    )
+    source.write_bytes(denied)
+    digest = hashlib.sha256(denied).hexdigest()
+
+    def mutate(value: dict[str, Any]) -> None:
+        value["components"][0]["members"][0]["raw_sha256"] = digest
+
+    kit_id = _rebind_catalog_identity(candidate, mutate)
+    hashes = _json(candidate / "receipts/hashes.json")
+    hashes["members"][0]["raw_sha256"] = digest
+    (candidate / "receipts/hashes.json").write_bytes(canonical_json_bytes(hashes))
+    _rewrite_integrity(candidate, kit_id)
+    bound = tmp_path / kit_id
+    candidate.rename(bound)
+
+    assert "CATALOG_POLICY_INVALID" in _codes(bound)
+
+
+def test_creator_authenticates_source_hash_before_output(tmp_path: Path) -> None:
+    catalog, _ = _catalog()
+    component = catalog.components[0]
+    member = replace(component.members[0], raw_sha256="0" * 64)
+    bypass = replace(
+        catalog,
+        components=(replace(component, members=(member,)),),
+        report=ValidationReport(),
+    )
+    with pytest.raises(SourceError, match="SOURCE_HASH_MISMATCH"):
+        stage_build_kit(bypass, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_verifier_rejects_bad_windows_name_in_directory_and_zip(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    kit_dir = Path(receipt.kit_dir)
+    bad = kit_dir / "Bad:Name"
+    bad.write_bytes(b"bad")
+    assert "PATH_INVALID_CHARACTER" in _codes(kit_dir)
+
+    files = {
+        path.relative_to(kit_dir).as_posix(): path.read_bytes()
+        for path in kit_dir.rglob("*")
+        if path.is_file()
+    }
+    archive = tmp_path / f"{receipt.kit_id}.zip"
+    _write_zip_sidecar(archive, _fixed_zip(files))
+    assert "PATH_INVALID_CHARACTER" in _codes(archive)
+
+
+def test_zip_verifier_requires_exact_canonical_container_bytes(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog(with_form=True)
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    source_zip = Path(receipt.zip_path)
+    with zipfile.ZipFile(source_zip) as archive:
+        files = {info.filename: archive.read(info) for info in archive.infolist()}
+
+    mutations: dict[str, bytes] = {
+        "reverse": _fixed_zip(files, list(reversed(sorted(files)))),
+        "prefix": b"self-extract-prefix" + source_zip.read_bytes(),
+        "trailing": source_zip.read_bytes() + b"trailing-garbage",
+    }
+    local_header = bytearray(source_zip.read_bytes())
+    assert local_header[:4] == b"PK\x03\x04"
+    local_header[10] = 2
+    mutations["local-header"] = bytes(local_header)
+
+    for label, data in mutations.items():
+        parent = tmp_path / label
+        parent.mkdir()
+        path = parent / f"{receipt.kit_id}.zip"
+        _write_zip_sidecar(path, data)
+        assert "ZIP_NOT_CANONICAL" in _codes(path), label
+
+
+def test_verifier_rejects_symlinked_zip_sidecar_and_ancestor(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    original = Path(receipt.zip_path)
+
+    symlink_zip = tmp_path / f"{receipt.kit_id}.zip"
+    symlink_zip.symlink_to(original)
+    assert "SYMLINK_ENTRY" in _codes(symlink_zip)
+
+    copied_zip = tmp_path / "copy" / f"{receipt.kit_id}.zip"
+    copied_zip.parent.mkdir()
+    copied_zip.write_bytes(original.read_bytes())
+    copied_zip.with_name(copied_zip.name + ".sha256").symlink_to(
+        original.with_name(original.name + ".sha256")
+    )
+    assert "SYMLINK_ENTRY" in _codes(copied_zip)
+
+    linked_parent = tmp_path / "linked-parent"
+    linked_parent.symlink_to(Path(receipt.kit_dir).parent, target_is_directory=True)
+    linked_dir = linked_parent / receipt.kit_id
+    assert "SYMLINK_ANCESTOR" in _codes(linked_dir)
+
+
+def test_existing_primary_kit_resumes_missing_deterministic_derivatives(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    first = stage_build_kit(catalog, tmp_path / "out")
+    archive = Path(first.zip_path)
+    sidecar = archive.with_name(archive.name + ".sha256")
+    archive_bytes = archive.read_bytes()
+    sidecar_bytes = sidecar.read_bytes()
+    archive.unlink()
+    sidecar.unlink()
+
+    resumed = stage_build_kit(catalog, tmp_path / "out")
+    assert resumed == first
+    assert archive.read_bytes() == archive_bytes
+    assert sidecar.read_bytes() == sidecar_bytes
+
+
+def test_destination_race_never_overwrites_dangling_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog, _ = _catalog()
+    output = tmp_path / "out"
+    original = kit_module._publish_directory_noreplace
+
+    def race(source: Path, destination: Path) -> None:
+        destination.symlink_to("missing-target", target_is_directory=True)
+        original(source, destination)
+
+    monkeypatch.setattr(kit_module, "_publish_directory_noreplace", race)
+    with pytest.raises(InfrastructureError, match="KIT_OUTPUT_COLLISION"):
+        stage_build_kit(catalog, output)
+    symlinks = [path for path in output.iterdir() if path.is_symlink()]
+    assert len(symlinks) == 1
+    assert os.readlink(symlinks[0]) == "missing-target"
+
+
+def test_replaced_lock_is_not_deleted_and_ownership_loss_surfaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog, _ = _catalog()
+    output = tmp_path / "out"
+    original = kit_module._write_layout
+
+    def replace_lock(root: Path, files: Any) -> None:
+        lock = next((output / ".locks").glob("*.lock"))
+        lock.unlink()
+        lock.write_text("replacement", encoding="ascii")
+        original(root, files)
+
+    monkeypatch.setattr(kit_module, "_write_layout", replace_lock)
+    with pytest.raises(InfrastructureError, match="KIT_LOCK_OWNERSHIP_LOST"):
+        stage_build_kit(catalog, output)
+    lock = next((output / ".locks").glob("*.lock"))
+    assert lock.read_text(encoding="ascii") == "replacement"
+
+
+def test_post_commit_derivative_failure_leaves_valid_primary_for_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog, _ = _catalog()
+    output = tmp_path / "out"
+    original = kit_module._publish_file_noreplace
+    attempts = 0
+
+    def fail_first(source: Path, destination: Path) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise InfrastructureError("INJECTED_DERIVATIVE_FAILURE")
+        original(source, destination)
+
+    monkeypatch.setattr(kit_module, "_publish_file_noreplace", fail_first)
+    with pytest.raises(InfrastructureError, match="INJECTED_DERIVATIVE_FAILURE"):
+        stage_build_kit(catalog, output)
+
+    primary = next(path for path in output.glob("kit-*") if path.is_dir())
+    assert verify_build_kit(primary).ok
+    monkeypatch.setattr(kit_module, "_publish_file_noreplace", original)
+    resumed = stage_build_kit(catalog, output)
+    assert Path(resumed.zip_path).is_file()
+
+
+def test_cleanup_failure_is_not_silently_swallowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog, _ = _catalog()
+    original_write = kit_module._write_file
+
+    def fail_write(path: Path, data: bytes) -> None:
+        if path.name == "catalog.json":
+            raise OSError("write failed")
+        original_write(path, data)
+
+    def fail_cleanup(path: Path) -> None:
+        raise OSError("cleanup failed")
+
+    monkeypatch.setattr(kit_module, "_write_file", fail_write)
+    monkeypatch.setattr(kit_module, "_remove_tree", fail_cleanup)
+    with pytest.raises(InfrastructureError, match="KIT_CLEANUP_FAILED"):
+        stage_build_kit(catalog, tmp_path / "out")
+
+
+def test_lock_directory_is_private_and_owned(tmp_path: Path) -> None:
+    catalog, _ = _catalog()
+    output = tmp_path / "out"
+    stage_build_kit(catalog, output)
+
+    status = (output / ".locks").stat()
+    assert stat.S_IMODE(status.st_mode) == 0o700
+    assert status.st_uid == os.geteuid()
