@@ -4,13 +4,13 @@
 >
 > 初版日期：2026-07-12
 >
-> 工作分支：`codex/dev-review-report`
+> 工作分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 >
 > 初版仓库快照：`def9ce212f7c19ac3c1a04bc7d22f151d9aac183`
 >
 > 目标环境：CATIA V5-6R2018（R28/B28）、VBA7 64 位 Windows
 >
-> 当前阶段：重构路线、总体包边界、离线 Build Kit 边界、首个里程碑范围 B，以及唯一本地命名空间/上游镜像边界已确认；详细 schema、CLI、Core 工具清单、运行时和目标机交付仍待书面评审
+> 当前阶段：总架构已重写，并拆出离线 Build Kit、Core Runtime MVP、B28 验收交付、上游 intake 四份子规格；许可证与仓库拓扑已按 DR-012/DR-013 收口，整套规格仍待用户书面复核
 
 本文记录本轮重构开始前已经完成的调查过程、证据边界、独立复核结果和用户确认的设计决策。它不是“当前 CATVBA 已经修复”的证明，也不替代 R2018 目标机的编译、运行和许可证验收。
 
@@ -27,12 +27,12 @@
 |---|---|---|
 | RQ-01 | 当前工作区没有 CATIA | 本地只承担源码编写、静态分析、离线测试、清单生成、二进制审计和打包准备；不得声称已在 CATIA 中编译通过 |
 | RQ-02 | 正式目标为 CATIA V5-6R2018 / VBA7 64 位 | 目标构建必须使用干净 B28 环境，不能继承现有 B30 References 或用 Office VBA 代替 CATIA 宿主验证 |
-| RQ-03 | 许可证基线为 AB3、MD2、HD2 | 能力判断必须分别覆盖三种许可证配置，不能只测试三者同时存在的会话 |
-| RQ-04 | Core 只取 AB3、MD2、HD2 的严格能力交集 | 只有在 AB3-only、MD2-only、HD2-only 三个 profile 均通过的能力才可进入 Core |
+| RQ-03 | 正式目标每台至少有 AB3、HD2、MD2 中一种，并额外保证 SPA、FTA | 最小 profile 固定为 P-AB3/P-HD2/P-MD2，三者都包含 SPA+FTA；不能只测三种 base 同时存在的会话 |
+| RQ-04 | Core 取三种最小目标 profile 的严格能力交集，但自身不得早绑定 SPA/FTA | 只有在 P-AB3、P-HD2、P-MD2 都通过，且没有 SPA/FTA Reference/API 污染的能力才可进入 Core |
 | RQ-05 | 超出 Core 的能力必须隔离 | 部分基线配置可用的能力进入 Baseline Extensions；需要其他产品代码的能力进入 Licensed Optional |
 | RQ-06 | 额外许可证能力必须提供风险与替代方案 | 每个可选包都要记录许可证证据、隔离方式、失败行为和无额外许可证的降级实现 |
-| RQ-07 | 重构只针对本地分支 | 不修改远端，不把未经审定的重构直接推入 `main` 或 `dev` |
-| RQ-08 | 远端 `main`、`dev` 会继续更新 | 初期保留现有 `Src` 平面文件结构，通过外部清单分包，降低后续同步冲突 |
+| RQ-07 | 重构只针对个人工作分支 | 只写 `doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`；不写 fork `main/dev` 或上游仓库 |
+| RQ-08 | fork `main/dev` 镜像上游并会继续更新 | 初期保留现有 `Src` 平面文件结构，通过 namespaced overlay 与审定 intake 降低同步冲突 |
 
 **DR-011 当前解释：** RQ-01 的“本地源码编写”不授权直接修改 upstream `Src/`；详细设计和
 日期化计划获批后，本地实现只进入 `catvba_refactor/`。RQ-08 的“保留现有 `Src`”落实为
@@ -70,10 +70,10 @@ intake-only upstream mirror；显式整组件 override 和外部清单位于唯�
 
 | 对象 | 快照 |
 |---|---|
-| 当前工作分支 | `codex/dev-review-report` |
+| 当前工作分支 | `doylenehemiah6893-afk/Macro_menu:codex/dev-review-report` |
 | 本文初版 HEAD | `def9ce212f7c19ac3c1a04bc7d22f151d9aac183` |
-| `origin/dev` | `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad` |
-| `origin/main` | `efbcb6e200d68089bfe7b6324daa75b0f177b6c8` |
+| fork `doylenehemiah6893-afk/Macro_menu:dev` | `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad` |
+| fork `doylenehemiah6893-afk/Macro_menu:main` | `efbcb6e200d68089bfe7b6324daa75b0f177b6c8` |
 | 工作树 | 初版写入前干净 |
 | `main` 与 `dev` | 当前本地引用无共同祖先 |
 
@@ -182,16 +182,16 @@ p-code 的正式结论必须来自：干净 B28 工程导入、Compile、保存�
 
 | 能力/API | 候选包 | 证据状态 | 无额外许可证降级；其他替代须注明权益 |
 |---|---|---|---|
-| 基础 Product/Part/CATDrawing、菜单基础设施 | Core candidate | 必须 AB3-only、MD2-only、HD2-only 均通过 | 不通过的具体功能移出 Core |
+| 基础 Product/Part/CATDrawing、菜单基础设施 | Core candidate | 必须 P-AB3、P-HD2、P-MD2 均通过，且不早绑定 SPA/FTA | 不通过的具体功能移出 Core |
 | 只在一或两个基线配置通过的能力 | Baseline Extension | 待三 profile 实测 | 入口可见但禁用并说明 profile，或采用更基础的数据/几何操作 |
-| `SPAWorkbench`、`OptimizerWorkBench/PartComps`、测量 | Optional-SPA | 高可信候选映射，仍需 R2018 实测 | 树、PN、实例、数量、文件版本和普通属性比较；不宣称几何等价 |
+| `SPAWorkbench`、`OptimizerWorkBench/PartComps`、测量 | Fleet-SPA | 正式目标保证 SPA，但具体 API/Reference 仍需 R2018 实测 | 树、PN、实例、数量、文件版本和普通属性比较；不宣称几何等价 |
 | STEP 导出 | Optional-ST1 | 产品代码明确，需权益验证 | 无额外权益时保留原生 CATPart/CATProduct；外部转换端仍需 ST1 |
 | `HybridShapeUnfold` | Optional-DL1 | 高可信映射，需实测 | 禁用自由曲面展开；不得把近似算法宣称为等价 |
 | `Layout2DView` | Optional-LO1 | 产品能力明确 | 仅保留标准 CATDrawing 图框路径 |
 | `Marker3Ds` | Optional-DMN | 高可信映射，需实测 | UserRefProperties、CSV 或普通 Drawing 文本 |
-| `AnnotationSets/CreateFlagNote` | Optional-FTA | 产品能力方向明确，API 归属仍需实测 | UserRefProperties、普通 CATDrawing 文本或待实现 CSV；不保留语义标注等价性 |
+| `AnnotationSets/CreateFlagNote` | Fleet-FTA | 正式目标保证 FTA，但具体 API/Reference 仍需实测 | UserRefProperties、普通 CATDrawing 文本或待实现 CSV；不保留语义标注等价性 |
 | `CreateProgram/CreateFormula` | Optional-KWA | 产品能力明确，配置包含关系待验证 | VBA 即时计算并写普通属性；失去关联更新 |
-| Excel Workbook/Range/Shape | Optional-Excel | 非 CATIA 许可证，但属于部署依赖 | CSV/TSV 是待实现的正式降级，不是当前已有能力 |
+| Excel Workbook/Range/Shape | External Integration | 非 CATIA 许可证；属于额外部署与安全依赖 | CSV/TSV 是待实现的正式降级，不是当前已有能力 |
 
 上述表格描述目标边界，不表示当前源码已经隔离。当前至少存在五条会污染 Core 编译边界或阻止物理分包的依赖：
 
@@ -253,13 +253,15 @@ p-code 的正式结论必须来自：干净 B28 工程导入、Compile、保存�
 
 ### DR-002：Core 使用严格交集
 
-**状态：已批准，2026-07-12。**
+**状态：交集原则已批准，2026-07-12；旧 profile 命名于 2026-07-13 被 DR-013 取代。**
 
-定义：
+当前定义：
 
 ```text
-Core = Verified(AB3-only) ∩ Verified(MD2-only) ∩ Verified(HD2-only)
+Core = Verified(P-AB3) ∩ Verified(P-HD2) ∩ Verified(P-MD2)
 ```
+
+其中三个最小 profile 都包含 SPA+FTA，但 Core 自身仍不得早绑定 SPA/FTA 类型、Reference 或 API。
 
 准入必须同时满足：
 
@@ -274,7 +276,7 @@ Core = Verified(AB3-only) ∩ Verified(MD2-only) ∩ Verified(HD2-only)
 
 ### DR-003：增加 Baseline Extensions 层
 
-**状态：已批准，2026-07-12。**
+**状态：已批准，2026-07-12；profile 组成以 DR-013 为准。**
 
 对属于 AB3/MD2/HD2 并集、但不属于严格交集的能力，不错误标记为“额外许可证”，也不塞进 Core。它们按能力形成 Baseline Extension，并记录三 profile 的实测矩阵。
 
@@ -295,17 +297,17 @@ Core = Verified(AB3-only) ∩ Verified(MD2-only) ∩ Verified(HD2-only)
 
 ### DR-006：物理包边界采用 fail-closed
 
-**状态：已批准，2026-07-12。**
+**状态：物理隔离原则已批准，2026-07-12；SPA/FTA 的默认 Fleet 地位于 2026-07-13 被 DR-013 细化。**
 
 ```text
 MacroMenu.Core.catvba
 MacroMenu.Baseline-<Capability>.catvba
-MacroMenu.Optional-SPA.catvba
+MacroMenu.Fleet-SPA.catvba
 MacroMenu.Optional-ST1.catvba
 MacroMenu.Optional-DL1.catvba
 MacroMenu.Optional-LO1.catvba
 MacroMenu.Optional-DMN.catvba
-MacroMenu.Optional-FTA.catvba
+MacroMenu.Fleet-FTA.catvba
 MacroMenu.Optional-KWA.catvba
 MacroMenu.Optional-Excel.catvba
 MacroMenu.DevTools.catvba            # 永不进入普通用户正式发布
@@ -339,7 +341,7 @@ DR-007 只批准上述职责边界；manifest schema、CLI/API、错误码、生
 - 每个设计节确认后更新本决策台账；
 - 每个实现阶段开始和结束时记录输入 SHA、范围、测试命令/结果、未决风险和下一动作；
 - 每批子代理结束后先把采用的结论和被拒绝的冲突建议写入文档，再进入下一批；
-- 每次吸收 `origin/dev` 前后记录 old/new SHA、冲突、选择性处理和验证结果；
+- 每次吸收 `verysolecd/Macro_menu:dev` 前后记录 old/new SHA、冲突、选择性处理和验证结果；
 - 每个 Build Kit、B28 构建和许可证 profile 会话生成不可覆盖的 kit/build/evidence 记录；
 - 对话或上下文摘要只用于导航，仓库文档、Git 提交和不可变证据才是持续工作的真源。
 
@@ -350,7 +352,7 @@ DR-007 只批准上述职责边界；manifest schema、CLI/API、错误码、生
 - 首阶段保留 `Src/`、`resources/`、根目录遗留 CATVBA、`ref_project/`、`DrawFunc/` 和 `artifacts/` 的物理位置，不做批量搬迁、重命名或转码；
 - 本地逐步新增 `config/`、`schemas/`、`macro_build/`、`tests/`、忽略的 `build/`/`dist/`，由 manifest 覆盖遗留平面源码；
 - 文档入口统一为 `README.md` → `Docs/README.md` → `Docs/STATUS.md`，历史材料只加状态/勘误，不改写原证据；
-- `origin/dev` 仍是唯一代码上游，每次变化经本地 intake 审查和显式 merge commit 吸收；`origin/main` 只观察，不整体合并；
+- `verysolecd/Macro_menu:dev` 是逻辑代码上游；fork `main/dev` 只镜像对应上游，个人工作分支经审定 intake 吸收变化；
 - Overlay 批准不等于其 schema、CLI、运行时或五个 Core 候选工具已批准，也不授权当前生成候选 CATVBA。
 
 **后续修订：** DR-011 保留 DR-010 的 Overlay 与零搬迁原则，但取代其“根级新增六个目录”的物理
@@ -360,14 +362,13 @@ DR-007 只批准上述职责边界；manifest schema、CLI/API、错误码、生
 
 **状态：方向已批准，2026-07-13；精确 manifest schema、错误码和 intake record 仍待详细 spec 书面复核。**
 
-- `Src/` 与 `resources/` 只由 `origin/dev` intake 更新；本地重构、修复、格式化、转码和生成器不得直接写入；
+- `Src/` 与 `resources/` 只由 `verysolecd/Macro_menu:dev` 的审定 intake 更新；本地重构、修复、格式化、转码和生成器不得直接写入；
 - 除既有 `README.md`、`Docs/`、`.gitignore`、`.gitattributes` 等治理例外外，所有新增实现只进入 `catvba_refactor/`；
 - 本地新增组件位于 `catvba_refactor/vba/new/<source-id>/`；遗留组件修改使用
   `catvba_refactor/vba/overrides/<source-id>/` 的完整组件副本；FRM/FRX 必须成对；
 - override 必须显式绑定 upstream path、Git blob OID、原始 SHA-256、组件类型和 `VB_Name`；任何
   upstream 漂移都使 binding 过期并 fail-closed，禁止静默使用新版 upstream 文件；
-- 配置、schema、Python 工具、测试、build 和 dist 全部位于同一 namespaced root，避免未来 upstream
-  创建根级同名目录；
+- 配置、schema、Python 工具源码、测试、build 和 dist 全部位于同一 namespaced root；根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目/锁/版本真源，不在命名空间内复制；
 - candidate 从固定 Git blobs 构建，不把 clean worktree 当成原始字节证明；
 - intake 与新的业务功能不得混在同一提交；上游改变 override base 时必须人工退役、重新实现、重绑或 Quarantine；
 - upstream 若创建 `catvba_refactor/**`、产生 Windows portable path 冲突或破坏 FRM/FRX 配对，intake 立即阻断。
@@ -379,26 +380,63 @@ DR-007 只批准上述职责边界；manifest schema、CLI/API、错误码、生
 - 根级 `config/`、`tests/` 等仍可能与未来 upstream 撞路径。
 
 DR-011 细化 DR-004 的“文本源码”：它是 upstream cutoff blobs 与 namespaced local components 的组合，
-不是允许直接修改 `Src/`。本轮实时核对 `origin/dev@abce8ff` 与当前 `Src/`、`resources/` 差异均为 0。
+不是允许直接修改 `Src/`。本轮历史核对 `verysolecd/Macro_menu:dev@abce8ff` 与当时 `Src/`、`resources/` 差异均为 0；该结论只绑定该 cutoff。
 
 ---
 
-## 6. 已批准的总体架构边界（DR-011 后）
+### DR-012：固定仓库拓扑与唯一根 Python 项目
+
+**状态：方向已批准，2026-07-13；实现尚未开始。**
+
+- 逻辑开发上游固定为 `verysolecd/Macro_menu:dev`，逻辑发布上游为 `verysolecd/Macro_menu:main`；
+- fork 的 `doylenehemiah6893-afk/Macro_menu:main,dev` 只镜像对应上游，不承载个人重构；
+- 唯一重构写分支为 `doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`；
+- 规格、证据和工具输出必须记录完整仓库/分支/commit/tree，不把本机 `origin/upstream` remote 名称当权威身份；
+- 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 依赖与运行环境真源；
+- `catvba_refactor/` 保存实现源码、配置、schema、测试和派生输出，但不得建立第二套 Python project/lock；
+- 正式 Build Kit 只接受干净、已提交的 candidate tree；worktree 模式只做诊断，不能生成正式 snapshot 或 Kit。
+
+### DR-013：正式许可证模型与 Fleet-SPA/Fleet-FTA
+
+**状态：用户条件已确认，2026-07-13；B28 实测仍未执行。**
+
+正式目标资格定义为：
 
 ```text
-origin/dev@cutoff:Src (upstream-owned, intake-only)
-                 +
-catvba_refactor/vba/{new,overrides,shared_contracts}
-                 +
-catvba_refactor/{config,schemas,macro_build,tests}
-                 |
-                 v
-       fail-closed source resolver
-                 |
-                 v
-      Core      Baseline Extensions   Licensed Optional
-        |              |              |
-        +------ namespaced staging / Build Kit ------+
+Eligible = (AB3 OR HD2 OR MD2) AND SPA AND FTA
+```
+
+- 最小验收 profile 为 P-AB3、P-HD2、P-MD2，三者分别只含一种 base configuration，并都含 SPA+FTA；
+- P-ALL 与现场实际 P-PROD 只作补充，不能替代三个最小 profile；
+- Core 必须在三个最小 profile 都通过，同时不建立 SPA/FTA 早绑定 Reference、类型或启动依赖；
+- SPA 与 FTA 是正式 Fleet 默认交付能力，但分别进入 `MacroMenu.Fleet-SPA.catvba` 与
+  `MacroMenu.Fleet-FTA.catvba`，独立构建、Reference、证据、加载和故障隔离；
+- Fleet-SPA 或 Fleet-FTA 缺失/加载/checkout 失败时，Core 和另一扩展必须可继续启动；但完整 Fleet
+  release-set 的对应门禁不得 PASS；
+- ST1、DL1、LO1、DMN、KWA 等仍是 CATIA Licensed Optional Candidate；Excel/网络/外部 COM 属于
+  External Integration，不以 CATIA 许可证包表述；
+- 旧文档中的 AB3-only/HD2-only/MD2-only 与 Optional-SPA/Optional-FTA 只保留为历史术语，当前设计
+  一律以本决策为准。
+
+---
+
+## 6. 已批准的总体架构边界（DR-013 后）
+
+```text
+verysolecd/Macro_menu:dev@cutoff Src/resources blobs
+                    +
+doylenehemiah6893-afk/Macro_menu:codex/dev-review-report
+  catvba_refactor/{vba,config,schemas,macro_build,tests}
+                    +
+repo root pyproject.toml / uv.lock / .python-version
+                    |
+                    v
+          fail-closed source resolver
+                    |
+                    v
+ Core        Fleet-SPA       Fleet-FTA       Other candidates
+   |              |               |                 |
+   +--------- immutable Build Kit / evidence -------+
 
 DevTools / Quarantine 与正式发布完全分离
 现有 CATVBA 仅作为 legacy evidence
@@ -422,12 +460,11 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 
 以下内容仍需逐节提交用户确认：
 
-1. 离线构建链的精确 manifest schema、CLI/API 和错误码；总体边界已经批准；
-2. 首个里程碑 B 的只读工具清单及 Core 运行时入口、上下文、错误/日志、状态保护和可选包调用协议；
+1. 重写后的总规格与四份子规格的整体书面批准；
+2. 子规格内仍标为待 B28 spike/现场确认的安装路径、宏库注册和跨 CATVBA 调用细节；
 3. 安全策略、危险操作事务模型、现场调试版与正式版差异；
-4. B28 构建机测试、三许可证 profile 验收和发布门禁；
-5. upstream intake 记录格式、三树冲突分级、portable path 规则和 override rebind/retirement 自动化细节；高层所有权边界已由 DR-011 批准；
-6. 完整设计文档的整体批准、实施阶段、回滚点和任务级实施计划。
+4. manifest/schema/CLI 的实施级字段、错误码和任务拆分；
+5. 用户批准规格后再编写实施计划；批准前不得创建候选 CATVBA 或声称目标机通过。
 
 本文件可以记录调查事实和已经确认的决策，但不能把这些待评审内容写成“已批准实现”。
 
@@ -438,7 +475,7 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 每次 R2018 构建或现场调试至少保存：
 
 - Windows 版本、CATIA R2018 SP/HF、VBA/VBE 版本；
-- AB3-only、MD2-only、HD2-only profile 的建立方式和 DSLS checkout 记录；
+- P-AB3、P-HD2、P-MD2 profile 的建立方式，AB3/HD2/MD2 与 SPA+FTA 的 DSLS checkout 记录；
 - `Tools > References` 清单、GUID、版本、解析路径和 `MISSING:` 状态；
 - `Debug > Compile` 结果；
 - 首次启动、关闭 CATIA 后重启、重复启动的结果；
@@ -472,3 +509,5 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 | 2026-07-12 | 建立调查与决策台账；记录已完成审计、方案 2、严格 Core 交集和 Baseline Extensions 决策 |
 | 2026-07-12 | 确认离线 Build Kit 边界、首个里程碑范围 B 和阶段性文档检查点 |
 | 2026-07-13 | 以 DR-011 将所有本地实现收进 `catvba_refactor/`，把 `Src/` 定义为 intake-only upstream mirror，并采用显式整组件 override |
+| 2026-07-13 | 以 DR-012 固定完整仓库拓扑、唯一工作分支和唯一根 Python project/lock |
+| 2026-07-13 | 以 DR-013 确认 `(AB3 OR HD2 OR MD2) AND SPA AND FTA`，并将 SPA/FTA 改为默认但物理隔离的 Fleet 包 |
