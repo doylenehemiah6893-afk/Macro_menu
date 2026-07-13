@@ -24,6 +24,36 @@ def test_surrogateescaped_non_utf8_path_is_rejected() -> None:
     assert _codes(["bad-\udcff.bas"]) == ["PATH_INVALID_UTF8"]
 
 
+def test_empty_path_is_rejected_without_folding_into_an_empty_segment() -> None:
+    with pytest.raises(SourceError, match=r"^PATH_EMPTY$"):
+        portable_key("")
+
+
+@pytest.mark.parametrize("path", ["folder/", "folder//A.bas", r"folder\\A.bas"])
+def test_empty_stored_segments_are_rejected(path: str) -> None:
+    with pytest.raises(SourceError, match=r"^PATH_EMPTY_SEGMENT$"):
+        portable_key(path)
+
+
+def test_leading_spaces_are_not_stripped_from_stored_components() -> None:
+    assert portable_key(" Folder/ A.bas") == " folder/ a.bas"
+    assert validate_portable_paths(["Folder/A.bas", " Folder/ A.bas"]).ok
+
+
+def test_nfkc_separator_inside_component_does_not_fabricate_prefix() -> None:
+    assert validate_portable_paths(["a", "a／b/c.bas"]).ok
+
+
+def test_nfkc_separator_inside_component_does_not_fabricate_reserved_name() -> None:
+    assert validate_portable_paths(["x／CON.bas"]).ok
+
+
+def test_nfkc_separator_does_not_collapse_distinct_component_boundaries() -> None:
+    assert validate_portable_paths(["a／b", "a/b"]).ok
+    assert portable_key("a／b") != portable_key("a/b")
+    assert portable_key("a／b") != portable_key("a~1b")
+
+
 @pytest.mark.parametrize(
     "path",
     [

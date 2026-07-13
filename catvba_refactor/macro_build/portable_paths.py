@@ -24,7 +24,7 @@ _RESERVED_BASENAMES = {
 @dataclass(frozen=True)
 class _PortablePath:
     stored: str
-    key: str
+    key: tuple[str, ...]
 
 
 _PATH_MESSAGES = {
@@ -39,7 +39,11 @@ _PATH_MESSAGES = {
 
 
 def _normalized_path(path: str) -> str:
-    return unicodedata.normalize("NFC", path.replace("\\", "/"))
+    separated = path.replace("\\", "/")
+    return "/".join(
+        unicodedata.normalize("NFC", segment)
+        for segment in separated.split("/")
+    )
 
 
 def _portable_path(path: str) -> _PortablePath:
@@ -61,19 +65,25 @@ def _portable_path(path: str) -> _PortablePath:
     if any(segment.endswith((".", " ")) for segment in segments):
         raise SourceError("PATH_TRAILING_DOT_SPACE")
 
-    key = unicodedata.normalize("NFKC", stored).casefold()
-    key_segments = key.split("/")
+    key_segments = tuple(
+        unicodedata.normalize("NFKC", segment).casefold()
+        for segment in segments
+    )
     if any(
         segment.split(".", 1)[0] in _RESERVED_BASENAMES
         for segment in key_segments
     ):
         raise SourceError("PATH_RESERVED_NAME")
-    return _PortablePath(stored=stored, key=key)
+    return _PortablePath(stored=stored, key=key_segments)
 
 
 def portable_key(path: str) -> str:
     """Return the Windows-portable collision key for a valid relative path."""
-    return _portable_path(path).key
+    key_segments = _portable_path(path).key
+    return "/".join(
+        segment.replace("~", "~0").replace("/", "~1")
+        for segment in key_segments
+    )
 
 
 def _invalid_path_diagnostic(path: str, error: SourceError) -> Diagnostic:
@@ -86,7 +96,7 @@ def _invalid_path_diagnostic(path: str, error: SourceError) -> Diagnostic:
 
 
 def _collision_diagnostics(paths: tuple[_PortablePath, ...]) -> list[Diagnostic]:
-    by_key: dict[str, list[_PortablePath]] = defaultdict(list)
+    by_key: dict[tuple[str, ...], list[_PortablePath]] = defaultdict(list)
     for path in paths:
         by_key[path.key].append(path)
 
@@ -110,17 +120,18 @@ def _collision_diagnostics(paths: tuple[_PortablePath, ...]) -> list[Diagnostic]
 def _file_directory_diagnostics(
     paths: tuple[_PortablePath, ...],
 ) -> list[Diagnostic]:
-    by_key: dict[str, list[_PortablePath]] = defaultdict(list)
+    by_key: dict[tuple[str, ...], list[_PortablePath]] = defaultdict(list)
     for path in paths:
         by_key[path.key].append(path)
 
-    nested_by_prefix: dict[str, list[_PortablePath]] = defaultdict(list)
-    prefix_display: dict[str, set[str]] = defaultdict(set)
+    nested_by_prefix: dict[tuple[str, ...], list[_PortablePath]] = defaultdict(
+        list
+    )
+    prefix_display: dict[tuple[str, ...], set[str]] = defaultdict(set)
     for path in paths:
-        key_segments = path.key.split("/")
         stored_segments = path.stored.split("/")
-        for length in range(1, len(key_segments)):
-            prefix_key = "/".join(key_segments[:length])
+        for length in range(1, len(path.key)):
+            prefix_key = path.key[:length]
             if prefix_key not in by_key:
                 continue
             nested_by_prefix[prefix_key].append(path)
