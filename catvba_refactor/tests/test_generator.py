@@ -198,6 +198,17 @@ def test_generates_exact_sorted_cp936_runtime_modules() -> None:
     assert "MM_Protocol.TryParseRequest" in dispatch_text
     assert dispatch_text.count("MM_Protocol.BuildResponse") == 1
     assert dispatch_text.count("CleanExit:") == 1
+    assert "Dim buildingResponse As Boolean" in dispatch_text
+    clean_exit = dispatch_text.index("CleanExit:")
+    build_call = dispatch_text.index("MM_Protocol.BuildResponse")
+    fail = dispatch_text.index("Fail:")
+    assert clean_exit < dispatch_text.index("buildingResponse = True", clean_exit) < build_call < fail
+    fail_body = dispatch_text[fail:]
+    assert "If buildingResponse Then Exit Function" in fail_body
+    assert fail_body.index("If buildingResponse Then Exit Function") < fail_body.index(
+        "MM_Error.InternalError(Err.Number)"
+    )
+    assert "Resume CleanExit" in fail_body
     assert "Case Else" in dispatch_text
     assert "MM_Error.UnknownCommand(commandId)" in dispatch_text
     assert "MM_Error.InternalError(Err.Number)" in dispatch_text
@@ -540,7 +551,7 @@ def test_each_generated_member_has_an_independent_hash_oracle() -> None:
         for component in generated.components
     } == {
         "generated.build-info": "be83a33a2c892544de3385eaae68bed94ca6844173945476325d7278ca454dc7",
-        "generated.dispatch": "24f99aff463ac7f5619d76929e0b810d91d9ee8cd4b02bdde900870a36cb4900",
+        "generated.dispatch": "4c64e922d143fc6f49a7894ebff8d4a7fec6fcdaacc8e0446d2106739d21c29d",
         "generated.menu-catalog": "0ffc78b36bbf989bc907566841e3a89d52ee716f206c2d273ba0fa78d67f1c5b",
     }
     menu = next(

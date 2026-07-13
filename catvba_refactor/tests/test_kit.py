@@ -786,7 +786,7 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
         ),
     ]
     independent_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
-    assert independent_id == "kit-c57e2dfb71dd137683a3"
+    assert independent_id == "kit-245b5a1cf86d1e49ed1b"
     assert receipt.kit_id == independent_id
 
     manifest_bytes = (kit_dir / "kit-manifest.json").read_bytes()

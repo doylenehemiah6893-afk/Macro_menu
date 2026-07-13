@@ -702,6 +702,28 @@ def test_system_service_execute_script_self_call_is_code_owned_core_deny() -> No
     ]
 
 
+@pytest.mark.parametrize("token", ["SystemService", "ExecuteScript"])
+def test_generated_dispatch_cannot_make_runtime_location_tokens_safe(
+    token: str,
+) -> None:
+    component = _component(
+        "core.dispatch-location",
+        "standard_module",
+        "DispatchLocation",
+        _source(
+            "Public Function Core_Invoke(ByVal request As Variant) As Variant\r\n"
+            f"    Call {token}\r\n"
+            "End Function\r\n"
+        ),
+    )
+
+    report = validate_catalog(_catalog((component,)))
+
+    assert [(item.code, item.details["token"]) for item in report.diagnostics] == [
+        ("CORE_TOKEN_DENIED", token)
+    ]
+
+
 def test_udt_name_used_only_as_parameter_name_is_not_a_type_exposure() -> None:
     standard = _component(
         "core.contract-name",
