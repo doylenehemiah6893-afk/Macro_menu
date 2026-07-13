@@ -80,7 +80,9 @@ def _tool(
     return {
         "tool_id": tool_id,
         "caption": "Healthcheck",
+        "tooltip": "Check the Core runtime",
         "group_id": "core.general",
+        "group_caption": "General",
         "package_id": package_id,
         "module_name": "Healthcheck",
         "entrypoint": "Main",
@@ -183,6 +185,118 @@ def test_tool_referencing_missing_package_is_rejected(
     _write(config_dir, "tools.json", tools)
 
     assert _codes(config_dir, schema_dir) == ["UNKNOWN_PACKAGE"]
+
+
+def test_tool_display_metadata_accepts_chinese_with_ascii_stable_ids(
+    manifest_dirs: tuple[Path, Path],
+) -> None:
+    config_dir, schema_dir = manifest_dirs
+    tools = _read(config_dir, "tools.json")
+    tool = _tool()
+    tool.update(
+        {
+            "caption": "运行状况检查",
+            "tooltip": "检查核心运行时状态",
+            "group_caption": "常规工具",
+        }
+    )
+    tools["tools"] = [tool]
+    _write(config_dir, "tools.json", tools)
+
+    assert _codes(config_dir, schema_dir) == []
+
+
+@pytest.mark.parametrize("missing_field", ["tooltip", "group_caption"])
+def test_tool_requires_non_empty_display_metadata(
+    manifest_dirs: tuple[Path, Path], missing_field: str
+) -> None:
+    config_dir, schema_dir = manifest_dirs
+    tools = _read(config_dir, "tools.json")
+    tool = _tool()
+    tool.pop(missing_field)
+    tools["tools"] = [tool]
+    _write(config_dir, "tools.json", tools)
+
+    assert _codes(config_dir, schema_dir) == ["SCHEMA_REQUIRED_FIELD"]
+
+
+@pytest.mark.parametrize("field", ["caption", "tooltip", "group_caption"])
+def test_tool_rejects_empty_display_metadata(
+    manifest_dirs: tuple[Path, Path], field: str
+) -> None:
+    config_dir, schema_dir = manifest_dirs
+    tools = _read(config_dir, "tools.json")
+    tool = _tool()
+    tool[field] = ""
+    tools["tools"] = [tool]
+    _write(config_dir, "tools.json", tools)
+
+    assert _codes(config_dir, schema_dir) == ["SCHEMA_VALIDATION"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tool_id", "Core.healthcheck"),
+        ("tool_id", "核心.健康检查"),
+        ("group_id", "Core.General"),
+        ("group_id", "核心.常规"),
+    ],
+)
+def test_tool_and_group_ids_remain_ascii_lowercase_stable_ids(
+    manifest_dirs: tuple[Path, Path], field: str, value: str
+) -> None:
+    config_dir, schema_dir = manifest_dirs
+    tools = _read(config_dir, "tools.json")
+    tool = _tool()
+    tool[field] = value
+    tools["tools"] = [tool]
+    _write(config_dir, "tools.json", tools)
+
+    assert "SCHEMA_VALIDATION" in _codes(config_dir, schema_dir)
+
+
+def test_nfkc_casefold_duplicate_tool_ids_are_rejected(
+    manifest_dirs: tuple[Path, Path],
+) -> None:
+    config_dir, schema_dir = manifest_dirs
+    tools = _read(config_dir, "tools.json")
+    first = _tool("core.healthcheck")
+    second = _tool("ＣＯＲＥ.HealthCheck")
+    tools["tools"] = [first, second]
+    _write(config_dir, "tools.json", tools)
+
+    assert "CANONICAL_ID_COLLISION" in _codes(config_dir, schema_dir)
+
+
+def test_one_group_id_cannot_have_conflicting_group_captions(
+    manifest_dirs: tuple[Path, Path],
+) -> None:
+    config_dir, schema_dir = manifest_dirs
+    tools = _read(config_dir, "tools.json")
+    first = _tool("core.healthcheck")
+    first["group_caption"] = "常规工具"
+    second = _tool("core.document-summary")
+    second["group_caption"] = "General"
+    tools["tools"] = [first, second]
+    _write(config_dir, "tools.json", tools)
+
+    first_report = load_and_validate_config(config_dir, schema_dir).report
+    tools["tools"] = [second, first]
+    _write(config_dir, "tools.json", tools)
+    reversed_report = load_and_validate_config(config_dir, schema_dir).report
+
+    expected = (
+        "GROUP_CAPTION_CONFLICT",
+        "tools.json#/tools",
+        "group core.general has conflicting captions: 'General', '常规工具'",
+    )
+    assert [
+        (item.code, item.path, item.message) for item in first_report.diagnostics
+    ] == [expected]
+    assert [
+        (item.code, item.path, item.message) for item in reversed_report.diagnostics
+    ] == [expected]
 
 
 def test_candidate_component_requires_a_known_package(

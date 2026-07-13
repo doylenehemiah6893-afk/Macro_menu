@@ -107,7 +107,9 @@ _TOOL_FIELDS = frozenset(
     {
         "tool_id",
         "caption",
+        "tooltip",
         "group_id",
+        "group_caption",
         "package_id",
         "module_name",
         "entrypoint",
@@ -726,6 +728,7 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
 
     tools = value["tools"]
     tool_ids: list[str] = []
+    group_captions: dict[str, set[str]] = {}
     if type(tools) is not list:
         add("CATALOG_RECORD_INVALID", "catalog.json#/tools", "tools must be an array")
         tools = []
@@ -745,10 +748,14 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
             field_value = tool[field]
             if type(field_value) is not str or _VBA_NAME.fullmatch(field_value) is None:
                 add("CATALOG_RECORD_INVALID", f"{path}/{field}", f"{field} is not a legal VBA name")
-        for field in ("caption", "risk_level"):
+        for field in ("caption", "tooltip", "group_caption", "risk_level"):
             field_value = tool[field]
             if type(field_value) is not str or not field_value or _has_control(field_value) or _looks_pathlike(field_value):
                 add("CATALOG_RECORD_INVALID", f"{path}/{field}", f"{field} is invalid or path-looking")
+        group_id = tool["group_id"]
+        group_caption = tool["group_caption"]
+        if type(group_id) is str and type(group_caption) is str:
+            group_captions.setdefault(group_id, set()).add(group_caption)
         for field, nonempty in (("document_types", True), ("required_capabilities", False)):
             list_error = _string_list_error(tool[field], nonempty=nonempty)
             if list_error is not None:
@@ -763,6 +770,15 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
             add("CATALOG_RECORD_INVALID", f"{path}/module_name", "tool must bind one standard module in its package")
     if tool_ids != sorted(tool_ids) or len(tool_ids) != len(set(tool_ids)):
         add("CATALOG_RECORD_INVALID", "catalog.json#/tools", "tool IDs must be unique and sorted")
+    for group_id, captions in sorted(group_captions.items()):
+        if len(captions) < 2:
+            continue
+        rendered = ", ".join(repr(caption) for caption in sorted(captions))
+        add(
+            "GROUP_CAPTION_CONFLICT",
+            "catalog.json#/tools",
+            f"group {group_id} has conflicting captions: {rendered}",
+        )
 
     policy = value["policy_evidence"]
     error = _record_keys_error(policy, _POLICY_FIELDS, _POLICY_FIELDS)
@@ -839,7 +855,7 @@ def _preflight(catalog: ResolvedCatalog) -> tuple[dict[str, Any], bytes, str]:
             ),
             validation_errors[0],
         )
-        if code not in {"FORM_BINDING_INVALID"} and not code.startswith("PATH_"):
+        if code not in {"FORM_BINDING_INVALID", "GROUP_CAPTION_CONFLICT"} and not code.startswith("PATH_"):
             code = "CATALOG_RECORD_INVALID"
         raise _source_error(code, f"{path}: {message}")
 
@@ -2461,8 +2477,9 @@ def _verify_file_map(
             diagnostics.append(
                 _verification_diagnostic(
                     (
-                        "CATALOG_NONCANONICAL"
-                        if code == "CATALOG_NONCANONICAL"
+                        code
+                        if code
+                        in {"CATALOG_NONCANONICAL", "GROUP_CAPTION_CONFLICT"}
                         else "CATALOG_MALFORMED"
                     ),
                     path,

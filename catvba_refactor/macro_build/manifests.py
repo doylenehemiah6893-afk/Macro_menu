@@ -10,6 +10,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from .canonical import canonical_json_bytes, sha256_bytes
 from .errors import ConfigError
 from .model import Diagnostic, ValidationReport
+from .runtime_contract import canonical_runtime_id
 
 
 _MANIFEST_NAMES = ("components", "packages", "project", "tools")
@@ -289,6 +290,65 @@ def _binding_diagnostics(
     return diagnostics
 
 
+def _canonical_id_diagnostics(
+    records: list[tuple[int, dict[str, Any]]],
+    *,
+    field: str,
+    kind: str,
+) -> list[Diagnostic]:
+    originals_by_canonical: dict[str, set[str]] = {}
+    for _, record in records:
+        value = record.get(field)
+        if not isinstance(value, str):
+            continue
+        try:
+            canonical = canonical_runtime_id(value)
+        except (TypeError, ValueError):
+            continue
+        originals_by_canonical.setdefault(canonical, set()).add(value)
+
+    diagnostics: list[Diagnostic] = []
+    for canonical, originals in sorted(originals_by_canonical.items()):
+        if len(originals) < 2:
+            continue
+        rendered = ", ".join(repr(value) for value in sorted(originals))
+        diagnostics.append(
+            Diagnostic(
+                code="CANONICAL_ID_COLLISION",
+                path="tools.json#/tools",
+                message=(
+                    f"canonical {kind} ID collision for {canonical}: {rendered}"
+                ),
+            )
+        )
+    return diagnostics
+
+
+def _group_caption_diagnostics(
+    records: list[tuple[int, dict[str, Any]]],
+) -> list[Diagnostic]:
+    captions_by_group: dict[str, set[str]] = {}
+    for _, record in records:
+        group_id = record.get("group_id")
+        group_caption = record.get("group_caption")
+        if isinstance(group_id, str) and isinstance(group_caption, str):
+            captions_by_group.setdefault(group_id, set()).add(group_caption)
+
+    diagnostics: list[Diagnostic] = []
+    for group_id, captions in sorted(captions_by_group.items()):
+        if len(captions) < 2:
+            continue
+        rendered = ", ".join(repr(value) for value in sorted(captions))
+        diagnostics.append(
+            Diagnostic(
+                code="GROUP_CAPTION_CONFLICT",
+                path="tools.json#/tools",
+                message=f"group {group_id} has conflicting captions: {rendered}",
+            )
+        )
+    return diagnostics
+
+
 def _cross_file_diagnostics(documents: dict[str, Any]) -> list[Diagnostic]:
     component_records = _records(documents["components"], "components")
     root_records = _records(documents["components"], "source_roots")
@@ -332,6 +392,13 @@ def _cross_file_diagnostics(documents: dict[str, Any]) -> list[Diagnostic]:
         *package_diagnostics,
         *tool_diagnostics,
     ]
+    diagnostics.extend(
+        _canonical_id_diagnostics(tool_records, field="tool_id", kind="tool")
+    )
+    diagnostics.extend(
+        _canonical_id_diagnostics(tool_records, field="group_id", kind="group")
+    )
+    diagnostics.extend(_group_caption_diagnostics(tool_records))
 
     for index, component in component_records:
         package_id = component.get("package_id")

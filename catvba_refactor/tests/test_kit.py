@@ -137,7 +137,9 @@ def _tool(tool_id: str = "core.safe") -> dict[str, Any]:
     return {
         "tool_id": tool_id,
         "caption": "Safe",
+        "tooltip": "Run the safe tool",
         "group_id": "core.general",
+        "group_caption": "General",
         "package_id": "core",
         "module_name": "SafeModule",
         "entrypoint": "Run",
@@ -498,7 +500,7 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
     }
     assert identity == expected_identity
     independent_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
-    assert independent_id == "kit-4a6b9ce405d1f9b0a5ec"
+    assert independent_id == "kit-50c6c9cb85a7e8d7689d"
     assert receipt.kit_id == independent_id
 
     manifest_bytes = (kit_dir / "kit-manifest.json").read_bytes()
@@ -879,6 +881,109 @@ def test_manual_catalog_rejects_noncanonical_or_secret_package_fields(
     with pytest.raises(SourceError, match="CATALOG_RECORD_INVALID"):
         stage_build_kit(bypass, tmp_path / "out")
     assert not (tmp_path / "out").exists()
+
+
+def test_creator_rejects_conflicting_group_captions_without_manifest_validation(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    conflicting = _tool("core.other")
+    conflicting["group_caption"] = "常规工具"
+    bypass = replace(
+        catalog,
+        tools=(conflicting, *catalog.tools),
+        report=ValidationReport(),
+    )
+
+    with pytest.raises(
+        SourceError,
+        match=(
+            r"^GROUP_CAPTION_CONFLICT: catalog\.json#/tools: "
+            r"group core\.general has conflicting captions: 'General', '常规工具'$"
+        ),
+    ):
+        stage_build_kit(bypass, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_group_caption_conflict_diagnostic_is_stable_under_tool_reordering() -> None:
+    catalog, _ = _catalog()
+    conflicting = _tool("core.other")
+    conflicting["group_caption"] = "常规工具"
+    bypass = replace(catalog, tools=(conflicting, *catalog.tools))
+    identity = kit_module._identity_payload(bypass)
+
+    forward = [
+        finding
+        for finding in kit_module._catalog_document_errors(identity)
+        if finding[0] == "GROUP_CAPTION_CONFLICT"
+    ]
+    identity["tools"].reverse()
+    reversed_input = [
+        finding
+        for finding in kit_module._catalog_document_errors(identity)
+        if finding[0] == "GROUP_CAPTION_CONFLICT"
+    ]
+
+    assert forward == reversed_input == [
+        (
+            "GROUP_CAPTION_CONFLICT",
+            "catalog.json#/tools",
+            "group core.general has conflicting captions: 'General', '常规工具'",
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tooltip", "bad\nvalue"),
+        ("tooltip", "C:/private/tool.txt"),
+        ("group_caption", "bad\x00value"),
+        ("group_caption", "//server/private/group"),
+    ],
+)
+def test_creator_rejects_unsafe_tool_display_strings(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    catalog, _ = _catalog()
+    tool = dict(catalog.tools[0])
+    tool[field] = value
+    bypass = replace(catalog, tools=(tool,), report=ValidationReport())
+
+    with pytest.raises(SourceError, match="CATALOG_RECORD_INVALID"):
+        stage_build_kit(bypass, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("container_kind", ["directory", "zip"])
+def test_verifier_rejects_resigned_catalog_with_conflicting_group_captions(
+    tmp_path: Path, container_kind: str
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+
+    def add_conflicting_caption(value: dict[str, Any]) -> None:
+        conflicting = dict(value["tools"][0])
+        conflicting["tool_id"] = "core.other"
+        conflicting["group_caption"] = "常规工具"
+        value["tools"].insert(0, conflicting)
+
+    kit_id = _rebind_catalog_identity(candidate, add_conflicting_caption)
+    attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
+    report = verify_build_kit(attack)
+
+    conflicts = [
+        item for item in report.diagnostics if item.code == "GROUP_CAPTION_CONFLICT"
+    ]
+    assert [(item.path, item.message) for item in conflicts] == [
+        (
+            "catalog.json#/tools",
+            "group core.general has conflicting captions: 'General', '常规工具'",
+        )
+    ]
 
 
 @pytest.mark.parametrize(

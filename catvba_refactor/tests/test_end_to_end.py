@@ -171,7 +171,9 @@ def _create_fixture_repository(tmp_path: Path) -> tuple[Path, Path, bytes]:
                 {
                     "tool_id": "core.safe",
                     "caption": "Safe",
+                    "tooltip": "Run the safe tool",
                     "group_id": "core.general",
+                    "group_caption": "General",
                     "package_id": "core",
                     "module_name": "SafeModule",
                     "entrypoint": "Run",

@@ -28,7 +28,9 @@
       "required": [
         "tool_id",
         "caption",
+        "tooltip",
         "group_id",
+        "group_caption",
         "package_id",
         "module_name",
         "entrypoint",
@@ -39,7 +41,9 @@
       "properties": {
         "tool_id": {"$ref": "#/$defs/stable_id"},
         "caption": {"type": "string", "minLength": 1},
+        "tooltip": {"type": "string", "minLength": 1},
         "group_id": {"$ref": "#/$defs/stable_id"},
+        "group_caption": {"type": "string", "minLength": 1},
         "package_id": {"$ref": "#/$defs/stable_id"},
         "module_name": {"type": "string", "minLength": 1},
         "entrypoint": {"type": "string", "minLength": 1},
