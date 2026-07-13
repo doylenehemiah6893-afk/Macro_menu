@@ -10,6 +10,12 @@ from jsonschema import Draft202012Validator
 SCHEMA_PATH = (
     Path(__file__).parents[1] / "schemas" / "intake-initial-baseline.schema.json"
 )
+RECORD_PATH = (
+    Path(__file__).parents[1]
+    / "intake"
+    / "records"
+    / "2026-07-13-initial-baseline.json"
+)
 CUTOFF = "abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad"
 SRC_TREE = "0f7263465cdd5ecd7dbe5ceff090cad859cc1173"
 RESOURCES_TREE = "720c20864bff3c48694acaf780b50518f49b9a60"
@@ -63,6 +69,11 @@ def _valid_record() -> dict[str, Any]:
 
 def test_initial_baseline_schema_accepts_no_content_record() -> None:
     assert list(_validator().iter_errors(_valid_record())) == []
+
+
+def test_repository_initial_baseline_record_matches_schema() -> None:
+    record = json.loads(RECORD_PATH.read_text(encoding="utf-8"))
+    assert list(_validator().iter_errors(record)) == []
 
 
 @pytest.mark.parametrize(

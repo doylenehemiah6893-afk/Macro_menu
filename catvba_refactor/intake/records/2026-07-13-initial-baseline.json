@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "record_type": "initial_baseline",
+  "status": "accepted",
+  "recorded_date": "2026-07-13",
+  "approver": "doylenehemiah6893-afk",
+  "upstream": {
+    "repository": "verysolecd/Macro_menu",
+    "ref": "dev",
+    "commit": "abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad"
+  },
+  "fork": {
+    "repository": "doylenehemiah6893-afk/Macro_menu",
+    "ref": "dev",
+    "commit": "abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad"
+  },
+  "work_pre_intake_commit": "679222ebaab2cc3108651ae6c03f9ef364999a99",
+  "merge_commit": null,
+  "merge_reason": "initial-baseline/no-content-intake",
+  "trees": {
+    "Src": {
+      "cutoff_oid": "0f7263465cdd5ecd7dbe5ceff090cad859cc1173",
+      "work_oid": "0f7263465cdd5ecd7dbe5ceff090cad859cc1173"
+    },
+    "resources": {
+      "cutoff_oid": "720c20864bff3c48694acaf780b50518f49b9a60",
+      "work_oid": "720c20864bff3c48694acaf780b50518f49b9a60"
+    }
+  },
+  "changed_paths": [],
+  "override_decisions": [],
+  "checks": {
+    "remote_refs_equal": true,
+    "cutoff_is_work_ancestor": true,
+    "src_tree_equal": true,
+    "resources_tree_equal": true,
+    "reserved_namespace_absent": true,
+    "portable_paths": "passed",
+    "form_frx_pairs": "passed"
+  },
+  "superseded_kit_ids": []
+}
