@@ -147,6 +147,48 @@ def _tool(
     }
 
 
+@pytest.mark.parametrize(
+    ("declaration", "accepted"),
+    [
+        (
+            "Public Function Run(ByVal context As C_MMContext) As C_MMResult",
+            True,
+        ),
+        ("Public Sub Run(ByVal context As C_MMContext)", False),
+        ("Public Function Run() As C_MMResult", False),
+        (
+            "Public Function Run(ByRef context As C_MMContext) As C_MMResult",
+            False,
+        ),
+        ("Public Function Run(ByVal context As Object) As C_MMResult", False),
+        (
+            "Public Function Run(ByVal context As C_MMContext, ByVal extra As Long) As C_MMResult",
+            False,
+        ),
+        ("Public Function Run(ByVal context As C_MMContext) As Variant", False),
+    ],
+)
+def test_tool_entrypoint_requires_the_exact_core_context_result_abi(
+    declaration: str, accepted: bool
+) -> None:
+    component = _component(
+        "core.safe",
+        "standard_module",
+        "SafeModule",
+        _source(f"{declaration}\r\nEnd {'Function' if 'Function' in declaration else 'Sub'}\r\n"),
+    )
+
+    report = validate_catalog(_catalog((component,), tools=(_tool(),)))
+
+    if accepted:
+        assert report.ok
+    else:
+        assert [finding.code for finding in report.diagnostics] == [
+            "TOOL_ENTRYPOINT_BINDING_INVALID"
+        ]
+        assert report.diagnostics[0].path == "tools.json#/tools/0/entrypoint"
+
+
 def test_requires_option_explicit_and_reports_exact_source_location() -> None:
     component = _component(
         "core.no-option",
@@ -737,18 +779,24 @@ def test_valid_tool_binds_to_exact_public_standard_module_entrypoint() -> None:
         "core.safe-module",
         "standard_module",
         "SafeModule",
-        _source("Public Sub Run()\r\nEnd Sub\r\n"),
+        _source(
+            "Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
     )
 
     assert validate_catalog(_catalog((module,), tools=(_tool(),))).ok
 
 
-def test_valid_tool_may_bind_to_exact_public_function_entrypoint() -> None:
+def test_valid_tool_binding_uses_vba_case_insensitive_abi_semantics() -> None:
     module = _component(
         "core.safe-function",
         "standard_module",
         "SafeModule",
-        _source("Public Function Run() As Variant\r\nEnd Function\r\n"),
+        _source(
+            "public function run(byval CONTEXT as c_mmcontext) as c_mmresult\r\n"
+            "end function\r\n"
+        ),
     )
 
     assert validate_catalog(_catalog((module,), tools=(_tool(),))).ok
@@ -850,24 +898,27 @@ def test_tool_entrypoint_scope_parser_fails_closed_for_malformed_procedures(
 @pytest.mark.parametrize(
     "body",
     [
-        "Public Sub Run()\r\nEnd Sub\r\n",
+        (
+            "Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
         (
             "Private Function Prepare() As Boolean\r\n"
             "End Function\r\n"
-            "Public Sub Run()\r\n"
-            "End Sub\r\n"
+            "Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
         ),
         (
             "Private Property Get Ready() As Boolean\r\n"
             "End Property\r\n"
-            "Public Sub Run()\r\n"
-            "End Sub\r\n"
+            "Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
         ),
         (
             "Private Sub Prepare(): End Sub: "
             "Private Function IsReady() As Boolean: End Function: "
             "Private Property Get Ready() As Boolean: End Property: "
-            "Public Sub Run(): End Sub\r\n"
+            "Public Function Run(ByVal context As C_MMContext) As C_MMResult: End Function\r\n"
         ),
     ],
 )
@@ -918,7 +969,10 @@ def test_tool_records_fail_closed_with_stable_pointer_diagnostics(
         "core.safe-module",
         "standard_module",
         "SafeModule",
-        _source("Public Sub Run()\r\nEnd Sub\r\n"),
+        _source(
+            "Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
     )
 
     report = validate_catalog(_catalog((module,), tools=tools))

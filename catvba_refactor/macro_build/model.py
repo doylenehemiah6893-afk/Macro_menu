@@ -1,6 +1,14 @@
+import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
+
+
+GIT_OBJECT_ID_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+SHA256_DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+TOOL_VERSION_PATTERN = re.compile(
+    r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
 
 
 class SnapshotMode(StrEnum):
@@ -93,6 +101,13 @@ class ResolvedSourceSet:
 class GeneratedSourceSet:
     components: tuple[Component, ...]
     report: ValidationReport
+
+
+@dataclass(frozen=True)
+class GeneratedSourceDescriptor:
+    source_id: str
+    vb_name: str
+    path: str
 
 
 @dataclass(frozen=True)

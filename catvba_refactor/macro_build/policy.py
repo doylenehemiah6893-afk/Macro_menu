@@ -125,11 +125,6 @@ _PUBLIC_CLASS_MEMBER = re.compile(
     rf"{_IDENTIFIER}\b(?P<signature>.*)",
     re.IGNORECASE,
 )
-_PUBLIC_ENTRYPOINT_PREFIX = (
-    r"^\s*Public\s+(?:(?:Static)\s+)?(?:Sub|Function)\s+"
-)
-
-
 @dataclass(frozen=True)
 class _SourceText:
     component: Component
@@ -147,6 +142,7 @@ class _LogicalStatement:
 class _ProcedureFrame:
     kind: str
     candidate_line: int | None
+    named_line: int | None
 
 
 def _diagnostic(
@@ -541,9 +537,12 @@ def _udt_exposure_findings(
 
 
 def _module_scope_entrypoint_lines(
-    source: _SourceText, entrypoint_pattern: re.Pattern[str]
-) -> tuple[int, ...]:
+    source: _SourceText,
+    entrypoint_pattern: re.Pattern[str],
+    exact_abi_pattern: re.Pattern[str],
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
     lines: list[int] = []
+    named_lines: list[int] = []
     procedure_stack: list[_ProcedureFrame] = []
     poisoned = False
     for statement in _logical_statements(source.lines):
@@ -561,6 +560,8 @@ def _module_scope_entrypoint_lines(
                 continue
             if not procedure_stack and frame.candidate_line is not None:
                 lines.append(frame.candidate_line)
+            if not procedure_stack and frame.named_line is not None:
+                named_lines.append(frame.named_line)
             continue
 
         procedure_start = _PROCEDURE_START.match(text)
@@ -572,16 +573,21 @@ def _module_scope_entrypoint_lines(
             poisoned = True
         raw_kind = procedure_start.group("kind").casefold()
         kind = "property" if raw_kind.startswith("property") else raw_kind
-        candidate_line = (
+        named_line = (
             statement.line
             if at_module_scope and entrypoint_pattern.match(text) is not None
             else None
         )
-        procedure_stack.append(_ProcedureFrame(kind, candidate_line))
+        candidate_line = (
+            statement.line
+            if named_line is not None and exact_abi_pattern.fullmatch(text) is not None
+            else None
+        )
+        procedure_stack.append(_ProcedureFrame(kind, candidate_line, named_line))
 
     if procedure_stack:
         poisoned = True
-    return () if poisoned else tuple(lines)
+    return ((), ()) if poisoned else (tuple(lines), tuple(named_lines))
 
 
 def _tool_binding_findings(
@@ -676,28 +682,38 @@ def _tool_binding_findings(
         component = module_matches[0]
         entrypoint = tool["entrypoint"]
         entrypoint_pattern = re.compile(
-            _PUBLIC_ENTRYPOINT_PREFIX
+            r"^\s*Public\s+(?:Sub|Function)\s+"
             + re.escape(entrypoint)
             + r"(?![A-Za-z0-9_])",
             re.IGNORECASE,
         )
+        exact_abi_pattern = re.compile(
+            r"^\s*Public\s+Function\s+"
+            + re.escape(entrypoint)
+            + r"\s*\(\s*ByVal\s+context\s+As\s+C_MMContext\s*\)"
+            + r"\s+As\s+C_MMResult\s*$",
+            re.IGNORECASE,
+        )
         variants = source_variants.get(id(component), [])
         variant_matches: list[tuple[int, ...]] = []
+        variant_named: list[tuple[int, ...]] = []
         for source in variants:
-            variant_matches.append(
-                _module_scope_entrypoint_lines(source, entrypoint_pattern)
+            matches, named = _module_scope_entrypoint_lines(
+                source, entrypoint_pattern, exact_abi_pattern
             )
+            variant_matches.append(matches)
+            variant_named.append(named)
         if not variant_matches or any(
             len(lines) != 1 for lines in variant_matches
         ):
             found_lines = tuple(
-                line for lines in variant_matches for line in lines
+                line for lines in variant_named for line in lines
             )
             diagnostics.append(
                 _diagnostic(
                     "TOOL_ENTRYPOINT_BINDING_INVALID",
                     f"{record_path}/entrypoint",
-                    "tool entrypoint must resolve to one exact public Sub or Function",
+                    "tool entrypoint must have the exact public Core context/result ABI",
                     line=min(found_lines, default=1),
                     token=entrypoint,
                 )

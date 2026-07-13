@@ -22,8 +22,7 @@ from .canonical import canonical_json_bytes, sha256_bytes
 from .encoding import decode_vba
 from .errors import InfrastructureError, SourceError
 from .generator import (
-    GENERATED_PATH,
-    GENERATED_SOURCE_ID,
+    GENERATED_SOURCE_DESCRIPTORS,
     generate_sources,
 )
 from .manifests import ManifestSet
@@ -32,12 +31,15 @@ from .model import (
     Component,
     Diagnostic,
     GeneratedSourceSet,
+    GIT_OBJECT_ID_PATTERN,
     InputSnapshot,
     Origin,
     ResolvedCatalog,
     ResolvedSourceSet,
+    SHA256_DIGEST_PATTERN,
     SnapshotMode,
     SourceMember,
+    TOOL_VERSION_PATTERN,
     ValidationReport,
     VerificationReport,
 )
@@ -74,11 +76,9 @@ _SIDECAR_LINE = re.compile(r"^([0-9a-f]{64})  ([^/\\]+\.zip)\n$")
 _MEMBER_ROLE_ORDER = {"frm": 0, "frx": 1, "source": 2}
 _STABLE_ID = re.compile(r"^[a-z][a-z0-9._-]{2,63}$")
 _VBA_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
-_OID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
-_DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_TOOL_VERSION = re.compile(
-    r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
-)
+_OID = GIT_OBJECT_ID_PATTERN
+_DIGEST = SHA256_DIGEST_PATTERN
+_TOOL_VERSION = TOOL_VERSION_PATTERN
 _VB_NAME_ATTRIBUTE = re.compile(
     r'^Attribute\s+VB_Name\s*=\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*$',
     re.IGNORECASE | re.MULTILINE,
@@ -815,6 +815,57 @@ def _git_blob_oid(data: bytes, oid: str) -> str | None:
     return None
 
 
+def _require_exact_generated_components(catalog: ResolvedCatalog) -> None:
+    manifests = ManifestSet(
+        project={"schema_version": 1},
+        components={"schema_version": 1, "source_roots": [], "components": []},
+        packages={"schema_version": 1, "packages": list(catalog.packages)},
+        tools={"schema_version": 1, "tools": list(catalog.tools)},
+        digest=catalog.snapshot.manifest_digest,
+        report=ValidationReport(),
+    )
+    regenerated = generate_sources(
+        ResolvedSourceSet(
+            components=tuple(
+                component
+                for component in catalog.components
+                if component.origin is not Origin.GENERATED
+            ),
+            quarantined=(),
+            report=ValidationReport(),
+        ),
+        manifests,
+        catalog.snapshot,
+    )
+    actual = tuple(
+        component
+        for component in catalog.components
+        if component.origin is Origin.GENERATED
+    )
+    if regenerated.report.diagnostics or actual != regenerated.components:
+        raise _source_error("COMPONENT_IDENTITY_MISMATCH", "generated components")
+
+
+def _reject_reordered_generated_components(catalog: ResolvedCatalog) -> None:
+    actual = [
+        component.source_id
+        for component in catalog.components
+        if component.origin is Origin.GENERATED
+    ]
+    expected = [
+        descriptor.source_id for descriptor in GENERATED_SOURCE_DESCRIPTORS
+    ]
+    if (
+        len(actual) == len(expected)
+        and all(type(source_id) is str for source_id in actual)
+        and sorted(actual) == expected
+    ):
+        if actual != expected:
+            raise _source_error(
+                "COMPONENT_IDENTITY_MISMATCH", "generated component order"
+            )
+
+
 def _preflight(catalog: ResolvedCatalog) -> tuple[dict[str, Any], bytes, str]:
     if catalog.snapshot.mode is not SnapshotMode.CANDIDATE:
         raise _source_error("SNAPSHOT_NOT_CANDIDATE")
@@ -827,6 +878,8 @@ def _preflight(catalog: ResolvedCatalog) -> tuple[dict[str, Any], bytes, str]:
         )
     if not catalog.components:
         raise _source_error("NO_BUILDABLE_COMPONENTS")
+
+    _reject_reordered_generated_components(catalog)
 
     # Authenticate exact source bytes and the hard CATVBA exclusion before
     # deriving any identity or reporting secondary structural findings.
@@ -858,6 +911,8 @@ def _preflight(catalog: ResolvedCatalog) -> tuple[dict[str, Any], bytes, str]:
         if code not in {"FORM_BINDING_INVALID", "GROUP_CAPTION_CONFLICT"} and not code.startswith("PATH_"):
             code = "CATALOG_RECORD_INVALID"
         raise _source_error(code, f"{path}: {message}")
+
+    _require_exact_generated_components(catalog)
 
     staged_files = {
         _output_member_path(component, member): member.data
@@ -2272,11 +2327,22 @@ def _verify_component_identities(
         if component.origin is Origin.GENERATED:
             raw_generated.append(raw_component)
 
+        reserved_source_ids = {
+            descriptor.source_id for descriptor in GENERATED_SOURCE_DESCRIPTORS
+        }
+        reserved_paths = {
+            descriptor.path for descriptor in GENERATED_SOURCE_DESCRIPTORS
+        }
+        reserved_vb_names = {
+            descriptor.vb_name for descriptor in GENERATED_SOURCE_DESCRIPTORS
+        }
         reserved_generated_path = any(
-            raw_member["path"] == GENERATED_PATH for raw_member in raw_members
+            raw_member["path"] in reserved_paths for raw_member in raw_members
         )
         if (
-            component.source_id == GENERATED_SOURCE_ID or reserved_generated_path
+            component.source_id in reserved_source_ids
+            or component.vb_name in reserved_vb_names
+            or reserved_generated_path
         ) and component.origin is not Origin.GENERATED:
             _component_identity_diagnostic(
                 diagnostics,
@@ -2284,9 +2350,6 @@ def _verify_component_identities(
                 "reserved generated source identity was downgraded to a non-generated origin",
                 reason="GENERATED_ORIGIN_MISMATCH",
             )
-
-    if not raw_generated:
-        return
 
     snapshot = catalog["snapshot"]
     manifests = ManifestSet(
@@ -2308,6 +2371,21 @@ def _verify_component_identities(
             report=ValidationReport(),
         ),
         manifests,
+        InputSnapshot(
+            mode=SnapshotMode.CANDIDATE,
+            upstream_repository="identity-only",
+            upstream_ref="identity-only",
+            upstream_commit=snapshot["upstream_commit"],
+            fork_repository="identity-only",
+            fork_dev_commit=snapshot["fork_dev_commit"],
+            work_repository="identity-only",
+            work_branch="identity-only",
+            work_commit=snapshot["work_commit"],
+            work_tree=snapshot["work_tree"],
+            manifest_digest=snapshot["manifest_digest"],
+            tool_version=snapshot["tool_version"],
+            formal_eligible=snapshot["formal_eligible"],
+        ),
     )
     expected_records = [
         _component_record(component) for component in regenerated.components

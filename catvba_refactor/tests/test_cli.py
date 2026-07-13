@@ -99,6 +99,17 @@ def _install_pipeline(
         calls.append(("freeze", worktree, version))
         return replace(snapshot, mode=SnapshotMode.WORKTREE if worktree else snapshot.mode)
 
+    def generate(
+        selected: ResolvedSourceSet,
+        loaded: ManifestSet,
+        frozen: InputSnapshot,
+    ) -> GeneratedSourceSet:
+        assert selected is resolved
+        assert loaded is manifests
+        assert frozen == snapshot
+        calls.append("generate")
+        return generated
+
     monkeypatch.setattr(cli, "load_and_validate_config", load, raising=False)
     monkeypatch.setattr(cli, "GitRepository", repository, raising=False)
     monkeypatch.setattr(cli, "freeze_snapshot", freeze, raising=False)
@@ -117,7 +128,7 @@ def _install_pipeline(
     monkeypatch.setattr(
         cli,
         "generate_sources",
-        lambda selected, loaded: calls.append("generate") or generated,
+        generate,
         raising=False,
     )
     monkeypatch.setattr(

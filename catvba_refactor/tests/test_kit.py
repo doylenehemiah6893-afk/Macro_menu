@@ -65,12 +65,15 @@ def _module(
     package_id: str = "core",
     vb_name: str = "SafeModule",
     path: str = "catvba_refactor/vba/new/SafeModule.bas",
+    body: str = (
+        "Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+        "End Function\r\n"
+    ),
 ) -> Component:
     data = (
         f'Attribute VB_Name = "{vb_name}"\r\n'
         "Option Explicit\r\n"
-        "Public Sub Run()\r\n"
-        "End Sub\r\n"
+        f"{body}"
     ).encode("ascii")
     return Component(
         source_id=source_id,
@@ -187,8 +190,10 @@ def _catalog(*, with_form: bool = False) -> tuple[ResolvedCatalog, bytes]:
         quarantined=(quarantine,),
         report=ValidationReport(),
     )
-    generated = GeneratedSourceSet(components=(), report=ValidationReport())
-    catalog = assemble_catalog(_snapshot(), resolved, generated, _manifests())
+    snapshot = _snapshot()
+    manifests = _manifests()
+    generated = generate_sources(resolved, manifests, snapshot)
+    catalog = assemble_catalog(snapshot, resolved, generated, manifests)
     assert catalog.report.ok
     return catalog, quarantine_data
 
@@ -200,8 +205,8 @@ def test_explicit_encoding_decision_is_bound_into_verifiable_kit(
         b'Attribute VB_Name = "SafeModule"\r\n'
         b"Option Explicit\r\n"
         b"'\xc2\xa9\r\n"
-        b"Public Sub Run()\r\n"
-        b"End Sub\r\n"
+        b"Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+        b"End Function\r\n"
     )
     kit_ids: list[str] = []
     for decision in ("cp936", "utf-8"):
@@ -212,22 +217,33 @@ def test_explicit_encoding_decision_is_bound_into_verifiable_kit(
             ),
             encoding_decision=decision,
         )
-        catalog = assemble_catalog(
-            _snapshot(),
-            ResolvedSourceSet(
+        snapshot = _snapshot()
+        resolved = ResolvedSourceSet(
                 components=(component,),
                 quarantined=(),
                 report=ValidationReport(),
-            ),
-            GeneratedSourceSet(components=(), report=ValidationReport()),
-            _manifests(),
+            )
+        manifests = _manifests()
+        catalog = assemble_catalog(
+            snapshot,
+            resolved,
+            generate_sources(resolved, manifests, snapshot),
+            manifests,
         )
         assert catalog.report.ok
 
         receipt = stage_build_kit(catalog, tmp_path / decision)
         kit_dir = Path(receipt.kit_dir)
-        catalog_record = _json(kit_dir / "catalog.json")["components"][0]
-        hash_record = _json(kit_dir / "receipts/hashes.json")["members"][0]
+        catalog_record = next(
+            record
+            for record in _json(kit_dir / "catalog.json")["components"]
+            if record["source_id"] == "core.safe-module"
+        )
+        hash_record = next(
+            record
+            for record in _json(kit_dir / "receipts/hashes.json")["members"]
+            if record["source_id"] == "core.safe-module"
+        )
 
         assert catalog_record["encoding_decision"] == decision
         assert hash_record["encoding_decision"] == decision
@@ -356,6 +372,9 @@ def test_assemble_catalog_is_stable_and_excludes_quarantine() -> None:
     assert [item.source_id for item in catalog.components] == [
         "core.safe-form",
         "core.safe-module",
+        "generated.build-info",
+        "generated.dispatch",
+        "generated.menu-catalog",
     ]
     assert [item["package_id"] for item in catalog.packages] == [
         "core",
@@ -363,6 +382,225 @@ def test_assemble_catalog_is_stable_and_excludes_quarantine() -> None:
     ]
     assert [item["tool_id"] for item in catalog.tools] == ["core.safe"]
     assert all(item.origin is not Origin.QUARANTINE for item in catalog.components)
+
+
+def test_staged_and_verified_core_generated_sources_exclude_fleet_tools(
+    tmp_path: Path,
+) -> None:
+    core = _module(
+        body=(
+            "Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
+        )
+    )
+    fleet = _module(
+        "fleet-spa.audit-module",
+        package_id="fleet-spa",
+        vb_name="SpaAudit",
+        path="catvba_refactor/vba/new/SpaAudit.bas",
+        body=(
+            "Public Function RunSpaAudit(ByVal context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
+    )
+    core_tool = _tool()
+    fleet_tool = {
+        **_tool("fleet.spa-audit"),
+        "caption": "SPA Audit",
+        "tooltip": "Run SPA audit",
+        "group_id": "fleet.spa",
+        "group_caption": "SPA Tools",
+        "package_id": "fleet-spa",
+        "module_name": "SpaAudit",
+        "entrypoint": "RunSpaAudit",
+    }
+    fta = _module(
+        "fleet-fta.audit-module",
+        package_id="fleet-fta",
+        vb_name="FtaAudit",
+        path="catvba_refactor/vba/new/FtaAudit.bas",
+        body=(
+            "Public Function RunFtaAudit(ByVal context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
+    )
+    fta_tool = {
+        **_tool("fleet.fta-audit"),
+        "caption": "FTA Audit",
+        "tooltip": "Run FTA audit",
+        "group_id": "fleet.fta",
+        "group_caption": "FTA Tools",
+        "package_id": "fleet-fta",
+        "module_name": "FtaAudit",
+        "entrypoint": "RunFtaAudit",
+    }
+    snapshot = _snapshot()
+    manifests = ManifestSet(
+        project={"schema_version": 1},
+        components={"schema_version": 1, "source_roots": [], "components": []},
+        packages={
+            "schema_version": 1,
+            "packages": [
+                {"package_id": "core", "classification": "CORE_CANDIDATE"},
+                {
+                    "package_id": "fleet-spa",
+                    "classification": "FLEET_EXTENSION_SPA",
+                },
+                {
+                    "package_id": "fleet-fta",
+                    "classification": "FLEET_EXTENSION_FTA",
+                },
+            ],
+        },
+        tools={
+            "schema_version": 1,
+            "tools": [fta_tool, fleet_tool, core_tool],
+        },
+        digest=snapshot.manifest_digest,
+        report=ValidationReport(),
+    )
+    resolved = ResolvedSourceSet(
+        components=(core, fleet, fta),
+        quarantined=(),
+        report=ValidationReport(),
+    )
+    generated = generate_sources(resolved, manifests, snapshot)
+    catalog = assemble_catalog(snapshot, resolved, generated, manifests)
+
+    receipt = stage_build_kit(catalog, tmp_path / "out")
+    assert verify_build_kit(receipt.kit_dir).ok
+    assert verify_build_kit(receipt.zip_path).ok
+    directory_text = "\n".join(
+        (Path(receipt.kit_dir) / "packages/core/source" / name).read_bytes().decode(
+            "cp936"
+        )
+        for name in ("MM_MenuCatalog.bas", "MM_Dispatch.bas")
+    )
+    with zipfile.ZipFile(receipt.zip_path) as archive:
+        zip_text = "\n".join(
+            archive.read(f"packages/core/source/{name}").decode("cp936")
+            for name in ("MM_MenuCatalog.bas", "MM_Dispatch.bas")
+        )
+    for text in (directory_text, zip_text):
+        assert "core.safe" in text
+        assert "SafeModule.Run(context)" in text
+        assert "fleet.spa-audit" not in text
+        assert "SpaAudit" not in text
+        assert "fleet.fta-audit" not in text
+        assert "FtaAudit" not in text
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Public Sub Run(ByVal context As C_MMContext)\r\nEnd Sub\r\n",
+        "Public Function Run() As C_MMResult\r\nEnd Function\r\n",
+        (
+            "Public Function Run(ByRef context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
+        (
+            "Public Function Run(ByVal context As Object) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
+        (
+            "Public Function Run(ByVal context As C_MMContext, ByVal extra As Long) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
+        (
+            "Public Function Run(ByVal context As C_MMContext) As Variant\r\n"
+            "End Function\r\n"
+        ),
+    ],
+)
+def test_creator_rejects_every_non_exact_tool_abi_before_output(
+    tmp_path: Path, body: str
+) -> None:
+    catalog, _ = _catalog()
+    components = list(catalog.components)
+    index = next(
+        index
+        for index, component in enumerate(components)
+        if component.source_id == "core.safe-module"
+    )
+    components[index] = _module(body=body)
+    attacked = replace(catalog, components=tuple(components))
+
+    with pytest.raises(SourceError, match="COMPONENT_IDENTITY_MISMATCH"):
+        stage_build_kit(attacked, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("container_kind", ["directory", "zip"])
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Public Sub Run(ByVal context As C_MMContext)\r\nEnd Sub\r\n",
+        "Public Function Run() As C_MMResult\r\nEnd Function\r\n",
+        (
+            "Public Function Run(ByRef context As C_MMContext) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
+        (
+            "Public Function Run(ByVal context As Object) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
+        (
+            "Public Function Run(ByVal context As C_MMContext, ByVal extra As Long) As C_MMResult\r\n"
+            "End Function\r\n"
+        ),
+        (
+            "Public Function Run(ByVal context As C_MMContext) As Variant\r\n"
+            "End Function\r\n"
+        ),
+    ],
+)
+def test_directory_and_zip_verifier_reject_every_resigned_non_exact_tool_abi(
+    tmp_path: Path, container_kind: str, body: str
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+    data = (
+        'Attribute VB_Name = "SafeModule"\r\n'
+        "Option Explicit\r\n"
+        f"{body}"
+    ).encode("ascii")
+    source = candidate / "packages/core/source/SafeModule.bas"
+    source.write_bytes(data)
+    digest = hashlib.sha256(data).hexdigest()
+    oid = _git_blob_oid(data)
+
+    def mutate(value: dict[str, Any]) -> None:
+        component = next(
+            item
+            for item in value["components"]
+            if item["source_id"] == "core.safe-module"
+        )
+        component["members"][0]["raw_sha256"] = digest
+        component["members"][0]["blob_oid"] = oid
+
+    kit_id = _rebind_catalog_identity(candidate, mutate)
+    hashes = _json(candidate / "receipts/hashes.json")
+    member = next(
+        item
+        for item in hashes["members"]
+        if item["source_id"] == "core.safe-module"
+    )
+    member["raw_sha256"] = digest
+    member["blob_oid"] = oid
+    (candidate / "receipts/hashes.json").write_bytes(
+        canonical_json_bytes(hashes)
+    )
+    _rewrite_integrity(candidate, kit_id)
+    attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
+
+    report = verify_build_kit(attack)
+    assert not report.ok
+    assert "COMPONENT_IDENTITY_MISMATCH" in {
+        finding.code for finding in report.diagnostics
+    }
 
 
 def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
@@ -412,7 +650,10 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
     assert all(quarantine_data not in path.read_bytes() for path in kit_dir.rglob("*") if path.is_file())
 
     order = (kit_dir / "import-order/core.txt").read_bytes()
-    assert order == b"SafeForm.frm\nSafeModule.bas\n"
+    assert order == (
+        b"SafeForm.frm\nSafeModule.bas\nMM_BuildInfo.bas\n"
+        b"MM_Dispatch.bas\nMM_MenuCatalog.bas\n"
+    )
     assert b"\r" not in order
 
     catalog_bytes = (kit_dir / "catalog.json").read_bytes()
@@ -498,9 +739,54 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
         "tools": [_tool()],
         "policy_evidence": {"compile_status": "not-run", "diagnostics": []},
     }
+    generated_records = [
+        {
+            "source_id": component.source_id,
+            "origin": "generated",
+            "component_type": "standard_module",
+            "vb_name": component.vb_name,
+            "package_id": "core",
+            "disposition": "candidate",
+            "encoding_decision": "cp936",
+            "members": [
+                {
+                    "path": component.members[0].path,
+                    "blob_oid": None,
+                    "raw_sha256": hashlib.sha256(
+                        component.members[0].data
+                    ).hexdigest(),
+                    "role": "source",
+                }
+            ],
+        }
+        for component in catalog.components
+        if component.origin is Origin.GENERATED
+    ]
+    expected_identity["components"].extend(generated_records)
     assert identity == expected_identity
+    assert [
+        (component["source_id"], component["vb_name"], component["members"][0]["path"])
+        for component in identity["components"]
+        if component["origin"] == "generated"
+    ] == [
+        (
+            "generated.build-info",
+            "MM_BuildInfo",
+            "generated/MM_BuildInfo.bas",
+        ),
+        (
+            "generated.dispatch",
+            "MM_Dispatch",
+            "generated/MM_Dispatch.bas",
+        ),
+        (
+            "generated.menu-catalog",
+            "MM_MenuCatalog",
+            "generated/MM_MenuCatalog.bas",
+        ),
+    ]
     independent_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
-    assert independent_id == "kit-50c6c9cb85a7e8d7689d"
+    assert independent_id == "kit-c57e2dfb71dd137683a3"
     assert receipt.kit_id == independent_id
 
     manifest_bytes = (kit_dir / "kit-manifest.json").read_bytes()
@@ -1295,14 +1581,15 @@ def test_verifier_rebuilds_resigned_generated_source(
         components=(_module(),), quarantined=(), report=ValidationReport()
     )
     manifests = _manifests()
-    generated = generate_sources(resolved, manifests)
-    assert generated.report.ok and len(generated.components) == 1
-    catalog = assemble_catalog(_snapshot(), resolved, generated, manifests)
+    snapshot = _snapshot()
+    generated = generate_sources(resolved, manifests, snapshot)
+    assert generated.report.ok and len(generated.components) == 3
+    catalog = assemble_catalog(snapshot, resolved, generated, manifests)
     assert catalog.report.ok
     receipt = stage_build_kit(catalog, tmp_path / "seed")
     candidate = tmp_path / "candidate"
     shutil.copytree(receipt.kit_dir, candidate)
-    staged_path = "packages/core/source/MM_GeneratedCatalog.bas"
+    staged_path = "packages/core/source/MM_MenuCatalog.bas"
     source = candidate / staged_path
     forged = source.read_bytes().replace(b'"Safe"', b'"Forged"')
     assert forged != source.read_bytes()
@@ -1313,7 +1600,7 @@ def test_verifier_rebuilds_resigned_generated_source(
         component = next(
             item
             for item in value["components"]
-            if item["source_id"] == "generated.tool-catalog"
+            if item["source_id"] == "generated.menu-catalog"
         )
         component["members"][0]["raw_sha256"] = digest
 
@@ -1323,6 +1610,119 @@ def test_verifier_rebuilds_resigned_generated_source(
     attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
 
     assert "COMPONENT_IDENTITY_MISMATCH" in _codes(attack)
+
+
+@pytest.mark.parametrize("container_kind", ["directory", "zip"])
+@pytest.mark.parametrize(
+    "attack_kind",
+    ["missing", "additional", "renamed", "reordered", "demoted"],
+)
+def test_verifier_requires_exact_generated_component_set_and_order(
+    tmp_path: Path, container_kind: str, attack_kind: str
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+
+    def mutate(value: dict[str, Any]) -> None:
+        generated = [
+            component
+            for component in value["components"]
+            if component["origin"] == "generated"
+        ]
+        assert len(generated) == 3
+        if attack_kind == "missing":
+            value["components"].remove(generated[-1])
+        elif attack_kind == "additional":
+            value["components"].append(dict(generated[-1]))
+        elif attack_kind == "renamed":
+            generated[-1]["source_id"] = "generated.renamed"
+        elif attack_kind == "reordered":
+            indexes = [value["components"].index(item) for item in generated]
+            first, second = indexes[:2]
+            value["components"][first], value["components"][second] = (
+                value["components"][second],
+                value["components"][first],
+            )
+        else:
+            generated[-1]["origin"] = "new"
+            data = (candidate / "packages/core/source/MM_MenuCatalog.bas").read_bytes()
+            generated[-1]["members"][0]["blob_oid"] = _git_blob_oid(data)
+
+    kit_id = _rebind_catalog_identity(candidate, mutate)
+    attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
+
+    report = verify_build_kit(attack)
+    assert not report.ok
+    expected_code = {
+        "missing": "COMPONENT_IDENTITY_MISMATCH",
+        "additional": "CATALOG_MALFORMED",
+        "renamed": "COMPONENT_IDENTITY_MISMATCH",
+        "reordered": "CATALOG_NONCANONICAL",
+        "demoted": "COMPONENT_IDENTITY_MISMATCH",
+    }[attack_kind]
+    assert expected_code in {diagnostic.code for diagnostic in report.diagnostics}
+
+
+@pytest.mark.parametrize(
+    "attack_kind",
+    ["missing", "additional", "renamed", "reordered", "demoted", "bytes"],
+)
+def test_creator_rejects_non_exact_generated_components_before_output(
+    tmp_path: Path, attack_kind: str
+) -> None:
+    catalog, _ = _catalog()
+    components = list(catalog.components)
+    indexes = [
+        index
+        for index, component in enumerate(components)
+        if component.origin is Origin.GENERATED
+    ]
+    assert len(indexes) == 3
+    if attack_kind == "missing":
+        components.pop(indexes[-1])
+    elif attack_kind == "additional":
+        components.append(components[indexes[-1]])
+    elif attack_kind == "renamed":
+        components[indexes[-1]] = replace(
+            components[indexes[-1]], source_id="generated.renamed"
+        )
+    elif attack_kind == "reordered":
+        first, second = indexes[:2]
+        components[first], components[second] = components[second], components[first]
+    elif attack_kind == "demoted":
+        component = components[indexes[-1]]
+        member = component.members[0]
+        components[indexes[-1]] = replace(
+            component,
+            origin=Origin.NEW,
+            members=(replace(member, blob_oid=_git_blob_oid(member.data)),),
+        )
+    else:
+        component = components[indexes[-1]]
+        member = component.members[0]
+        forged = member.data + b"' forged\r\n"
+        components[indexes[-1]] = replace(
+            component,
+            members=(
+                replace(
+                    member,
+                    data=forged,
+                    raw_sha256=hashlib.sha256(forged).hexdigest(),
+                ),
+            ),
+        )
+    attacked = replace(catalog, components=tuple(components))
+
+    expected_error = (
+        "CATALOG_RECORD_INVALID"
+        if attack_kind == "additional"
+        else "COMPONENT_IDENTITY_MISMATCH"
+    )
+    with pytest.raises(SourceError, match=expected_error):
+        stage_build_kit(attacked, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
 
 
 def test_creator_authenticates_source_hash_before_output(tmp_path: Path) -> None:

@@ -319,7 +319,7 @@ def _catalog_context(
     )
     if failed is not None:
         return failed
-    generated = generate_sources(resolved, manifests)
+    generated = generate_sources(resolved, manifests, snapshot)
     failed = _source_failure(
         args,
         generated.report,

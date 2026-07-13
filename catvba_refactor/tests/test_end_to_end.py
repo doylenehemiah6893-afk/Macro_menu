@@ -73,8 +73,8 @@ def _create_fixture_repository(tmp_path: Path) -> tuple[Path, Path, bytes]:
     module = (
         b'Attribute VB_Name = "SafeModule"\r\n'
         b"Option Explicit\r\n"
-        b"Public Sub Run()\r\n"
-        b"End Sub\r\n"
+        b"Public Function Run(ByVal context As C_MMContext) As C_MMResult\r\n"
+        b"End Function\r\n"
     )
     form = (
         b"VERSION 5.00\r\n"

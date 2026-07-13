@@ -18,12 +18,15 @@ from catvba_refactor.macro_build import audit as audit_module
 from catvba_refactor.macro_build.audit import audit_catvba
 from catvba_refactor.macro_build.canonical import canonical_json_bytes
 from catvba_refactor.macro_build.errors import VerificationError
-from catvba_refactor.macro_build.kit import stage_build_kit
+from catvba_refactor.macro_build.generator import generate_sources
+from catvba_refactor.macro_build.kit import assemble_catalog, stage_build_kit
+from catvba_refactor.macro_build.manifests import ManifestSet
 from catvba_refactor.macro_build.model import (
     Component,
     InputSnapshot,
     Origin,
     ResolvedCatalog,
+    ResolvedSourceSet,
     SnapshotMode,
     SourceMember,
     ValidationReport,
@@ -34,6 +37,11 @@ KNOWN_CATVBA_SHA256 = (
     "b09195d5bf2787715cf4e8a50c840b0ce256a2408c83038149e1853e27906ba5"
 )
 MAX_CAPTURE = 1024 * 1024
+_GENERATED_CORE_MODULES = (
+    "MM_BuildInfo.bas",
+    "MM_Dispatch.bas",
+    "MM_MenuCatalog.bas",
+)
 
 
 def _repository_catvba() -> Path:
@@ -105,13 +113,28 @@ def _stage_audit_kit(
         tool_version="0.1.0",
         formal_eligible=True,
     )
-    catalog = ResolvedCatalog(
-        snapshot=snapshot,
+    resolved = ResolvedSourceSet(
         components=tuple(components),
-        packages=package_records,
-        tools=(),
+        quarantined=(),
         report=ValidationReport(),
     )
+    manifests = ManifestSet(
+        project={"schema_version": 1},
+        components={"schema_version": 1, "source_roots": [], "components": []},
+        packages={"schema_version": 1, "packages": list(package_records)},
+        tools={"schema_version": 1, "tools": []},
+        digest=snapshot.manifest_digest,
+        report=ValidationReport(),
+    )
+    generated = generate_sources(resolved, manifests, snapshot)
+    assert generated.report.ok
+    catalog = assemble_catalog(
+        snapshot,
+        resolved,
+        generated,
+        manifests,
+    )
+    assert catalog.report.ok
     receipt = stage_build_kit(catalog, tmp_path / "kit-output")
     return Path(receipt.kit_dir) / "kit-manifest.json"
 
@@ -472,7 +495,7 @@ def test_expected_kit_requires_selector_for_multiple_nonempty_packages(
     )
 
     assert core_expected.package_id == "core"
-    assert core_expected.modules == ("CoreOnly.bas",)
+    assert core_expected.modules == ("CoreOnly.bas", *_GENERATED_CORE_MODULES)
     assert core_expected.references == ("VBA",)
     assert all(path.startswith("packages/core/") for path, _ in core_expected.hashes)
     assert fleet_expected.package_id == "fleet-spa"
@@ -546,7 +569,7 @@ def test_expected_kit_auto_selects_only_nonempty_package_and_rejects_empty(
 
     expected = audit_module._kit_expected(manifest, package_id=None)
     assert expected.package_id == "core"
-    assert expected.modules == ("Shared.bas",)
+    assert expected.modules == ("Shared.bas", *_GENERATED_CORE_MODULES)
 
     with pytest.raises(audit_module._ExpectedPackageSelectionError) as empty:
         audit_module._kit_expected(manifest, package_id="fleet-spa")
@@ -567,7 +590,7 @@ def test_expected_kit_allows_same_module_name_in_independent_packages(
 
     assert audit_module._kit_expected(
         manifest, package_id="core"
-    ).modules == ("Shared.bas",)
+    ).modules == ("Shared.bas", *_GENERATED_CORE_MODULES)
     assert audit_module._kit_expected(
         manifest, package_id="fleet-spa"
     ).modules == ("Shared.bas",)
