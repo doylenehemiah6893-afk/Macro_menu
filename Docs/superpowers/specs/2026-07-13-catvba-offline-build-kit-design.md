@@ -1,6 +1,6 @@
 # CATVBA 离线 Build Kit 设计
 
-> 状态：DRAFT — 待用户书面复审
+> 状态：APPROVED — 用户已于 2026-07-13 书面确认
 >
 > 上位规格：[CATVBA R2018 恢复总架构设计](2026-07-13-catvba-r2018-recovery-design.md)
 >
