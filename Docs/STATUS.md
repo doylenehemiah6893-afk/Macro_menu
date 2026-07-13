@@ -36,9 +36,10 @@
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、pytest；VBA Runtime 目录仍只有边界说明 |
 | 设计 | 总架构和四份子规格已于 2026-07-13 获用户书面确认 |
-| 实施计划 | 离线 Build Kit 计划 Tasks 1–12 已实施并完成本地验证；目标机计划未执行 |
-| 离线测试 | `uv run pytest -q`：405 passed；端到端 fixture 双构建得到相同 Kit/ZIP |
-| 当前仓库 CLI | clone 无本地 `dev` ref；`check/build-kit` 返回基础设施退出码 4，未生成 Kit |
+| 实施计划 | 离线 Build Kit 计划 Tasks 1–12 和首次 baseline intake 已实施；已批准 Core Runtime MVP 的实施计划是下一项 |
+| Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
+| 离线测试 | `uv run pytest -q`：414 passed；端到端 fixture 双构建得到相同 Kit/ZIP |
+| 当前仓库 CLI | `inventory/check` exit 0、`formal_eligible=true`、零获批 candidate；`build-kit` exit 3 `NO_BUILDABLE_COMPONENTS`，未生成 Kit |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
 ## 3. 遗留证据
@@ -63,8 +64,8 @@
 
 | Gate | 状态 | 原因 |
 |---|---|---|
-| G0 INPUT-FROZEN | `NOT_RUN` | manifest/schema 已实现，但当前 clone 无本地 `dev` ref，且尚无仓库输入冻结 receipt |
-| G1 KIT-READY | `NOT_RUN` | 引擎和 fixture 已通过；仓库 manifest 尚无获批 Core component/tool，未生成仓库 Kit |
+| G0 INPUT-FROZEN | `NOT_RUN` | baseline 已接受，但尚无获批 Core candidate bindings，未生成仓库输入冻结 receipt |
+| G1 KIT-READY | `NOT_RUN` | 无仓库 Kit；仓库 manifest 尚无获批 Core component/tool |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -79,21 +80,23 @@ fixture PASS、目录或文档存在都不表示仓库 Gate 通过。
 | 检查 | 2026-07-13 结果 | 结论边界 |
 |---|---|---|
 | `uv sync --frozen` | PASS | 根项目/lock 可复现；不是 CATIA 环境验证 |
-| `uv run pytest -q` | 405 passed | Python、政策、审计和打包逻辑通过 |
+| `uv run pytest -q` | 414 passed | Python、政策、intake、审计和打包逻辑通过 |
 | `test_end_to_end.py` | PASS | 临时 Git 仓库双构建的 kit ID、catalog、SHA256SUMS、ZIP bytes/hash 相同；目录/ZIP 均通过 verifier |
 | fixture dirty candidate | exit 3，错误 JSON 写入 stderr；无 Kit/输出目录 | governed tree 漂移失败关闭 |
 | fixture worktree check | exit 0，`formal_eligible=false` | 只作诊断，不产生 Kit |
-| 当前 clone `check/build-kit` | exit 4，错误 JSON 写入 stderr；无 Kit/输出目录 | 本地没有 `dev` ref；不回退 HEAD、不创建/写 `dev` |
+| 当前 clone `inventory/check` | exit 0，`formal_eligible=true`，77 个上游组件、零获批 candidate component/tool | accepted baseline 可复现；不把零 candidate 升级为 G0/G1 |
+| 当前 clone `build-kit` | exit 3，`NO_BUILDABLE_COMPONENTS`；无 Kit/输出目录 | 失败关闭，不生成空或伪造 Kit |
 
-GitHub 只读复核时，fork 与上游 `dev` 均指向
-`abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`。这不替代本地 ref，也未授权工具创建或更新 fork
+首次 baseline intake 已分别只读查询 fork 与上游 `dev`，两者均指向
+`abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；严格 record 已提交，本地 `refs/heads/dev` 仅在所有
+验收通过后以 old=全零原子创建。流程未 checkout `dev`，未创建空 merge，也未写 fork/upstream
 `main/dev`。上述测试未启动 CATIA、未写 CATVBA、未证明 References/API/许可证/UI；始终保持
 `compile_status=not-run`、`release_eligible=false`。
 
 ## 7. 当前下一动作
 
-由独立 intake/sync 流程提供并核验只读 `dev` ref；另行批准 Core Runtime MVP 后，才把审定组件和工具
-写入 manifest 并重新执行 G0/G1。不得用 fixture、空包或 `HEAD` 回退升级仓库状态。
+Core Runtime MVP 规格已经批准；下一步编写其日期化实施计划，再按 TDD 实现审定组件和工具、写入
+manifest 并重新执行 G0/G1。不得用 fixture、空包、零 candidate 或 `HEAD` 回退升级仓库状态。
 
 ## 8. 外部阻塞
 

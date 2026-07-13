@@ -36,7 +36,9 @@ bytes 不进入 JSON。
 - `verify-kit` 对目录或 ZIP 做 no-follow、完整图、hash、身份和 policy 复验；
 - `audit-catvba` 先验证 expected Kit，再在受限只读副本中检查一个 package；p-code 只作 diagnostic。
 
-当前 clone 无本地 `dev` ref，所以仓库 `check/build-kit` 返回退出码 4，并向 stderr 写规范错误 JSON，但不
-生成 Kit 或输出目录。不得回退 `HEAD`、猜测 remote 或自动写 fork `main/dev`。这些工具不调用 CATIA，
-不执行 VBA，也不能产生 Compile、References、许可证或 UI 证据；成功 Kit 仍固定
+当前 clone 已由独立 intake 流程接受精确 cutoff 并原子建立本地 `refs/heads/dev`。仓库
+`inventory/check` 返回 exit 0、`formal_eligible=true`，但获批 candidate component/tool 均为零；
+`build-kit` 因 `NO_BUILDABLE_COMPONENTS` 返回 exit 3，不生成空 Kit 或输出目录。不得回退 `HEAD`、
+猜测 remote 或自动写 fork `main/dev`。这些工具不调用 CATIA，不执行 VBA，也不能产生 Compile、
+References、许可证或 UI 证据；成功 Kit 仍固定
 `compile_status=not-run`、`release_eligible=false`。
