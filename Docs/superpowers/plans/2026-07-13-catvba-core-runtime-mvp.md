@@ -314,6 +314,7 @@ git commit -m "feat: bind core target test cases"
 **Files:**
 - Modify: `catvba_refactor/config/components.json`
 - Modify: `catvba_refactor/config/tools.json`
+- Modify: `catvba_refactor/tests/test_manifests.py`
 - Modify: `catvba_refactor/tests/test_end_to_end.py`
 - Modify: `Docs/PROJECT_STRUCTURE.md`
 
