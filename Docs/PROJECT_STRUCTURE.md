@@ -43,7 +43,10 @@ Macro_menu/
 │  │  └─ shared_contracts/README.md
 │  ├─ resources/README.md
 │  ├─ config/*.json                   # 四份严格 manifest；当前无 candidate component/tool
-│  ├─ schemas/*.schema.json           # 四份输入 JSON Schema
+│  ├─ schemas/*.schema.json           # 四份输入 schema + 固定 initial-baseline evidence schema
+│  ├─ intake/
+│  │  ├─ README.md                    # 首次 no-content baseline 的证据边界
+│  │  └─ records/                     # 经批准的 intake records；当前不创建 baseline record
 │  ├─ macro_build/*.py                # snapshot/inventory/resolver/policy/Kit/audit/CLI
 │  ├─ tests/test_*.py                 # A 环境单元、攻击面和端到端测试
 │  ├─ build/                          # 按需生成、Git ignored
@@ -57,6 +60,8 @@ Macro_menu/
 ├─ LicenseReset.catvbs               # quarantine
 └─ ref_project/ DrawFunc/ artifacts/ # reference/history, release=false
 ```
+
+`catvba_refactor/intake/records/` 只存放经批准的 intake evidence；定义合同本身不创建 baseline record。
 
 Git 不保存空目录，所以 `build/`、`dist/` 不通过 `.gitkeep` 伪装成当前制品目录；根 `.gitignore` 已覆盖
 两者，工具只在完整 preflight 通过后按需创建。

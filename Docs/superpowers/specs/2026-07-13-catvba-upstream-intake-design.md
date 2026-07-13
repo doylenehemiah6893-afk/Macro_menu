@@ -87,6 +87,10 @@ O = intake 前 WORK_BRANCH clean committed HEAD
 - intake commit 只包含上游吸收和必要 binding 处置，不混入新业务功能；
 - 后续单独提交简化的 intake record，避免记录自引用自身 commit/hash。
 
+当 U 已是 O 的祖先且 O 的 Src/resources tree 与 U 完全相同时，首次 initial baseline 不制造空 merge；
+record 使用 `merge_commit=null`、`merge_reason=initial-baseline/no-content-intake`。未来 U 发生内容变化时，
+仍按 §7 使用两父 merge commit。
+
 ## 8. Intake Record
 
 记录至少包含：
