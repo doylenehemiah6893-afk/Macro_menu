@@ -4,6 +4,7 @@ import io
 import json
 import ctypes
 import errno
+import hashlib
 import math
 import os
 import re
@@ -19,6 +20,11 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from .canonical import canonical_json_bytes, sha256_bytes
 from .errors import InfrastructureError, SourceError
+from .generator import (
+    GENERATED_PATH,
+    GENERATED_SOURCE_ID,
+    generate_sources,
+)
 from .manifests import ManifestSet
 from .model import (
     BuildKitReceipt,
@@ -71,6 +77,14 @@ _OID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _TOOL_VERSION = re.compile(
     r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
+_VB_NAME_ATTRIBUTE = re.compile(
+    r'^Attribute\s+VB_Name\s*=\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+_OLE_OBJECT_BLOB = re.compile(
+    r'^OleObjectBlob\s*=\s*"([^":]+\.frx)":([0-9A-Fa-f]+)\s*$',
+    re.IGNORECASE | re.MULTILINE,
 )
 _WINDOWS_INVALID = frozenset('<>:"|?*')
 _PACKAGE_FIELDS = frozenset(
@@ -207,6 +221,49 @@ def _component_sort_key(component: Component) -> tuple[Any, ...]:
         component.component_type,
         component.origin.value,
         tuple(_member_sort_key(member) for member in component.members),
+    )
+
+
+def _member_document_sort_key(member: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Mirror ``_member_sort_key`` at the untrusted JSON boundary."""
+    role = member.get("role")
+    path = member.get("path")
+    raw_sha256 = member.get("raw_sha256")
+    blob_oid = member.get("blob_oid")
+    return (
+        _MEMBER_ROLE_ORDER.get(role if isinstance(role, str) else "", 99),
+        unicodedata.normalize("NFC", path) if isinstance(path, str) else "",
+        raw_sha256 if isinstance(raw_sha256, str) else "",
+        blob_oid if isinstance(blob_oid, str) else "",
+    )
+
+
+def _component_document_sort_key(
+    component: Mapping[str, Any],
+) -> tuple[Any, ...]:
+    """Mirror ``_component_sort_key`` without trusting domain reconstruction."""
+
+    def text_field(name: str) -> str:
+        value = component.get(name)
+        return value if isinstance(value, str) else ""
+
+    raw_members = component.get("members")
+    member_keys = (
+        tuple(
+            _member_document_sort_key(member)
+            for member in raw_members
+            if isinstance(member, dict)
+        )
+        if isinstance(raw_members, list)
+        else ()
+    )
+    return (
+        text_field("package_id"),
+        text_field("source_id"),
+        text_field("vb_name"),
+        text_field("component_type"),
+        text_field("origin"),
+        member_keys,
     )
 
 
@@ -619,10 +676,30 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
                 add("FORM_BINDING_INVALID", f"{path}/members", "user form requires adjacent frm/frx members with the same NFC stem")
         elif roles != ["source"]:
             add("CATALOG_RECORD_INVALID", f"{path}/members", "module requires exactly one source member")
+        if (
+            isinstance(members, list)
+            and all(isinstance(member, dict) for member in members)
+            and members != sorted(members, key=_member_document_sort_key)
+        ):
+            add(
+                "CATALOG_NONCANONICAL",
+                f"{path}/members",
+                "component members do not follow the canonical member order",
+            )
         if type(package_id) is str and type(vb_name) is str and type(component_type) is str:
             component_bindings.append((package_id, vb_name, component_type))
     if len(source_ids) != len(set(source_ids)):
         add("CATALOG_RECORD_INVALID", "catalog.json#/components", "source IDs must be unique")
+    if (
+        isinstance(components, list)
+        and all(isinstance(component, dict) for component in components)
+        and components != sorted(components, key=_component_document_sort_key)
+    ):
+        add(
+            "CATALOG_NONCANONICAL",
+            "catalog.json#/components",
+            "components do not follow the canonical component order",
+        )
 
     path_report = validate_portable_paths(output_paths)
     for finding in path_report.diagnostics:
@@ -697,6 +774,16 @@ def _output_member_path(component: Component, member: SourceMember) -> str:
     return f"packages/{component.package_id}/source/{source_name}"
 
 
+def _git_blob_oid(data: bytes, oid: str) -> str | None:
+    """Recompute the Git blob identity carried by a committed source member."""
+    header = f"blob {len(data)}\0".encode("ascii")
+    if len(oid) == 40:
+        return hashlib.sha1(header + data).hexdigest()
+    if len(oid) == 64:
+        return hashlib.sha256(header + data).hexdigest()
+    return None
+
+
 def _preflight(catalog: ResolvedCatalog) -> tuple[dict[str, Any], bytes, str]:
     if catalog.snapshot.mode is not SnapshotMode.CANDIDATE:
         raise _source_error("SNAPSHOT_NOT_CANDIDATE")
@@ -740,6 +827,17 @@ def _preflight(catalog: ResolvedCatalog) -> tuple[dict[str, Any], bytes, str]:
         if code not in {"FORM_BINDING_INVALID"} and not code.startswith("PATH_"):
             code = "CATALOG_RECORD_INVALID"
         raise _source_error(code, f"{path}: {message}")
+
+    staged_files = {
+        _output_member_path(component, member): member.data
+        for component in catalog.components
+        for member in component.members
+    }
+    identity_diagnostics: list[Diagnostic] = []
+    _verify_component_identities(staged_files, identity, identity_diagnostics)
+    if identity_diagnostics:
+        finding = _stable_diagnostics((identity_diagnostics,))[0]
+        raise _source_error(finding.code, f"{finding.path}: {finding.message}")
 
     fresh_policy = validate_catalog(
         ResolvedCatalog(
@@ -1930,6 +2028,256 @@ def _verify_expected_graph(
                 )
 
 
+def _vba_text_variants(data: bytes) -> tuple[str, ...]:
+    """Return every strict text interpretation relevant to ASCII identities."""
+    if data.startswith(b"\xef\xbb\xbf"):
+        try:
+            return (data[3:].decode("utf-8", errors="strict"),)
+        except UnicodeDecodeError:
+            return ()
+    if data.isascii():
+        return (data.decode("ascii"),)
+
+    unique: dict[str, None] = {}
+    for encoding in ("utf-8", "cp936"):
+        try:
+            unique.setdefault(data.decode(encoding, errors="strict"), None)
+        except UnicodeDecodeError:
+            continue
+    return tuple(unique)
+
+
+def _parsed_vba_identity(data: bytes) -> tuple[str | None, tuple[str, ...], str | None]:
+    variants = _vba_text_variants(data)
+    if not variants:
+        return None, (), "source has no strict UTF-8/CP936 interpretation"
+    names: list[str] = []
+    for text in variants:
+        matches = _VB_NAME_ATTRIBUTE.findall(text)
+        if len(matches) != 1:
+            return (
+                None,
+                variants,
+                "source must contain exactly one Attribute VB_Name in every strict interpretation",
+            )
+        names.append(matches[0])
+    if len(set(names)) != 1:
+        return None, variants, "Attribute VB_Name is encoding-ambiguous"
+    return names[0], variants, None
+
+
+def _component_identity_diagnostic(
+    diagnostics: list[Diagnostic], path: str, message: str, *, reason: str
+) -> None:
+    diagnostics.append(
+        _verification_diagnostic(
+            "COMPONENT_IDENTITY_MISMATCH",
+            path,
+            message,
+            identity_reason=reason,
+        )
+    )
+
+
+def _verify_component_identities(
+    files: Mapping[str, bytes],
+    catalog: dict[str, Any],
+    diagnostics: list[Diagnostic],
+) -> None:
+    """Bind authenticated staged bytes to semantic and Git identities.
+
+    ``validate_catalog`` intentionally scans policy, not exported-module
+    identity.  Verification therefore parses the staged source independently,
+    checks committed Git blob identities, validates Form metadata, and
+    regenerates any deterministic generated component.
+    """
+    domain_components: list[Component] = []
+    raw_generated: list[dict[str, Any]] = []
+
+    for component_index, raw_component in enumerate(catalog["components"]):
+        package_id = raw_component["package_id"]
+        raw_members = raw_component["members"]
+        members: list[SourceMember] = []
+        staged_by_role: dict[str, tuple[str, bytes]] = {}
+        missing = False
+        for member_index, raw_member in enumerate(raw_members):
+            name = unicodedata.normalize(
+                "NFC", PurePosixPath(raw_member["path"]).name
+            )
+            staged_path = f"packages/{package_id}/source/{name}"
+            data = files.get(staged_path)
+            if data is None:
+                missing = True
+                continue
+            role = raw_member["role"]
+            staged_by_role[role] = (staged_path, data)
+            member = SourceMember(
+                path=raw_member["path"],
+                blob_oid=raw_member["blob_oid"],
+                raw_sha256=raw_member["raw_sha256"],
+                role=role,
+                data=data,
+            )
+            members.append(member)
+
+            blob_oid = raw_member["blob_oid"]
+            if raw_component["origin"] != Origin.GENERATED.value:
+                actual_oid = (
+                    _git_blob_oid(data, blob_oid)
+                    if isinstance(blob_oid, str)
+                    else None
+                )
+                if actual_oid != blob_oid:
+                    _component_identity_diagnostic(
+                        diagnostics,
+                        staged_path,
+                        "staged source bytes do not match their committed Git blob identity",
+                        reason="GIT_BLOB_OID_MISMATCH",
+                    )
+
+            suffix = PurePosixPath(name).suffix.casefold()
+            expected_role_type = {
+                ".bas": ("source", "standard_module"),
+                ".cls": ("source", "class_module"),
+                ".frm": ("frm", "user_form"),
+                ".frx": ("frx", "user_form"),
+            }.get(suffix)
+            if expected_role_type != (role, raw_component["component_type"]):
+                _component_identity_diagnostic(
+                    diagnostics,
+                    staged_path,
+                    "staged member extension and role do not reproduce the component type",
+                    reason="COMPONENT_TYPE_ROLE_MISMATCH",
+                )
+
+        if missing:
+            continue
+
+        primary_role = (
+            "frm" if raw_component["component_type"] == "user_form" else "source"
+        )
+        primary = staged_by_role.get(primary_role)
+        texts: tuple[str, ...] = ()
+        if primary is not None:
+            staged_path, data = primary
+            parsed_name, texts, parse_error = _parsed_vba_identity(data)
+            if parse_error is not None:
+                _component_identity_diagnostic(
+                    diagnostics,
+                    staged_path,
+                    "staged VBA identity cannot be parsed unambiguously",
+                    reason=parse_error,
+                )
+            elif parsed_name != raw_component["vb_name"]:
+                _component_identity_diagnostic(
+                    diagnostics,
+                    staged_path,
+                    "parsed Attribute VB_Name does not match catalog identity",
+                    reason="VB_NAME_MISMATCH",
+                )
+
+        if raw_component["component_type"] == "user_form" and texts:
+            frx = staged_by_role.get("frx")
+            declared_names: list[str] = []
+            form_error: str | None = None
+            for text in texts:
+                bindings = _OLE_OBJECT_BLOB.findall(text)
+                if len(bindings) != 1:
+                    form_error = (
+                        "Form must contain exactly one OleObjectBlob binding "
+                        "in every strict interpretation"
+                    )
+                    break
+                declared_names.append(unicodedata.normalize("NFC", bindings[0][0]))
+            if form_error is None and len(set(declared_names)) != 1:
+                form_error = "OleObjectBlob filename is encoding-ambiguous"
+            if form_error is None and frx is not None:
+                actual_name = unicodedata.normalize(
+                    "NFC", PurePosixPath(frx[0]).name
+                )
+                if not declared_names or declared_names[0] != actual_name:
+                    form_error = "OleObjectBlob filename does not exactly bind the staged FRX"
+            if form_error is not None:
+                _component_identity_diagnostic(
+                    diagnostics,
+                    primary[0],
+                    "staged Form metadata does not reproduce its FRM/FRX bundle identity",
+                    reason=form_error,
+                )
+
+        component = Component(
+            source_id=raw_component["source_id"],
+            origin=Origin(raw_component["origin"]),
+            component_type=raw_component["component_type"],
+            vb_name=raw_component["vb_name"],
+            members=tuple(members),
+            package_id=package_id,
+            disposition=raw_component["disposition"],
+        )
+        domain_components.append(component)
+        if component.origin is Origin.GENERATED:
+            raw_generated.append(raw_component)
+
+        reserved_generated_path = any(
+            raw_member["path"] == GENERATED_PATH for raw_member in raw_members
+        )
+        if (
+            component.source_id == GENERATED_SOURCE_ID or reserved_generated_path
+        ) and component.origin is not Origin.GENERATED:
+            _component_identity_diagnostic(
+                diagnostics,
+                f"catalog.json#/components/{component_index}",
+                "reserved generated source identity was downgraded to a non-generated origin",
+                reason="GENERATED_ORIGIN_MISMATCH",
+            )
+
+    if not raw_generated:
+        return
+
+    snapshot = catalog["snapshot"]
+    manifests = ManifestSet(
+        project={"schema_version": 1},
+        components={"schema_version": 1, "source_roots": [], "components": []},
+        packages={"schema_version": 1, "packages": catalog["packages"]},
+        tools={"schema_version": 1, "tools": catalog["tools"]},
+        digest=snapshot["manifest_digest"],
+        report=ValidationReport(),
+    )
+    regenerated = generate_sources(
+        ResolvedSourceSet(
+            components=tuple(
+                component
+                for component in domain_components
+                if component.origin is not Origin.GENERATED
+            ),
+            quarantined=(),
+            report=ValidationReport(),
+        ),
+        manifests,
+    )
+    expected_records = [
+        _component_record(component) for component in regenerated.components
+    ]
+    if regenerated.report.diagnostics or raw_generated != expected_records:
+        _component_identity_diagnostic(
+            diagnostics,
+            "catalog.json#/components",
+            "embedded generated component does not reproduce deterministic generator output",
+            reason="GENERATED_COMPONENT_MISMATCH",
+        )
+        return
+    for component in regenerated.components:
+        for member in component.members:
+            staged_path = _output_member_path(component, member)
+            if files.get(staged_path) != member.data:
+                _component_identity_diagnostic(
+                    diagnostics,
+                    staged_path,
+                    "embedded generated bytes do not reproduce deterministic generator output",
+                    reason="GENERATED_BYTES_MISMATCH",
+                )
+
+
 def _verify_embedded_policy(
     files: Mapping[str, bytes],
     catalog: dict[str, Any],
@@ -2073,7 +2421,11 @@ def _verify_file_map(
         for code, path, message in catalog_errors:
             diagnostics.append(
                 _verification_diagnostic(
-                    "CATALOG_MALFORMED",
+                    (
+                        "CATALOG_NONCANONICAL"
+                        if code == "CATALOG_NONCANONICAL"
+                        else "CATALOG_MALFORMED"
+                    ),
                     path,
                     message,
                     catalog_code=code,
@@ -2092,6 +2444,7 @@ def _verify_file_map(
             _verify_expected_graph(
                 files, catalog, expected_id, diagnostics, directories
             )
+            _verify_component_identities(files, catalog, diagnostics)
             _verify_embedded_policy(files, catalog, diagnostics)
         if isinstance(policy, dict) and policy.get("diagnostics") != []:
             diagnostics.append(

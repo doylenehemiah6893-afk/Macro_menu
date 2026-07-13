@@ -17,6 +17,7 @@ import pytest
 from catvba_refactor.macro_build import kit as kit_module
 from catvba_refactor.macro_build.canonical import canonical_json_bytes
 from catvba_refactor.macro_build.errors import InfrastructureError, SourceError
+from catvba_refactor.macro_build.generator import generate_sources
 from catvba_refactor.macro_build.kit import (
     assemble_catalog,
     stage_build_kit,
@@ -37,16 +38,21 @@ from catvba_refactor.macro_build.model import (
 )
 
 
+def _git_blob_oid(data: bytes) -> str:
+    header = f"blob {len(data)}\0".encode("ascii")
+    return hashlib.sha1(header + data).hexdigest()
+
+
 def _member(
     path: str,
     data: bytes,
     *,
     role: str = "source",
-    blob_oid: str | None = "a" * 40,
+    blob_oid: str | None = "auto",
 ) -> SourceMember:
     return SourceMember(
         path=path,
-        blob_oid=blob_oid,
+        blob_oid=_git_blob_oid(data) if blob_oid == "auto" else blob_oid,
         raw_sha256=hashlib.sha256(data).hexdigest(),
         role=role,
         data=data,
@@ -81,6 +87,7 @@ def _form() -> Component:
     frm = (
         b"VERSION 5.00\r\n"
         b"Begin VB.Form SafeForm\r\n"
+        b'OleObjectBlob = "SafeForm.frx":0000\r\n'
         b"End\r\n"
         b'Attribute VB_Name = "SafeForm"\r\n'
         b"Option Explicit\r\n"
@@ -261,6 +268,39 @@ def _rebind_catalog_identity(kit_dir: Path, mutator: Any) -> str:
     return kit_id
 
 
+def _attack_container(
+    kit_dir: Path, kit_id: str, kind: str, root: Path
+) -> Path:
+    bound = kit_dir.with_name(kit_id)
+    kit_dir.rename(bound)
+    if kind == "directory":
+        return bound
+
+    files = {
+        path.relative_to(bound).as_posix(): path.read_bytes()
+        for path in bound.rglob("*")
+        if path.is_file()
+    }
+    archive_root = root / "archive"
+    archive_root.mkdir()
+    archive = archive_root / f"{kit_id}.zip"
+    _write_zip_sidecar(archive, _fixed_zip(files))
+    return archive
+
+
+def _set_receipt_digest(kit_dir: Path, staged_path: str, digest: str) -> None:
+    path = kit_dir / "receipts/hashes.json"
+    receipt = _json(path)
+    matches = [
+        member
+        for member in receipt["members"]
+        if member["staged_path"] == staged_path
+    ]
+    assert len(matches) == 1
+    matches[0]["raw_sha256"] = digest
+    path.write_bytes(canonical_json_bytes(receipt))
+
+
 def test_assemble_catalog_is_stable_and_excludes_quarantine() -> None:
     catalog, _quarantine_data = _catalog(with_form=True)
 
@@ -352,7 +392,9 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
                 "members": [
                     {
                         "path": "catvba_refactor/vba/new/SafeForm.frm",
-                        "blob_oid": "a" * 40,
+                        "blob_oid": _git_blob_oid(
+                            by_path["catvba_refactor/vba/new/SafeForm.frm"]
+                        ),
                         "raw_sha256": hashlib.sha256(
                             by_path["catvba_refactor/vba/new/SafeForm.frm"]
                         ).hexdigest(),
@@ -360,7 +402,9 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
                     },
                     {
                         "path": "catvba_refactor/vba/new/SafeForm.frx",
-                        "blob_oid": "a" * 40,
+                        "blob_oid": _git_blob_oid(
+                            by_path["catvba_refactor/vba/new/SafeForm.frx"]
+                        ),
                         "raw_sha256": hashlib.sha256(
                             by_path["catvba_refactor/vba/new/SafeForm.frx"]
                         ).hexdigest(),
@@ -378,7 +422,9 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
                 "members": [
                     {
                         "path": "catvba_refactor/vba/new/SafeModule.bas",
-                        "blob_oid": "a" * 40,
+                        "blob_oid": _git_blob_oid(
+                            by_path["catvba_refactor/vba/new/SafeModule.bas"]
+                        ),
                         "raw_sha256": hashlib.sha256(
                             by_path["catvba_refactor/vba/new/SafeModule.bas"]
                         ).hexdigest(),
@@ -403,7 +449,7 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
     }
     assert identity == expected_identity
     independent_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
-    assert independent_id == "kit-3e3ea2d766fb03f507bd"
+    assert independent_id == "kit-b8aaec76d1e3919d2ada"
     assert receipt.kit_id == independent_id
 
     manifest_bytes = (kit_dir / "kit-manifest.json").read_bytes()
@@ -987,6 +1033,144 @@ def test_verifier_reruns_static_policy_on_self_consistent_sources(
     assert "CATALOG_POLICY_INVALID" in _codes(bound)
 
 
+@pytest.mark.parametrize("container_kind", ["directory", "zip"])
+def test_verifier_rejects_resigned_noncanonical_component_order(
+    tmp_path: Path, container_kind: str
+) -> None:
+    catalog, _ = _catalog(with_form=True)
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+
+    def reverse_components(value: dict[str, Any]) -> None:
+        value["components"].reverse()
+
+    kit_id = _rebind_catalog_identity(candidate, reverse_components)
+    (candidate / "import-order/core.txt").write_bytes(
+        b"SafeModule.bas\nSafeForm.frm\n"
+    )
+    _rewrite_integrity(candidate, kit_id)
+    attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
+
+    report = verify_build_kit(attack)
+    assert not report.ok
+    assert "CATALOG_NONCANONICAL" in {item.code for item in report.diagnostics}
+
+
+@pytest.mark.parametrize("container_kind", ["directory", "zip"])
+def test_verifier_rejects_resigned_staged_vb_name_identity(
+    tmp_path: Path, container_kind: str
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+    source = candidate / "packages/core/source/SafeModule.bas"
+    forged = source.read_bytes().replace(b'"SafeModule"', b'"ForgedModule"')
+    source.write_bytes(forged)
+    digest = hashlib.sha256(forged).hexdigest()
+
+    def forge_identity(value: dict[str, Any]) -> None:
+        component = value["components"][0]
+        component["vb_name"] = "ForgedModule"
+        component["members"][0]["raw_sha256"] = digest
+        value["tools"][0]["module_name"] = "ForgedModule"
+
+    kit_id = _rebind_catalog_identity(candidate, forge_identity)
+    hashes = _json(candidate / "receipts/hashes.json")
+    hashes["members"][0]["raw_sha256"] = digest
+    (candidate / "receipts/hashes.json").write_bytes(canonical_json_bytes(hashes))
+    _rewrite_integrity(candidate, kit_id)
+    attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
+
+    report = verify_build_kit(attack)
+    assert not report.ok
+    assert "COMPONENT_IDENTITY_MISMATCH" in {
+        item.code for item in report.diagnostics
+    }
+
+
+@pytest.mark.parametrize("container_kind", ["directory", "zip"])
+@pytest.mark.parametrize("attack_kind", ["vb-name", "ole-object-blob"])
+def test_verifier_parses_resigned_staged_component_semantics(
+    tmp_path: Path, container_kind: str, attack_kind: str
+) -> None:
+    catalog, _ = _catalog(with_form=attack_kind == "ole-object-blob")
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+    if attack_kind == "vb-name":
+        staged_path = "packages/core/source/SafeModule.bas"
+        source = candidate / staged_path
+        forged = source.read_bytes().replace(b'"SafeModule"', b'"OtherModule"')
+        source_id = "core.safe-module"
+    else:
+        staged_path = "packages/core/source/SafeForm.frm"
+        source = candidate / staged_path
+        forged = source.read_bytes().replace(b'"SafeForm.frx"', b'"OtherForm.frx"')
+        source_id = "core.safe-form"
+    source.write_bytes(forged)
+    digest = hashlib.sha256(forged).hexdigest()
+    oid = _git_blob_oid(forged)
+
+    def resign_source_bytes(value: dict[str, Any]) -> None:
+        component = next(
+            item for item in value["components"] if item["source_id"] == source_id
+        )
+        member = next(
+            item
+            for item in component["members"]
+            if item["path"].endswith(Path(staged_path).name)
+        )
+        member["raw_sha256"] = digest
+        member["blob_oid"] = oid
+
+    kit_id = _rebind_catalog_identity(candidate, resign_source_bytes)
+    _set_receipt_digest(candidate, staged_path, digest)
+    _rewrite_integrity(candidate, kit_id)
+    attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
+
+    assert "COMPONENT_IDENTITY_MISMATCH" in _codes(attack)
+
+
+@pytest.mark.parametrize("container_kind", ["directory", "zip"])
+def test_verifier_rebuilds_resigned_generated_source(
+    tmp_path: Path, container_kind: str
+) -> None:
+    resolved = ResolvedSourceSet(
+        components=(_module(),), quarantined=(), report=ValidationReport()
+    )
+    manifests = _manifests()
+    generated = generate_sources(resolved, manifests)
+    assert generated.report.ok and len(generated.components) == 1
+    catalog = assemble_catalog(_snapshot(), resolved, generated, manifests)
+    assert catalog.report.ok
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+    staged_path = "packages/core/source/MM_GeneratedCatalog.bas"
+    source = candidate / staged_path
+    forged = source.read_bytes().replace(b'"Safe"', b'"Forged"')
+    assert forged != source.read_bytes()
+    source.write_bytes(forged)
+    digest = hashlib.sha256(forged).hexdigest()
+
+    def resign_generated_bytes(value: dict[str, Any]) -> None:
+        component = next(
+            item
+            for item in value["components"]
+            if item["source_id"] == "generated.tool-catalog"
+        )
+        component["members"][0]["raw_sha256"] = digest
+
+    kit_id = _rebind_catalog_identity(candidate, resign_generated_bytes)
+    _set_receipt_digest(candidate, staged_path, digest)
+    _rewrite_integrity(candidate, kit_id)
+    attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
+
+    assert "COMPONENT_IDENTITY_MISMATCH" in _codes(attack)
+
+
 def test_creator_authenticates_source_hash_before_output(tmp_path: Path) -> None:
     catalog, _ = _catalog()
     component = catalog.components[0]
@@ -997,6 +1181,23 @@ def test_creator_authenticates_source_hash_before_output(tmp_path: Path) -> None
         report=ValidationReport(),
     )
     with pytest.raises(SourceError, match="SOURCE_HASH_MISMATCH"):
+        stage_build_kit(bypass, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_creator_authenticates_git_blob_identity_before_output(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    component = catalog.components[0]
+    member = replace(component.members[0], blob_oid="0" * 40)
+    bypass = replace(
+        catalog,
+        components=(replace(component, members=(member,)),),
+        report=ValidationReport(),
+    )
+
+    with pytest.raises(SourceError, match="COMPONENT_IDENTITY_MISMATCH"):
         stage_build_kit(bypass, tmp_path / "out")
     assert not (tmp_path / "out").exists()
 
