@@ -84,7 +84,7 @@ _VB_NAME_ATTRIBUTE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 _OLE_OBJECT_BLOB = re.compile(
-    r'^OleObjectBlob\s*=\s*"([^":]+\.frx)":([0-9A-Fa-f]+)\s*$',
+    r'^[ \t]*OleObjectBlob\s*=\s*"([^":]+\.frx)":([0-9A-Fa-f]+)\s*$',
     re.IGNORECASE | re.MULTILINE,
 )
 _WINDOWS_INVALID = frozenset('<>:"|?*')

@@ -87,11 +87,12 @@ def _module(
     )
 
 
-def _form() -> Component:
+def _form(*, blob_prefix: bytes = b"") -> Component:
     frm = (
         b"VERSION 5.00\r\n"
         b"Begin VB.Form SafeForm\r\n"
-        b'OleObjectBlob = "SafeForm.frx":0000\r\n'
+        + blob_prefix
+        + b'OleObjectBlob = "SafeForm.frx":0000\r\n'
         b"End\r\n"
         b'Attribute VB_Name = "SafeForm"\r\n'
         b"Option Explicit\r\n"
@@ -171,7 +172,9 @@ def _manifests() -> ManifestSet:
     )
 
 
-def _catalog(*, with_form: bool = False) -> tuple[ResolvedCatalog, bytes]:
+def _catalog(
+    *, with_form: bool = False, form_blob_prefix: bytes = b""
+) -> tuple[ResolvedCatalog, bytes]:
     module = _module()
     quarantine_data = b"QUARANTINE-MUST-NEVER-BE-STAGED"
     quarantine = Component(
@@ -184,7 +187,11 @@ def _catalog(*, with_form: bool = False) -> tuple[ResolvedCatalog, bytes]:
         disposition="quarantine",
         encoding_decision=None,
     )
-    components = (module, _form()) if with_form else (module,)
+    components = (
+        (module, _form(blob_prefix=form_blob_prefix))
+        if with_form
+        else (module,)
+    )
     resolved = ResolvedSourceSet(
         components=tuple(reversed(components)),
         quarantined=(quarantine,),
@@ -402,12 +409,13 @@ def _rebind_catalog_identity(kit_dir: Path, mutator: Any) -> str:
     catalog = _json(catalog_path)
     mutator(catalog)
     catalog_bytes = canonical_json_bytes(catalog)
-    kit_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
+    catalog_sha256 = hashlib.sha256(catalog_bytes).hexdigest()
+    kit_id = "kit-" + catalog_sha256[:20]
     catalog_path.write_bytes(catalog_bytes)
 
     manifest = _json(kit_dir / "kit-manifest.json")
     manifest["kit_id"] = kit_id
-    manifest["identity_sha256"] = hashlib.sha256(catalog_bytes).hexdigest()
+    manifest["identity_sha256"] = catalog_sha256
     manifest["manifest_digest"] = catalog["snapshot"].get("manifest_digest")
     (kit_dir / "kit-manifest.json").write_bytes(canonical_json_bytes(manifest))
 
@@ -416,6 +424,21 @@ def _rebind_catalog_identity(kit_dir: Path, mutator: Any) -> str:
     resolution["components"] = catalog.get("components", [])
     (kit_dir / "receipts/source-resolution.json").write_bytes(
         canonical_json_bytes(resolution)
+    )
+    target_plan = _json(
+        kit_dir / "target-test-plan/target-test-plan.json"
+    )
+    build_identity = {
+        "catalog_sha256": catalog_sha256,
+        "kit_id": kit_id,
+        "manifest_digest": catalog["snapshot"]["manifest_digest"],
+        "work_commit": catalog["snapshot"]["work_commit"],
+        "work_tree": catalog["snapshot"]["work_tree"],
+    }
+    for case in target_plan["cases"]:
+        case["build_identity"] = build_identity
+    (kit_dir / "target-test-plan/target-test-plan.json").write_bytes(
+        canonical_json_bytes(target_plan)
     )
     evidence = _json(kit_dir / "evidence-templates/target-verification.json")
     evidence["kit_id"] = kit_id
@@ -921,6 +944,78 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
 
     assert verify_build_kit(kit_dir).ok
     assert verify_build_kit(Path(receipt.zip_path)).ok
+
+
+def test_creator_and_directory_and_zip_verifiers_accept_horizontally_indented_form_blob(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog(with_form=True, form_blob_prefix=b" \t  ")
+
+    receipt = stage_build_kit(catalog, tmp_path / "out")
+
+    assert verify_build_kit(receipt.kit_dir).ok
+    assert verify_build_kit(receipt.zip_path).ok
+
+
+@pytest.mark.parametrize("prefix", [b"\v", b"\f"])
+def test_creator_rejects_non_horizontal_form_blob_prefix(
+    tmp_path: Path, prefix: bytes
+) -> None:
+    catalog, _ = _catalog(with_form=True, form_blob_prefix=prefix)
+
+    with pytest.raises(SourceError, match="COMPONENT_IDENTITY_MISMATCH"):
+        stage_build_kit(catalog, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("container_kind", ["directory", "zip"])
+@pytest.mark.parametrize("prefix", [b"\v", b"\f"])
+def test_directory_and_zip_verifiers_reject_non_horizontal_form_blob_prefix(
+    tmp_path: Path, container_kind: str, prefix: bytes
+) -> None:
+    catalog, _ = _catalog(with_form=True, form_blob_prefix=b" \t")
+    receipt = stage_build_kit(catalog, tmp_path / "seed")
+    candidate = tmp_path / "candidate"
+    shutil.copytree(receipt.kit_dir, candidate)
+    staged_path = "packages/core/source/SafeForm.frm"
+    source = candidate / staged_path
+    forged = source.read_bytes().replace(
+        b" \tOleObjectBlob", prefix + b"OleObjectBlob"
+    )
+    assert forged != source.read_bytes()
+    source.write_bytes(forged)
+    digest = hashlib.sha256(forged).hexdigest()
+    oid = _git_blob_oid(forged)
+
+    def resign_form(value: dict[str, Any]) -> None:
+        component = next(
+            item
+            for item in value["components"]
+            if item["source_id"] == "core.safe-form"
+        )
+        member = next(
+            item for item in component["members"] if item["role"] == "frm"
+        )
+        member["raw_sha256"] = digest
+        member["blob_oid"] = oid
+
+    kit_id = _rebind_catalog_identity(candidate, resign_form)
+    _set_receipt_digest(candidate, staged_path, digest)
+    _rewrite_integrity(candidate, kit_id)
+    attack = _attack_container(candidate, kit_id, container_kind, tmp_path)
+
+    report = verify_build_kit(attack)
+    assert not report.ok
+    assert [
+        (item.code, item.details.get("identity_reason"))
+        for item in report.diagnostics
+    ] == [
+        (
+            "COMPONENT_IDENTITY_MISMATCH",
+            "Form must contain exactly one OleObjectBlob binding "
+            "in every strict interpretation",
+        )
+    ]
 
 
 def test_completion_marker_is_the_last_staged_file(
