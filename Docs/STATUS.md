@@ -34,9 +34,11 @@
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
-| 目录 | `catvba_refactor/` 已建立说明性脚手架；无实现文件 |
+| 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、pytest；VBA Runtime 目录仍只有边界说明 |
 | 设计 | 总架构和四份子规格已于 2026-07-13 获用户书面确认 |
-| 实施计划 | 离线 Build Kit 日期化计划已编写，尚未开始执行 |
+| 实施计划 | 离线 Build Kit 计划 Tasks 1–12 已实施并完成本地验证；目标机计划未执行 |
+| 离线测试 | `uv run pytest -q`：405 passed；端到端 fixture 双构建得到相同 Kit/ZIP |
+| 当前仓库 CLI | clone 无本地 `dev` ref；`check/build-kit` 返回基础设施退出码 4，未生成 Kit |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
 ## 3. 遗留证据
@@ -61,8 +63,8 @@
 
 | Gate | 状态 | 原因 |
 |---|---|---|
-| G0 INPUT-FROZEN | `NOT_RUN` | 实施未开始，manifest/schema 和固定输入 receipt 未实现 |
-| G1 KIT-READY | `NOT_RUN` | Build Kit 工具和测试未实现 |
+| G0 INPUT-FROZEN | `NOT_RUN` | manifest/schema 已实现，但当前 clone 无本地 `dev` ref，且尚无仓库输入冻结 receipt |
+| G1 KIT-READY | `NOT_RUN` | 引擎和 fixture 已通过；仓库 manifest 尚无获批 Core component/tool，未生成仓库 Kit |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -70,15 +72,30 @@
 | G6 SECURITY-PILOT-READY | `BLOCKED` | 缺回传审计、安全包装、试点和回滚 |
 | G7 RELEASE-APPROVED | `BLOCKED` | 缺全部上游门和正式审批 |
 
-目录或文档存在不表示任何 Gate 通过。
+fixture PASS、目录或文档存在都不表示仓库 Gate 通过。
 
-## 6. 当前唯一下一动作
+## 6. A 环境验证记录
 
-复审[离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)，并选择
-Subagent-Driven 或 Inline Execution。执行前不创建真实 config/schema/Python/VBA 实现，不生成候选
-CATVBA；计划执行完成也只形成 A 环境离线证据。
+| 检查 | 2026-07-13 结果 | 结论边界 |
+|---|---|---|
+| `uv sync --frozen` | PASS | 根项目/lock 可复现；不是 CATIA 环境验证 |
+| `uv run pytest -q` | 405 passed | Python、政策、审计和打包逻辑通过 |
+| `test_end_to_end.py` | PASS | 临时 Git 仓库双构建的 kit ID、catalog、SHA256SUMS、ZIP bytes/hash 相同；目录/ZIP 均通过 verifier |
+| fixture dirty candidate | exit 3，错误 JSON 写入 stderr；无 Kit/输出目录 | governed tree 漂移失败关闭 |
+| fixture worktree check | exit 0，`formal_eligible=false` | 只作诊断，不产生 Kit |
+| 当前 clone `check/build-kit` | exit 4，错误 JSON 写入 stderr；无 Kit/输出目录 | 本地没有 `dev` ref；不回退 HEAD、不创建/写 `dev` |
 
-## 7. 外部阻塞
+GitHub 只读复核时，fork 与上游 `dev` 均指向
+`abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`。这不替代本地 ref，也未授权工具创建或更新 fork
+`main/dev`。上述测试未启动 CATIA、未写 CATVBA、未证明 References/API/许可证/UI；始终保持
+`compile_status=not-run`、`release_eligible=false`。
+
+## 7. 当前下一动作
+
+由独立 intake/sync 流程提供并核验只读 `dev` ref；另行批准 Core Runtime MVP 后，才把审定组件和工具
+写入 manifest 并重新执行 G0/G1。不得用 fixture、空包或 `HEAD` 回退升级仓库状态。
+
+## 8. 外部阻塞
 
 - 正式 Windows、R2018 SP/HF、DS VBA/VBE；
 - P-AB3/P-HD2/P-MD2 精确 DSLS entitlement 和隔离方式；

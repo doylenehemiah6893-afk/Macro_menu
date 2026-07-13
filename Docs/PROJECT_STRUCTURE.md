@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：APPROVED DESIGN — 上游镜像、命名空间、五份规格；实施尚未开始
+> 状态：IMPLEMENTED A-ENVIRONMENT SLICE — 离线工具已实现；Core Runtime 与目标机工作未开始
 >
 > 更新日期：2026-07-13
 >
@@ -13,7 +13,7 @@
 - `codex/dev-review-report` 是唯一重构写分支；
 - 所有本地 VBA、Python、配置、schema、测试和派生输出进入 `catvba_refactor/`；
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
-- 当前只建立目录说明和设计规格，没有实现工具、测试、VBA 或候选 CATVBA。
+- 离线 Python、manifest/schema、CLI 和 pytest 已实现；没有获批 Runtime VBA、候选 CATVBA 或目标机证据。
 
 ## 2. 仓库拓扑
 
@@ -36,18 +36,18 @@ Macro_menu/
 ├─ Src/                               # upstream dev intake mirror
 ├─ resources/                         # upstream dev intake mirror
 ├─ catvba_refactor/                   # 唯一本地实现命名空间
-│  ├─ README.md                       # 当前已建立：所有权/状态
+│  ├─ README.md                       # 所有权、命令和状态
 │  ├─ vba/
-│  │  ├─ new/README.md                # 当前仅脚手架
+│  │  ├─ new/README.md                # Runtime 后续计划；当前仅边界
 │  │  ├─ overrides/README.md
 │  │  └─ shared_contracts/README.md
 │  ├─ resources/README.md
-│  ├─ config/README.md                # manifest 尚未实现
-│  ├─ schemas/README.md               # schema 尚未实现
-│  ├─ macro_build/README.md            # Python 工具尚未实现
-│  ├─ tests/README.md                 # 测试尚未实现
-│  ├─ build/                          # 未来生成、Git ignored
-│  └─ dist/                           # 未来生成、Git ignored
+│  ├─ config/*.json                   # 四份严格 manifest；当前无 candidate component/tool
+│  ├─ schemas/*.schema.json           # 四份输入 JSON Schema
+│  ├─ macro_build/*.py                # snapshot/inventory/resolver/policy/Kit/audit/CLI
+│  ├─ tests/test_*.py                 # A 环境单元、攻击面和端到端测试
+│  ├─ build/                          # 按需生成、Git ignored
+│  └─ dist/                           # 按需生成、Git ignored
 ├─ Docs/
 │  ├─ STATUS.md
 │  ├─ CATVBA重构调查与决策记录.md
@@ -58,8 +58,8 @@ Macro_menu/
 └─ ref_project/ DrawFunc/ artifacts/ # reference/history, release=false
 ```
 
-Git 不保存空目录，所以 `build/`、`dist/` 不通过 `.gitkeep` 伪装成当前制品目录；实现阶段应先修复根
-`.gitignore`，再由工具按需创建。
+Git 不保存空目录，所以 `build/`、`dist/` 不通过 `.gitkeep` 伪装成当前制品目录；根 `.gitignore` 已覆盖
+两者，工具只在完整 preflight 通过后按需创建。
 
 ## 4. 写入边界
 
@@ -90,6 +90,10 @@ synthetic digest，也不得生成正式 snapshot、Build Kit 或 candidate。
 
 首个 Kit 不强制依赖复杂的 accepted-record 链；上游 intake 记录按独立规格建立。任何 upstream/fork
 cutoff 不一致都会阻断新的 candidate，但不会使旧 Kit 的历史证据消失。
+
+当前 clone 只有个人分支 ref，没有本地 `dev` ref。因此仓库 `check/build-kit` 以基础设施退出码 4
+失败关闭；工具不会猜 remote 别名、回退 `HEAD` 或创建 `dev`。临时端到端 fixture 显式创建隔离的本地
+`dev`，只验证引擎确定性，不能替代仓库 G0/G1 receipt。
 
 ## 6. 组件与包
 
@@ -128,11 +132,11 @@ QUARANTINE
 ## 8. 规格与实施顺序
 
 1. 已完成恢复总架构和四份子规格复审；
-2. 已编写离线 Build Kit 实施计划，等待执行方式确认；
-3. 先修复 Git 元数据和根 Python 项目配置；
-4. TDD 实现 inventory/schema/resolver；
-5. 建立最小 Core Form override 与两个首轮工具；
-6. 生成 Build Kit；A 环境最高到 G1；
-7. 在 B28 完成 profile、SPA/FTA、安装和回滚门禁。
+2. 已按 TDD 实现离线 Build Kit 计划：根项目、snapshot、schema、inventory、resolver、policy、generator、
+   staging/verifier、只读 audit、CLI 和端到端 fixture；
+3. 当前四份 manifest 保持零 candidate component/tool，G0/G1 均为 `NOT_RUN`；
+4. 下一独立计划建立最小 Core Form override 与两个首轮工具；
+5. 取得只读 cutoff ref 后，从固定输入生成仓库 Build Kit；A 环境最高到 G1；
+6. 在 B28 完成 profile、SPA/FTA、安装和回滚门禁。
 
-在实施计划开始执行前，不创建真实 manifest/schema、Python 实现、VBA 候选或 CATVBA。
+离线实现不创建候选 CATVBA。Core Runtime、B28 与交付工作必须分别按已批准子规格继续。

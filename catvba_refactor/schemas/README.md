@@ -1,7 +1,16 @@
 # JSON schemas
 
-规划存放离线 Build Kit 输入、输出和目标证据的 JSON Schema。
+本目录实现离线 Build Kit 四份输入 manifest 的 JSON Schema：
 
-当前尚未实现 schema。后续 schema 必须拒绝未知字段，版本化并由根 `pyproject.toml/uv.lock` 管理的
-验证器执行；不得通过文件存在推定 G0/G1 已通过。
+```text
+project.schema.json
+components.schema.json
+packages.schema.json
+tools.schema.json
+```
 
+schema 固定 `schema_version=1`、必填字段、枚举/格式/长度和 `additionalProperties=false`。根项目锁定的
+`jsonschema` 负责结构验证；Python 语义层继续检查重复 ID、portable path、member binding、package/tool
+交叉引用和禁止自报 PASS。
+
+schema 文件存在或配置通过只证明输入格式可判定，不表示 G0/G1、CATIA Compile、许可证或发布通过。
