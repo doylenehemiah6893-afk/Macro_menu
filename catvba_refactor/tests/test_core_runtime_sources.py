@@ -26,9 +26,6 @@ FIXED_SOURCES = {
     "MM_DocumentSummary.bas",
 }
 
-MODULE_NAMES = {path.rsplit(".", 1)[0] for path in FIXED_SOURCES}
-
-
 def _raw(name: str) -> bytes:
     return (SOURCE_ROOT / name).read_bytes()
 
@@ -37,11 +34,41 @@ def _text(name: str) -> str:
     return _raw(name).decode("cp936", errors="strict")
 
 
-def test_fixed_core_source_set_exists_but_is_not_manifested_yet() -> None:
-    assert {path.name for path in SOURCE_ROOT.iterdir() if path.suffix in {".bas", ".cls"}} == FIXED_SOURCES
+def test_fixed_core_source_set_is_exactly_bound_as_core_candidates() -> None:
+    assert {
+        path.name
+        for path in SOURCE_ROOT.iterdir()
+        if path.suffix in {".bas", ".cls"}
+    } == FIXED_SOURCES
     manifest = json.loads(COMPONENTS_PATH.read_text(encoding="utf-8"))
-    serialized = json.dumps(manifest, ensure_ascii=False)
-    assert all(name not in serialized for name in MODULE_NAMES)
+    components = manifest["components"]
+    fixed_components = [
+        component
+        for component in components
+        if component["origin"] == "new"
+        and component["disposition"] == "candidate"
+    ]
+    assert {
+        (
+            component["members"][0]["path"],
+            component["members"][0]["role"],
+            component["vb_name"],
+        )
+        for component in fixed_components
+    } == {
+        (f"catvba_refactor/vba/new/{name}", "source", name.rsplit(".", 1)[0])
+        for name in FIXED_SOURCES
+    }
+    assert all(
+        component["package_id"] == "core"
+        and len(component["members"]) == 1
+        for component in fixed_components
+    )
+    assert {
+        (component["origin"], component["package_id"])
+        for component in components
+        if component["disposition"] == "candidate"
+    } == {("new", "core"), ("override", "core")}
 
 
 @pytest.mark.parametrize("name", sorted(FIXED_SOURCES))
