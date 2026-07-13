@@ -106,6 +106,10 @@ SHA-256、role、组件类型和 `VB_Name`；resolver 只能整体选择一侧�
 5. UTF-8 与 CP936 均成功但文本不同：`ENC_AMBIGUOUS`，必须由显式清单裁决；
 6. 均失败：阻断。
 
+裁决后的 `encoding_decision` 是组件身份的一部分，必须进入 canonical catalog、source-resolution receipt
+和 member hash receipt，并参与 kit ID。policy、Kit verify 和回传审计只允许使用该单一 strict decoder；
+不得在后续阶段重新猜测或枚举另一种解释。
+
 未覆盖 upstream 和完整 override 原始 bytes 复制到 staging；只有生成模块按待 B28 验证的 CP936/CRLF
 输出。生成文本含 CP936 不可编码字符时失败，不做静默替换。
 
@@ -141,7 +145,7 @@ assemble_catalog(...) -> ResolvedCatalog
 validate_catalog(...) -> ValidationReport
 stage_build_kit(...) -> BuildKitReceipt
 verify_build_kit(...) -> VerificationReport
-audit_catvba(...) -> AuditReport
+audit_catvba(path, expected_manifest=None, *, package_id=None) -> AuditReport
 ```
 
 可预期配置/源码问题进入排序稳定的报告；I/O、锁和内部不变量失败才抛异常。
@@ -166,11 +170,13 @@ macro-menu-build inventory [--worktree]
 macro-menu-build check [--worktree]
 macro-menu-build build-kit
 macro-menu-build verify-kit <kit>
-macro-menu-build audit-catvba <returned.catvba> --expect <kit-manifest.json>
+macro-menu-build audit-catvba <returned.catvba> --expect <kit-manifest.json> [--package <package-id>]
 ```
 
 `inventory/check --worktree` 只输出诊断；`build-kit` 必须重新从 clean committed Git blobs 完整执行检查。
 CLI 只允许覆盖 repo/ref、输出路径和报告格式，不允许覆盖 cutoff、binding、package 或安全政策。
+`--package` 是从已验证 Kit 选择独立目标包，不是覆盖包归属：仅一个非空包时可省略；多个非空包时
+必须显式给出。未知包、空包以及没有 `--expect` 时使用 `--package` 均失败关闭。
 
 ```text
 0 success
@@ -217,8 +223,17 @@ KIT_COMPLETE
 ## 10. CATVBA 只读审计
 
 `olefile/oletools/pcodedmp` 只在低权限、无网络、只读副本中运行。审计比较模块、规范化源码、FRX、
-References、签名相关流和哈希；第三方工具对 p-code/cache 的解释只能作为诊断信号，不能替代 B28
-Compile、保存、重启和复测。
+References、签名相关流和哈希，并拒绝没有源码模块绑定的孤立 Form storage。expected Kit 必须通过同一
+no-follow 根目录快照上的完整 Kit 验证（catalog、receipts、所有包、hashes、`SHA256SUMS`、
+`KIT_COMPLETE` 和 extra/missing entry）；随后只提取所选 package 的 modules/FRX/References/hashes。
+Core/Fleet 的同名共享运行时按包分别允许，但单个目标 CATVBA 不得聚合多个包。第三方工具对
+p-code/cache 的解释只能作为诊断信号，不能替代 B28 Compile、保存、重启和复测。
+
+源码比较必须区分两个方向：Kit 内 staged `.cls/.frm` 必须保留规范导出头，并拒绝
+`VB_Base`、`VB_TemplateDerived`、`VB_Customizable` 等只由提取器补出的元数据；实际 CFB 提取结果
+不得带导出头，只能剥离格式和值均通过严格校验的上述提取元数据。`VB_PredeclaredId` 等行为属性始终
+参与语义哈希。输入 CATVBA 与 expected Kit 仅接受 no-follow regular file/目录，并分别实施文件大小、
+总字节、entry 数和目录深度上限；达到上限即失败关闭，不能先无界读入内存。
 
 ## 11. 测试
 
@@ -235,7 +250,9 @@ Compile、保存、重启和复测。
 - 生成顺序、字符串转义、CP936/CRLF；
 - staging 故障、并发锁、no-op、路径穿越；
 - 确定性目录/ZIP；
-- 正常/损坏 CFB 与回传不匹配；
+- 正常/损坏 CFB、孤立 Form storage、FRX 外层封装污染与回传不匹配；
+- 单/多/空 package 选择、跨包同名、非选中包篡改和 catalog-bound 编码裁决；
+- staged/实际提取源码的单向归一化、行为属性篡改和 bounded/FIFO/TOCTOU 输入；
 - CLI 退出码和 text/JSON 报告一致。
 
 VBA 行为测试在本地只能保持 `NOT_RUN/BLOCKED`，不能以 golden 文本替代。

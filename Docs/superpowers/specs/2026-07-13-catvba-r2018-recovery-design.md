@@ -161,6 +161,8 @@ G7 RELEASE-APPROVED
 - Core staging 不含 KCL、Cls_PDM、Cls_XLM、VBIDE/MSAPC、SPA/FTA 或其他可选类型污染；
 - 根 Python 项目和命名空间源码不存在第二套 lock/project；
 - Build Kit 可以从固定 Git 输入复算，且来源、编码、FRM/FRX、package/capability 全部 fail-closed；
+- 歧义源码的显式 UTF-8/CP936 裁决进入组件、catalog、receipt 和 kit ID，后续阶段不得重新猜测；
+- 回传 CATVBA 审计先验证完整 Kit，再只绑定一个非空 package；Core/SPA/FTA 不得被聚合成单一 CATVBA；
 - B28 从空白工程构建，References 无 MISSING/B30/x86/Temp/用户目录污染；
 - Core、SPA、FTA 和其他包具有独立编译、安装、禁用、证据和回滚边界；
 - fork `main/dev` 与个人工作分支职责明确，任何工具都不会自动写 `main/dev`；

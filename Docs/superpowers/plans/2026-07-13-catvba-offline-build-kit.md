@@ -1001,9 +1001,11 @@ git commit -m "feat: build deterministic offline kits"
 **Files:**
 - Create: `catvba_refactor/macro_build/audit.py`
 - Test: `catvba_refactor/tests/test_audit.py`
+- Modify: `catvba_refactor/macro_build/{model,inventory,resolver,generator,policy,kit}.py`
+- Test: corresponding inventory/resolver/generator/policy/kit tests
 
 **Interfaces:**
-- Produces: `audit_catvba(path, expected_manifest=None) -> AuditReport`.
+- Produces: `audit_catvba(path, expected_manifest=None, *, package_id=None) -> AuditReport`.
 - Consumes: `olefile`, `oletools.olevba.VBA_Parser`, and isolated `pcodedmp` diagnostic subprocess.
 - Never mutates the supplied CATVBA or treats p-code output as compile evidence.
 
@@ -1027,11 +1029,12 @@ class AuditReport:
     references: tuple[dict[str, str], ...]
     pcode: PCodeSignal
     diagnostics: tuple[Diagnostic, ...]
+    package_id: str | None = None
 ```
 
 - [ ] **Step 1: Write failing audit tests**
 
-Use a copied, chmod-read-only `CATIA_V5_SimpleMacroMenu.catvba` for positive CFB/source enumeration. Assert its known SHA-256 `B09195D5BF2787715CF4E8A50C840B0CE256A2408C83038149E1853E27906BA5`. Add truncated CFB, non-CFB, expected-module mismatch, expected-FRX mismatch, and mocked `pcodedmp` timeout/nonzero cases.
+Use a copied, chmod-read-only `CATIA_V5_SimpleMacroMenu.catvba` for positive CFB/source enumeration. Assert its known SHA-256 `B09195D5BF2787715CF4E8A50C840B0CE256A2408C83038149E1853E27906BA5`. Add truncated CFB, non-CFB, expected-module mismatch, expected-FRX mismatch, orphan Form storage, exact FRX wrapper boundary, staged/extracted directional source normalization, behavioral-attribute mutation, bounded/FIFO/TOCTOU inputs, multi/empty-package selection, cross-package duplicate names, catalog-bound encoding decisions, non-selected-package tamper, and mocked `pcodedmp` timeout/nonzero cases.
 
 - [ ] **Step 2: Run tests and confirm missing audit module**
 
@@ -1041,21 +1044,9 @@ Expected: FAIL during import.
 
 - [ ] **Step 3: Implement bounded read-only audit**
 
-Hash the input before and after. Copy it into `TemporaryDirectory`, chmod the copy `0444`, enumerate OLE streams with `olefile.OleFileIO`, and extract VBA source through `VBA_Parser` without calling write APIs. Run p-code diagnostics as:
+Open the input by descriptor-relative no-follow traversal, require a regular file, enforce a 256 MiB cap before and during the read, and identity-check it before and after. Copy it into `TemporaryDirectory`, chmod the copy `0444`, enumerate OLE streams with `olefile.OleFileIO`, and extract VBA source through `VBA_Parser` without calling write APIs. Run p-code diagnostics through a bounded `Popen` reader that continuously drains stdout/stderr, caps each at 1 MiB, and terminates the process group on timeout.
 
-```python
-subprocess.run(
-    [sys.executable, "-m", "pcodedmp.pcodedmp", "-d", str(readonly_copy)],
-    stdin=subprocess.DEVNULL,
-    capture_output=True,
-    text=True,
-    timeout=60,
-    check=False,
-    env={"PATH": os.environ.get("PATH", ""), "PYTHONNOUSERSITE": "1"},
-)
-```
-
-Limit captured stdout/stderr to 1 MiB, record timeout/nonzero as diagnostic signals, and label all p-code data `diagnostic_only=true`. Compare expected modules/FRX/references/hashes when an expected Kit manifest is supplied. If the original hash changes, raise `VerificationError`.
+Record timeout/nonzero as diagnostic signals and label all p-code data `diagnostic_only=true`. When an expected Kit manifest is supplied, capture its bounded complete tree through one no-follow root descriptor, run the full in-memory Kit verifier, and only then compare modules/FRX/references/hashes for the selected non-empty package. Auto-select only when exactly one package is non-empty. Preserve the manifest `encoding_decision` in Component/catalog/receipts and use its single strict decoder throughout policy, Kit verify and audit. Normalize staged exports and actual oletools extraction in separate directions: require canonical staged class/Form headers, reject extraction-only attributes in staged source, and strip only structurally valid extraction metadata from actual source while retaining behavioral attributes. If the original CATVBA identity or bytes change, raise `VerificationError`.
 
 - [ ] **Step 4: Run audit tests and commit**
 
@@ -1082,14 +1073,14 @@ git commit -m "feat: audit returned catvba read only"
   - `macro-menu-build check [--worktree]`
   - `macro-menu-build build-kit`
   - `macro-menu-build verify-kit <kit>`
-  - `macro-menu-build audit-catvba <returned.catvba> --expect <kit-manifest.json>`
+  - `macro-menu-build audit-catvba <returned.catvba> --expect <kit-manifest.json> [--package <package-id>]`
 - Produces exit codes `0/2/3/4/5` from `ExitCode`.
 
 - [ ] **Step 1: Write failing CLI tests**
 
 Invoke `main(["--format", "json", "inventory", "--worktree"])` directly and invoke
 `["uv", "run", "macro-menu-build", "--help"]` through `subprocess`. Cover help, unknown arguments,
-text/JSON parity, stable diagnostic sorting, worktree reports containing `formal_eligible=false`, worktree rejection
+text/JSON parity, stable diagnostic sorting, audit package selection/report binding, `--package` without `--expect` usage rejection, worktree reports containing `formal_eligible=false`, worktree rejection
 by `build-kit`, initial repository config returning `NO_BUILDABLE_COMPONENTS`/exit 3 without creating `build/`
 or `dist/`, Kit verify mismatch/exit 5, and infrastructure exception/exit 4.
 
