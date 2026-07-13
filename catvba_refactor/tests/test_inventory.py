@@ -241,6 +241,29 @@ def test_explicit_modules_and_complete_form_preserve_exact_members(
     ]
 
 
+def test_exported_form_accepts_indented_ole_object_blob(tmp_path: Path) -> None:
+    form = (
+        b'VERSION 5.00\r\n'
+        b'Attribute VB_Name = "IndentedForm"\r\n'
+        b'   OleObjectBlob   =   "IndentedForm.frx":0000\r\n'
+    )
+    resource = b"exact-resource"
+    tree = {
+        "Src/IndentedForm.frm": form,
+        "Src/IndentedForm.frx": resource,
+    }
+
+    inventory = scan_inputs(
+        _snapshot(),
+        _manifests(),
+        MemoryRepository(tmp_path, {UPSTREAM_COMMIT: tree}),
+    )
+
+    assert inventory.report.ok
+    assert len(inventory.components) == 1
+    assert inventory.components[0].vb_name == "IndentedForm"
+
+
 def test_discovered_upstream_component_is_stably_quarantined(tmp_path: Path) -> None:
     data = b'Attribute VB_Name = "Unlisted"\r\n'
     repository = MemoryRepository(
