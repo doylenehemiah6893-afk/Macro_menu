@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
@@ -7,6 +8,18 @@ from typing import Any, Literal, overload
 
 from catvba_refactor.macro_build.errors import InfrastructureError, SourceError
 from catvba_refactor.macro_build.model import InputSnapshot, SnapshotMode
+
+
+def _git_environment() -> dict[str, str]:
+    """Build the minimal environment permitted for local Git reads."""
+    return {
+        name: os.environ[name]
+        for name in ("PATH", "SYSTEMROOT")
+        if name in os.environ
+    } | {
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_NO_LAZY_FETCH": "1",
+    }
 
 
 class GitRepository:
@@ -31,6 +44,7 @@ class GitRepository:
                 check=False,
                 capture_output=True,
                 text=text,
+                env=_git_environment(),
             )
         except OSError as exc:
             raise InfrastructureError(
@@ -89,12 +103,24 @@ class GitRepository:
             "--",
             *paths,
         )
-        records = tuple(
-            record.decode("utf-8", errors="surrogateescape")
-            for record in output.split(b"\0")
-            if record
-        )
+        fields = iter(output.split(b"\0"))
+        records: list[str] = []
+        for field in fields:
+            if not field:
+                continue
+            if _is_rename_or_copy(field):
+                second_path = next(fields, b"")
+                if not second_path:
+                    raise InfrastructureError("git status returned malformed output")
+                field = b"\0".join((field, second_path))
+            records.append(field.decode("utf-8", errors="surrogateescape"))
         return tuple(sorted(records, key=_status_path))
+
+
+def _is_rename_or_copy(record: bytes) -> bool:
+    return len(record) >= 3 and (
+        record[0:1] in (b"R", b"C") or record[1:2] in (b"R", b"C")
+    )
 
 
 def _status_path(record: str) -> str:
