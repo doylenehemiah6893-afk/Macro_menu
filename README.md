@@ -3,47 +3,47 @@
 > [!CAUTION]
 > **当前交付状态：NO-GO。**
 >
-> 根目录中的 `CATIA_V5_SimpleMacroMenu.catvba` 与 `CAT_menu.catvba` 仅为遗留取证样本，
-> 不是获准普通/生产安装、运行、回滚或分发的 CATIA R2018 制品；只有另行批准的隔离取证会话
-> 才能按恢复指南使用只读副本。当前尚无 B28 Compile、重启、
-> AB3-only / MD2-only / HD2-only 三套隔离许可证验收或正式发布批准证据。
+> 根目录两个 CATVBA 仅为遗留取证样本，不是普通/生产安装、运行、回滚或分发制品。当前没有 B28
+> Compile、重启、许可证矩阵或发布批准证据。
 
-本仓库正在把原有单体 CATVBA 恢复为源码优先、可离线审查、可在 CATIA
-V5-6R2018（R28/B28）与 VBA7 64 位目标机重建和现场调试的交付体系。
+本分支正在把原有单体 CATVBA 恢复为源码优先、可离线审查、可在 CATIA V5-6R2018（R28/B28）和
+VBA7 64 位目标机从空白工程重建与现场调试的交付体系。
 
-## 先从这里开始
+## 当前目标环境
 
-- [当前状态与唯一下一动作](Docs/STATUS.md)
-- [项目文档索引与权威规则](Docs/README.md)
-- [本地 Overlay 结构与上游同步规划](Docs/PROJECT_STRUCTURE.md)
-- [恢复调查与已批准决策](Docs/CATVBA重构调查与决策记录.md)
-- [R2018 恢复、依赖与安全交付指南](Docs/CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
-- [当前 NO-GO 发布政策与未来流程草案](Docs/发版.md)
+```text
+CATIA V5-6R2018 / VBA7 / 64-bit Windows
+Eligible license = (AB3 OR HD2 OR MD2) AND SPA AND FTA
+```
 
-## 目标与边界
+- Core 不早绑定 SPA/FTA，必须在 P-AB3/P-HD2/P-MD2 分别通过；
+- SPA、FTA 是所有目标机保证具备、默认部署但物理隔离的 Fleet Extensions；
+- 其他 CATIA 产品代码单独列许可证候选、隔离和无额外许可证替代；
+- Excel 是外部软件集成，不是 CATIA 许可证。
 
-- 正式目标：CATIA V5-6R2018（R28/B28）、VBA7、64 位 Windows。
-- 许可证基线：AB3、MD2、HD2。
-- Core：只包含在 AB3-only、MD2-only、HD2-only 三套 profile 中分别通过的能力交集。
-- 超出交集：物理隔离为 Baseline Extension 或 Licensed Optional，并单独记录许可证风险、
-  隔离方式和无额外许可证的替代实现。
-- 当前工作区没有 CATIA：本地环境只能承担编写、分析、离线测试和准备 Build Kit；任何 CATIA
-  Compile、运行、许可证或发布结论都必须来自受控 B28 目标环境证据。详细设计和日期化实施计划获批后，
-  本地产品实现也只能进入预留的 `catvba_refactor/` 命名空间。
-- 重构只发生在本地 `codex/*` 分支；`origin/dev` 是 `Src/`、`resources/` 的唯一分支级上游，`origin/main` 仅作旧发布观察源。
+## 从这里开始
 
-## 当前仓库材料如何使用
+- [当前状态](Docs/STATUS.md)
+- [文档索引](Docs/README.md)
+- [恢复总架构](Docs/superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md)
+- [项目结构](Docs/PROJECT_STRUCTURE.md)
+- [调查与决策](Docs/CATVBA重构调查与决策记录.md)
+- [R2018 恢复指南](Docs/CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
 
-| 路径 | 当前定位 | 是否进入正式发布 |
-|---|---|---:|
-| `Src/`、`resources/` | `origin/dev` 的只读上游镜像；只由审定 intake 更新 | 仅经 resolver 筛选、生成和目标机验证后 |
-| `catvba_refactor/` | 规划中的唯一本地实现命名空间：new/override VBA、配置、schema、工具、测试与派生输出；当前尚未创建 | 只有 namespaced Build Kit 经目标门禁后 |
-| 根目录两个 `.catvba` | legacy evidence，保留原哈希 | 否 |
-| `LicenseReset.catvbs` | quarantine；禁止以修改许可证方式探测能力 | 否 |
-| `ref_project/`、`DrawFunc/` | 来源和适用性待核验的参考材料 | 否 |
-| `artifacts/` | 历史分析材料，不是发布制品目录 | 否 |
-| `Docs/` | 当前设计、状态、证据和历史记录 | 按发布清单决定 |
+## 仓库边界
 
-旧版 README 中“下载 CATVBA 后直接添加宏库”“缺引用时安装 .NET/Excel”等操作已撤销。
-只有当 [Docs/STATUS.md](Docs/STATUS.md) 指向未过期的 G7 `PASS` 记录、不可变制品和
-SHA-256 时，才能把某个 CATVBA 称为正式可安装版本。
+| 路径/分支 | 定位 |
+|---|---|
+| `verysolecd/Macro_menu:dev` | `Src/resources` 逻辑上游 |
+| fork `main/dev` | 对应上游镜像，不承载个人重构 |
+| fork `codex/dev-review-report` | 唯一重构写分支 |
+| 根 `pyproject.toml/uv.lock/.python-version` | 唯一 Python 项目与依赖真源 |
+| `Src/`、`resources/` | intake-only 上游镜像 |
+| `catvba_refactor/` | 本地实现命名空间；当前只有说明性目录脚手架 |
+| 根目录两个 `.catvba` | legacy evidence only |
+| `LicenseReset.catvbs` | quarantine |
+| `ref_project/`、`DrawFunc/`、`artifacts/` | reference/history，release=false |
+
+当前工作区没有 CATIA，只能编写、静态分析、pytest、Build Kit 和只读审计。任何“已编译、可运行、
+许可证通过、可发布”必须由受控 B28 目标机证据支持。
+
