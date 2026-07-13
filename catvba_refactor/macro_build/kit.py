@@ -953,6 +953,113 @@ def _package_record(
     )
 
 
+def _target_test_plan(
+    snapshot: Mapping[str, Any], kit_id: str, catalog_sha256: str
+) -> dict[str, Any]:
+    """Build the ordered, immutable first-cycle B28 test contract."""
+    build_identity = {
+        "catalog_sha256": catalog_sha256,
+        "kit_id": kit_id,
+        "manifest_digest": snapshot.get("manifest_digest"),
+        "work_commit": snapshot.get("work_commit"),
+        "work_tree": snapshot.get("work_tree"),
+    }
+    runnable_tools = (
+        ("core.healthcheck", "none", 0),
+        ("core.document-summary", "CATPart", 0),
+    )
+    cases: list[dict[str, Any]] = []
+
+    for tool_id, documents in (
+        (
+            "core.healthcheck",
+            (("none", 0), ("CATPart", 0), ("CATProduct", 0), ("CATDrawing", 0)),
+        ),
+        (
+            "core.document-summary",
+            (("none", 20), ("CATPart", 0), ("CATProduct", 0), ("CATDrawing", 0)),
+        ),
+    ):
+        for document_type, result_code in documents:
+            cases.append(
+                {
+                    "build_identity": build_identity,
+                    "case_id": f"context.{tool_id}.{document_type}",
+                    "category": "context",
+                    "document_type": document_type,
+                    "expected": {"result_code": result_code},
+                    "package_id": "core",
+                    "status": "not-run",
+                    "tool_id": tool_id,
+                }
+            )
+
+    for profile_id in ("P-AB3", "P-HD2", "P-MD2"):
+        for tool_id, document_type, result_code in runnable_tools:
+            cases.append(
+                {
+                    "build_identity": build_identity,
+                    "case_id": f"profile.{profile_id}.{tool_id}",
+                    "category": "profile",
+                    "document_type": document_type,
+                    "expected": {"result_code": result_code},
+                    "package_id": "core",
+                    "profile_id": profile_id,
+                    "status": "not-run",
+                    "tool_id": tool_id,
+                }
+            )
+
+    for scenario in ("restart", "repeat", "cross-document", "state-diff"):
+        for tool_id, document_type, result_code in runnable_tools:
+            cases.append(
+                {
+                    "build_identity": build_identity,
+                    "case_id": f"lifecycle.{scenario}.{tool_id}",
+                    "category": "lifecycle",
+                    "document_type": document_type,
+                    "expected": {"result_code": result_code, "state": "clean"},
+                    "package_id": "core",
+                    "scenario": scenario,
+                    "status": "not-run",
+                    "tool_id": tool_id,
+                }
+            )
+
+    for extension_package_id in ("fleet-spa", "fleet-fta"):
+        for failure_mode in (
+            "missing",
+            "broken",
+            "reference-failed",
+            "checkout-failed",
+        ):
+            cases.append(
+                {
+                    "build_identity": build_identity,
+                    "case_id": f"isolation.{extension_package_id}.{failure_mode}",
+                    "category": "isolation",
+                    "expected": {"core_state": "READY", "result_code": 0},
+                    "extension_package_id": extension_package_id,
+                    "failure_mode": failure_mode,
+                    "package_id": "core",
+                    "status": "not-run",
+                    "tool_id": "core.healthcheck",
+                }
+            )
+
+    return {
+        "schema_version": 1,
+        "target": "CATIA R2018/VBA7 64",
+        "license_requirements": {
+            "baseline_any_of": ["AB3", "HD2", "MD2"],
+            "additional_required": ["SPA", "FTA"],
+            "verification_status": "not-run",
+        },
+        "cases": cases,
+        **_IMMUTABLE_STATUS,
+    }
+
+
 def _layout(
     catalog: ResolvedCatalog,
     identity: dict[str, Any],
@@ -1034,16 +1141,9 @@ def _layout(
         }
     )
     files["target-test-plan/target-test-plan.json"] = canonical_json_bytes(
-        {
-            "schema_version": 1,
-            "target": "CATIA R2018/VBA7 64",
-            "license_requirements": {
-                "baseline_any_of": ["AB3", "HD2", "MD2"],
-                "additional_required": ["SPA", "FTA"],
-                "verification_status": "not-run",
-            },
-            **_IMMUTABLE_STATUS,
-        }
+        _target_test_plan(
+            identity["snapshot"], kit_id, sha256_bytes(catalog_bytes)
+        )
     )
     files["evidence-templates/target-verification.json"] = canonical_json_bytes(
         {
@@ -2019,16 +2119,9 @@ def _expected_catalog_graph(
         }
     )
     expected["target-test-plan/target-test-plan.json"] = canonical_json_bytes(
-        {
-            "schema_version": 1,
-            "target": "CATIA R2018/VBA7 64",
-            "license_requirements": {
-                "baseline_any_of": ["AB3", "HD2", "MD2"],
-                "additional_required": ["SPA", "FTA"],
-                "verification_status": "not-run",
-            },
-            **_IMMUTABLE_STATUS,
-        }
+        _target_test_plan(
+            snapshot, expected_id, sha256_bytes(canonical_json_bytes(catalog))
+        )
     )
     expected["evidence-templates/target-verification.json"] = canonical_json_bytes(
         {

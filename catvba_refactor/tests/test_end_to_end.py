@@ -254,6 +254,42 @@ def test_candidate_kit_is_deterministic_and_dirty_tree_fails_closed(
     assert first_zip.read_bytes() == second_zip.read_bytes()
     assert hashlib.sha256(first_zip.read_bytes()).hexdigest() == first["zip_sha256"]
 
+    target_plan = json.loads(
+        (first_kit / "target-test-plan/target-test-plan.json").read_text(
+            encoding="ascii"
+        )
+    )
+    cases = target_plan["cases"]
+    catalog_identity = json.loads(
+        (first_kit / "catalog.json").read_text(encoding="ascii")
+    )
+    catalog_sha256 = hashlib.sha256(
+        (first_kit / "catalog.json").read_bytes()
+    ).hexdigest()
+    assert len(cases) == 30
+    assert [case["case_id"] for case in cases[:8]] == [
+        "context.core.healthcheck.none",
+        "context.core.healthcheck.CATPart",
+        "context.core.healthcheck.CATProduct",
+        "context.core.healthcheck.CATDrawing",
+        "context.core.document-summary.none",
+        "context.core.document-summary.CATPart",
+        "context.core.document-summary.CATProduct",
+        "context.core.document-summary.CATDrawing",
+    ]
+    assert all(case["status"] == "not-run" for case in cases)
+    assert all(
+        case["build_identity"]
+        == {
+            "catalog_sha256": catalog_sha256,
+            "kit_id": first["kit_id"],
+            "manifest_digest": catalog_identity["snapshot"]["manifest_digest"],
+            "work_commit": catalog_identity["snapshot"]["work_commit"],
+            "work_tree": catalog_identity["snapshot"]["work_tree"],
+        }
+        for case in cases
+    )
+
     dirty_module = module + b"' diagnostic worktree change\r\n"
     module_path.write_bytes(dirty_module)
     components_path = repo / "catvba_refactor" / "config" / "components.json"

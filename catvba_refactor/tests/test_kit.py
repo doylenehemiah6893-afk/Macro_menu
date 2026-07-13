@@ -261,6 +261,99 @@ def _codes(path: Path) -> set[str]:
     return {item.code for item in verify_build_kit(path).diagnostics}
 
 
+def _expected_core_target_cases(
+    kit_id: str, catalog_sha256: str
+) -> list[dict[str, Any]]:
+    build_identity = {
+        "catalog_sha256": catalog_sha256,
+        "kit_id": kit_id,
+        "manifest_digest": "5" * 64,
+        "work_commit": "3" * 40,
+        "work_tree": "4" * 40,
+    }
+    tools = (
+        ("core.healthcheck", "none", 0),
+        ("core.document-summary", "CATPart", 0),
+    )
+    cases: list[dict[str, Any]] = []
+    for tool_id, documents in (
+        (
+            "core.healthcheck",
+            (("none", 0), ("CATPart", 0), ("CATProduct", 0), ("CATDrawing", 0)),
+        ),
+        (
+            "core.document-summary",
+            (("none", 20), ("CATPart", 0), ("CATProduct", 0), ("CATDrawing", 0)),
+        ),
+    ):
+        for document_type, result_code in documents:
+            cases.append(
+                {
+                    "build_identity": build_identity,
+                    "case_id": f"context.{tool_id}.{document_type}",
+                    "category": "context",
+                    "document_type": document_type,
+                    "expected": {"result_code": result_code},
+                    "package_id": "core",
+                    "status": "not-run",
+                    "tool_id": tool_id,
+                }
+            )
+    for profile_id in ("P-AB3", "P-HD2", "P-MD2"):
+        for tool_id, document_type, result_code in tools:
+            cases.append(
+                {
+                    "build_identity": build_identity,
+                    "case_id": f"profile.{profile_id}.{tool_id}",
+                    "category": "profile",
+                    "document_type": document_type,
+                    "expected": {"result_code": result_code},
+                    "package_id": "core",
+                    "profile_id": profile_id,
+                    "status": "not-run",
+                    "tool_id": tool_id,
+                }
+            )
+    for scenario in ("restart", "repeat", "cross-document", "state-diff"):
+        for tool_id, document_type, result_code in tools:
+            cases.append(
+                {
+                    "build_identity": build_identity,
+                    "case_id": f"lifecycle.{scenario}.{tool_id}",
+                    "category": "lifecycle",
+                    "document_type": document_type,
+                    "expected": {"result_code": result_code, "state": "clean"},
+                    "package_id": "core",
+                    "scenario": scenario,
+                    "status": "not-run",
+                    "tool_id": tool_id,
+                }
+            )
+    for extension_package_id in ("fleet-spa", "fleet-fta"):
+        for failure_mode in (
+            "missing",
+            "broken",
+            "reference-failed",
+            "checkout-failed",
+        ):
+            cases.append(
+                {
+                    "build_identity": build_identity,
+                    "case_id": (
+                        f"isolation.{extension_package_id}.{failure_mode}"
+                    ),
+                    "category": "isolation",
+                    "expected": {"core_state": "READY", "result_code": 0},
+                    "extension_package_id": extension_package_id,
+                    "failure_mode": failure_mode,
+                    "package_id": "core",
+                    "status": "not-run",
+                    "tool_id": "core.healthcheck",
+                }
+            )
+    return cases
+
+
 def _rewrite_integrity(kit_dir: Path, kit_id: str) -> None:
     files = {
         path.relative_to(kit_dir).as_posix(): path.read_bytes()
@@ -801,6 +894,18 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
         "compile_status": "not-run",
         "diagnostics": [],
     }
+    target_plan = _json(kit_dir / "target-test-plan/target-test-plan.json")
+    assert target_plan["cases"] == _expected_core_target_cases(
+        independent_id, hashlib.sha256(catalog_bytes).hexdigest()
+    )
+    assert len(target_plan["cases"]) == 30
+    assert all(case["status"] == "not-run" for case in target_plan["cases"])
+    assert all(
+        case["package_id"] == "core"
+        and case["tool_id"].startswith("core.")
+        and case["build_identity"]["kit_id"] == independent_id
+        for case in target_plan["cases"]
+    )
     serialized = catalog_bytes + manifest_bytes
     assert str(tmp_path).encode() not in serialized
     assert b"root" not in serialized
@@ -1045,6 +1150,43 @@ def test_directory_verifier_reports_tampering_extra_files_and_wrong_status(
         "IMMUTABLE_STATUS_INVALID",
         "WRONG_KIT_ID",
     } <= codes
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ("missing", "duplicate", "extra", "reordered", "passed"),
+)
+def test_verifier_rejects_target_case_graph_tampering(
+    tmp_path: Path, tamper: str
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "out")
+    kit_dir = Path(receipt.kit_dir)
+    plan_path = kit_dir / "target-test-plan/target-test-plan.json"
+    plan = _json(plan_path)
+    cases = plan["cases"]
+
+    if tamper == "missing":
+        cases.pop()
+    elif tamper == "duplicate":
+        cases.insert(1, dict(cases[0]))
+    elif tamper == "extra":
+        extra = dict(cases[-1])
+        extra["case_id"] = "isolation.fleet-fta.unplanned"
+        cases.append(extra)
+    elif tamper == "reordered":
+        cases[0], cases[1] = cases[1], cases[0]
+    else:
+        cases[0]["status"] = "passed"
+
+    plan_path.write_bytes(canonical_json_bytes(plan))
+    _rewrite_integrity(kit_dir, receipt.kit_id)
+
+    report = verify_build_kit(kit_dir)
+    assert not report.ok
+    assert "CATALOG_CONTENT_MISMATCH" in {
+        finding.code for finding in report.diagnostics
+    }
 
 
 def test_directory_verifier_rejects_malformed_hashes_forbidden_catvba_and_symlink(
