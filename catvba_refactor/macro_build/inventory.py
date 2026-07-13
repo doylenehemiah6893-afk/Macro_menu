@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import stat
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
@@ -187,56 +189,206 @@ def _worktree_members(
     root: _Root,
     diagnostics: list[Diagnostic],
 ) -> list[_RawMember]:
-    root_path = repo.root / Path(root.path)
-    if not root_path.exists():
-        return []
-    if not root_path.is_dir():
-        diagnostics.append(
-            _diagnostic(
-                "SOURCE_ROOT_NOT_DIRECTORY",
-                root.path,
-                "worktree source root is not a directory",
-            )
-        )
-        return []
-
-    members: list[_RawMember] = []
     try:
-        paths = sorted(
-            (
-                path
-                for path in root_path.rglob("*")
-                if path.is_file()
-                and path.suffix.casefold() in root.extensions
-            ),
-            key=lambda path: path.relative_to(repo.root).as_posix(),
-        )
+        repository_root = repo.root.resolve(strict=True)
     except OSError as error:
         diagnostics.append(
             _diagnostic(
                 "SOURCE_READ_ERROR",
                 root.path,
-                f"cannot enumerate worktree source root ({type(error).__name__})",
+                f"cannot resolve repository root ({type(error).__name__})",
             )
         )
         return []
 
-    for absolute_path in paths:
-        relative_path = absolute_path.relative_to(repo.root).as_posix()
+    def relative_path(path: Path) -> str:
+        return path.relative_to(repo.root).as_posix()
+
+    def reject_symlink(path: Path, display_path: str) -> bool:
         try:
-            data = absolute_path.read_bytes()
+            metadata = path.lstat()
+        except FileNotFoundError:
+            return False
         except OSError as error:
             diagnostics.append(
                 _diagnostic(
                     "SOURCE_READ_ERROR",
-                    relative_path,
+                    display_path,
+                    f"cannot inspect worktree source path ({type(error).__name__})",
+                )
+            )
+            return True
+        if stat.S_ISLNK(metadata.st_mode):
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_SYMLINK_REJECTED",
+                    display_path,
+                    "worktree source paths cannot be symbolic links",
+                )
+            )
+            return True
+        return False
+
+    def contained(path: Path, display_path: str) -> bool:
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(repository_root)
+        except ValueError:
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_PATH_ESCAPE",
+                    display_path,
+                    "resolved worktree source path escapes the repository root",
+                )
+            )
+            return False
+        except OSError as error:
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_READ_ERROR",
+                    display_path,
+                    f"cannot resolve worktree source path ({type(error).__name__})",
+                )
+            )
+            return False
+        return True
+
+    root_path = repo.root.joinpath(*PurePosixPath(root.path).parts)
+    cursor = repo.root
+    for part in PurePosixPath(root.path).parts:
+        cursor /= part
+        display_path = relative_path(cursor)
+        if reject_symlink(cursor, display_path):
+            return []
+        try:
+            metadata = cursor.lstat()
+        except FileNotFoundError:
+            return []
+        except OSError as error:
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_READ_ERROR",
+                    display_path,
+                    f"cannot inspect worktree source root ({type(error).__name__})",
+                )
+            )
+            return []
+        if not contained(cursor, display_path):
+            return []
+        if not stat.S_ISDIR(metadata.st_mode):
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_ROOT_NOT_DIRECTORY",
+                    root.path,
+                    "worktree source root is not a directory",
+                )
+            )
+            return []
+
+    paths: list[Path] = []
+    pending = [root_path]
+    while pending:
+        directory = pending.pop()
+        directory_path = relative_path(directory)
+        if reject_symlink(directory, directory_path) or not contained(
+            directory, directory_path
+        ):
+            continue
+        try:
+            directory_metadata = directory.lstat()
+        except OSError as error:
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_READ_ERROR",
+                    directory_path,
+                    f"cannot inspect worktree source directory ({type(error).__name__})",
+                )
+            )
+            continue
+        if not stat.S_ISDIR(directory_metadata.st_mode):
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_READ_ERROR",
+                    directory_path,
+                    "worktree source directory changed during inspection",
+                )
+            )
+            continue
+        try:
+            children = sorted(
+                directory.iterdir(),
+                key=lambda path: relative_path(path),
+                reverse=True,
+            )
+        except OSError as error:
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_READ_ERROR",
+                    directory_path,
+                    f"cannot enumerate worktree source directory ({type(error).__name__})",
+                )
+            )
+            continue
+
+        for path in children:
+            display_path = relative_path(path)
+            if reject_symlink(path, display_path):
+                continue
+            try:
+                metadata = path.lstat()
+            except FileNotFoundError:
+                diagnostics.append(
+                    _diagnostic(
+                        "SOURCE_READ_ERROR",
+                        display_path,
+                        "worktree source path disappeared during inspection",
+                    )
+                )
+                continue
+            except OSError as error:
+                diagnostics.append(
+                    _diagnostic(
+                        "SOURCE_READ_ERROR",
+                        display_path,
+                        f"cannot inspect worktree source path ({type(error).__name__})",
+                    )
+                )
+                continue
+            if not contained(path, display_path):
+                continue
+            if stat.S_ISDIR(metadata.st_mode):
+                pending.append(path)
+            elif (
+                stat.S_ISREG(metadata.st_mode)
+                and path.suffix.casefold() in root.extensions
+            ):
+                paths.append(path)
+
+    members: list[_RawMember] = []
+    for absolute_path in sorted(paths, key=relative_path):
+        display_path = relative_path(absolute_path)
+        if reject_symlink(absolute_path, display_path) or not contained(
+            absolute_path, display_path
+        ):
+            continue
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(absolute_path, flags)
+            with os.fdopen(descriptor, "rb") as stream:
+                data = stream.read()
+        except OSError as error:
+            diagnostics.append(
+                _diagnostic(
+                    "SOURCE_READ_ERROR",
+                    display_path,
                     f"cannot read worktree source member ({type(error).__name__})",
                 )
             )
             continue
         members.append(
             _RawMember(
-                path=relative_path,
+                path=display_path,
                 blob_oid=None,
                 raw_sha256=hashlib.sha256(data).hexdigest(),
                 data=data,
@@ -419,16 +571,17 @@ def _explicit_components(
     raw_members: tuple[_RawMember, ...],
     invalid_paths: set[str],
     diagnostics: list[Diagnostic],
-) -> tuple[list[_BuiltComponent], set[str]]:
+) -> tuple[list[_BuiltComponent], set[str], set[str]]:
     by_path: dict[str, list[_RawMember]] = defaultdict(list)
     for member in raw_members:
         by_path[member.path].append(member)
 
     records = manifests.components.get("components", [])
     if not isinstance(records, list):
-        return [], set()
+        return [], set(), set()
     built: list[_BuiltComponent] = []
     claimed_paths: set[str] = set()
+    claimed_portable_keys: set[str] = set()
 
     for index, record in enumerate(records):
         if not isinstance(record, dict):
@@ -438,7 +591,12 @@ def _explicit_components(
             continue
         for binding in bindings:
             if isinstance(binding, dict) and isinstance(binding.get("path"), str):
-                claimed_paths.add(binding["path"])
+                binding_path = binding["path"]
+                claimed_paths.add(binding_path)
+                path_report = validate_portable_paths((binding_path,))
+                diagnostics.extend(path_report.diagnostics)
+                if path_report.ok:
+                    claimed_portable_keys.add(portable_key(binding_path))
 
         component_type = record.get("component_type")
         roles = _expected_roles(component_type)
@@ -510,13 +668,42 @@ def _explicit_components(
 
         if len(selected) != len(roles):
             continue
-        selected_sides = {member.root.side for member in selected.values()}
-        if len(selected_sides) != 1:
+        selected_roots = {member.root.index for member in selected.values()}
+        selected_root: _Root | None = None
+        if len(selected_roots) != 1:
             diagnostics.append(
                 _diagnostic(
-                    "COMPONENT_MEMBER_ORIGIN_MIXED",
+                    "COMPONENT_MEMBER_ROOT_MIXED",
                     diagnostic_path,
-                    "one component cannot mix upstream and work-owned members",
+                    "one component cannot mix members from different source roots",
+                )
+            )
+            component_invalid = True
+        else:
+            selected_root = next(iter(selected.values())).root
+
+        try:
+            declared_origin = Origin(record.get("origin"))
+        except (TypeError, ValueError):
+            declared_origin = None
+            component_invalid = True
+        selected_origin_values = tuple(
+            sorted({member.root.origin.value for member in selected.values()})
+        )
+        if declared_origin is not None and any(
+            member.root.origin is not declared_origin
+            for member in selected.values()
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    "COMPONENT_ORIGIN_MISMATCH",
+                    diagnostic_path,
+                    "component origin must match its selected source root",
+                    actual=selected_origin_values,
+                    declared=declared_origin.value,
+                    root_ids=tuple(
+                        sorted({member.root.root_id for member in selected.values()})
+                    ),
                 )
             )
             component_invalid = True
@@ -562,12 +749,7 @@ def _explicit_components(
                 )
             )
             component_invalid = True
-        if component_invalid:
-            continue
-
-        try:
-            origin = Origin(record.get("origin"))
-        except (TypeError, ValueError):
+        if component_invalid or selected_root is None:
             continue
         members = tuple(
             sorted(
@@ -579,7 +761,7 @@ def _explicit_components(
             _BuiltComponent(
                 component=Component(
                     source_id=str(record.get("source_id")),
-                    origin=origin,
+                    origin=selected_root.origin,
                     component_type=component_type,
                     vb_name=actual_name,
                     members=members,
@@ -590,10 +772,10 @@ def _explicit_components(
                     ),
                     disposition=str(record.get("disposition")),
                 ),
-                side=next(iter(selected_sides)),
+                side=selected_root.side,
             )
         )
-    return built, claimed_paths
+    return built, claimed_paths, claimed_portable_keys
 
 
 def _discovered_source_id(root: _Root, path: str) -> str:
@@ -624,10 +806,23 @@ def _discovered_component(
 def _discovered_components(
     raw_members: tuple[_RawMember, ...],
     claimed_paths: set[str],
+    claimed_portable_keys: set[str],
     invalid_paths: set[str],
     diagnostics: list[Diagnostic],
 ) -> list[_BuiltComponent]:
-    available = [member for member in raw_members if member.path not in claimed_paths]
+    def is_claimed(member: _RawMember) -> bool:
+        if member.path in claimed_paths:
+            return True
+        try:
+            return portable_key(member.path) in claimed_portable_keys
+        except SourceError:
+            return False
+
+    available = [
+        member
+        for member in raw_members
+        if not is_claimed(member)
+    ]
     forms = [
         member
         for member in available
@@ -762,7 +957,7 @@ def scan_inputs(
     diagnostics = list(manifests.report.diagnostics)
     raw_members = _read_members(snapshot, manifests, repo, diagnostics)
     invalid_paths = _invalid_paths(raw_members, diagnostics)
-    explicit, claimed_paths = _explicit_components(
+    explicit, claimed_paths, claimed_portable_keys = _explicit_components(
         snapshot,
         manifests,
         raw_members,
@@ -772,6 +967,7 @@ def scan_inputs(
     discovered = _discovered_components(
         raw_members,
         claimed_paths,
+        claimed_portable_keys,
         invalid_paths,
         diagnostics,
     )

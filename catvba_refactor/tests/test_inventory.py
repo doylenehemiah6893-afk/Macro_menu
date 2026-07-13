@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +23,8 @@ WORK_COMMIT = "2" * 40
 
 
 def _oid(data: bytes) -> str:
-    return hashlib.sha1(data).hexdigest()
+    header = f"blob {len(data)}\0".encode("ascii")
+    return hashlib.sha1(header + data).hexdigest()
 
 
 class MemoryRepository:
@@ -147,6 +149,30 @@ def _manifests(
 
 def _codes(inventory: Any) -> list[str]:
     return [diagnostic.code for diagnostic in inventory.report.diagnostics]
+
+
+def _symlink_or_skip(
+    link: Path,
+    target: Path,
+    *,
+    target_is_directory: bool = False,
+) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlinks are unavailable on this platform: {error}")
+
+
+def test_memory_repository_oid_uses_git_blob_object_framing() -> None:
+    data = b'Attribute VB_Name = "OidEvidence"\r\n'
+    expected = subprocess.run(
+        ("git", "hash-object", "--stdin"),
+        input=data,
+        check=True,
+        capture_output=True,
+    ).stdout.decode("ascii").strip()
+
+    assert _oid(data) == expected
 
 
 def test_explicit_modules_and_complete_form_preserve_exact_members(
@@ -420,6 +446,179 @@ def test_explicit_vb_name_must_match_source_identity(tmp_path: Path) -> None:
     assert inventory.components == ()
 
 
+def test_explicit_origin_must_match_the_selected_source_root(tmp_path: Path) -> None:
+    data = b'Attribute VB_Name = "Local"\r\n'
+    local_path = "catvba_refactor/vba/new/Local.bas"
+    declared = _component(
+        "source.local",
+        "standard_module",
+        "Local",
+        [_binding(local_path, "source", data)],
+        origin="upstream",
+    )
+    roots = [
+        _root(
+            "catvba_refactor/vba/new",
+            root_id="local-new",
+            origin="new",
+            default_disposition="candidate",
+        )
+    ]
+
+    inventory = scan_inputs(
+        _snapshot(),
+        _manifests(roots=roots, components=[declared]),
+        MemoryRepository(tmp_path, {WORK_COMMIT: {local_path: data}}),
+    )
+
+    assert _codes(inventory) == ["COMPONENT_ORIGIN_MISMATCH"]
+    assert inventory.components == ()
+
+
+def test_upstream_component_may_be_explicitly_quarantined(tmp_path: Path) -> None:
+    data = b'Attribute VB_Name = "Held"\r\n'
+    declared = _component(
+        "source.held",
+        "standard_module",
+        "Held",
+        [_binding("Src/Held.bas", "source", data)],
+        origin="upstream",
+        disposition="quarantine",
+    )
+
+    inventory = scan_inputs(
+        _snapshot(),
+        _manifests(components=[declared]),
+        MemoryRepository(tmp_path, {UPSTREAM_COMMIT: {"Src/Held.bas": data}}),
+    )
+
+    assert inventory.report.ok
+    assert len(inventory.components) == 1
+    assert inventory.components[0].origin is Origin.UPSTREAM
+    assert inventory.components[0].disposition == "quarantine"
+
+
+def test_form_members_must_come_from_the_exact_same_source_root(
+    tmp_path: Path,
+) -> None:
+    form = (
+        b'Attribute VB_Name = "LocalForm"\r\n'
+        b'OleObjectBlob = "LocalForm.frx":0000\r\n'
+    )
+    resource = b"exact-form-resource"
+    form_path = "catvba_refactor/vba/new/LocalForm.frm"
+    resource_path = "catvba_refactor/vba/new/LocalForm.frx"
+    frm_root = _root(
+        "catvba_refactor/vba/new",
+        root_id="local-forms",
+        origin="new",
+        default_disposition="candidate",
+    )
+    frm_root["extensions"] = [".frm"]
+    frx_root = _root(
+        "catvba_refactor/vba/new",
+        root_id="local-resources",
+        origin="new",
+        default_disposition="candidate",
+    )
+    frx_root["extensions"] = [".frx"]
+    declared = _component(
+        "source.local-form",
+        "user_form",
+        "LocalForm",
+        [
+            _binding(form_path, "frm", form),
+            _binding(resource_path, "frx", resource),
+        ],
+        origin="new",
+    )
+
+    inventory = scan_inputs(
+        _snapshot(),
+        _manifests(roots=[frm_root, frx_root], components=[declared]),
+        MemoryRepository(
+            tmp_path,
+            {WORK_COMMIT: {form_path: form, resource_path: resource}},
+        ),
+    )
+
+    assert _codes(inventory) == ["COMPONENT_MEMBER_ROOT_MIXED"]
+    assert inventory.components == ()
+
+
+@pytest.mark.parametrize("stale_path", ["local/foo.bas", "Ｌocal/Ｆoo.bas"])
+def test_stale_portable_binding_claim_cannot_reappear_as_discovered_candidate(
+    tmp_path: Path,
+    stale_path: str,
+) -> None:
+    data = b'Attribute VB_Name = "Foo"\r\n'
+    actual_path = "Local/Foo.bas"
+    declared = _component(
+        "source.foo",
+        "standard_module",
+        "Foo",
+        [_binding(stale_path, "source", data)],
+        origin="new",
+    )
+    roots = [
+        _root(
+            "Local",
+            root_id="local-new",
+            origin="new",
+            default_disposition="candidate",
+        )
+    ]
+
+    inventory = scan_inputs(
+        _snapshot(),
+        _manifests(roots=roots, components=[declared]),
+        MemoryRepository(tmp_path, {WORK_COMMIT: {actual_path: data}}),
+    )
+
+    assert _codes(inventory) == ["MEMBER_NOT_FOUND"]
+    assert inventory.components == ()
+
+
+def test_invalid_binding_path_is_diagnosed_without_portable_key_failure(
+    tmp_path: Path,
+) -> None:
+    data = b'Attribute VB_Name = "Foo"\r\n'
+    actual_path = "Local/Foo.bas"
+    invalid_path = "../Local/Foo.bas"
+    declared = _component(
+        "source.foo",
+        "standard_module",
+        "Foo",
+        [_binding(invalid_path, "source", data)],
+        origin="new",
+    )
+    roots = [
+        _root(
+            "Local",
+            root_id="local-new",
+            origin="new",
+            default_disposition="quarantine",
+        )
+    ]
+
+    first = scan_inputs(
+        _snapshot(),
+        _manifests(roots=roots, components=[declared]),
+        MemoryRepository(tmp_path, {WORK_COMMIT: {actual_path: data}}),
+    )
+    second = scan_inputs(
+        _snapshot(),
+        _manifests(roots=roots, components=[declared]),
+        MemoryRepository(tmp_path, {WORK_COMMIT: {actual_path: data}}),
+    )
+
+    assert first == second
+    assert _codes(first) == ["MEMBER_NOT_FOUND", "PATH_TRAVERSAL"]
+    assert [component.disposition for component in first.components] == [
+        "quarantine"
+    ]
+
+
 def test_ambiguous_text_requires_and_respects_manifest_encoding_decision(
     tmp_path: Path,
 ) -> None:
@@ -475,7 +674,14 @@ def test_candidate_reads_committed_git_blob_not_dirty_worktree(
     assert inventory.components[0].members[0].data.startswith(
         b'Attribute VB_Name = "A"'
     )
-    assert inventory.components[0].members[0].blob_oid is not None
+    expected_oid = subprocess.run(
+        ("git", "rev-parse", f"{commit}:Src/A.bas"),
+        cwd=repo_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert inventory.components[0].members[0].blob_oid == expected_oid
 
 
 def test_worktree_reads_filesystem_bytes_and_is_never_formal(tmp_path: Path) -> None:
@@ -497,6 +703,58 @@ def test_worktree_reads_filesystem_bytes_and_is_never_formal(tmp_path: Path) -> 
     assert inventory.components[0].members[0].blob_oid is None
     assert repository.list_calls == []
     assert repository.read_calls == []
+
+
+def test_worktree_rejects_a_symlink_source_root(tmp_path: Path) -> None:
+    repo_path = tmp_path / "repo"
+    outside = tmp_path / "outside-root"
+    outside.mkdir()
+    (outside / "Leaked.bas").write_bytes(
+        b'Attribute VB_Name = "Leaked"\r\n'
+    )
+    repo_path.mkdir()
+    _symlink_or_skip(repo_path / "Src", outside, target_is_directory=True)
+
+    inventory = scan_inputs(
+        _snapshot(SnapshotMode.WORKTREE),
+        _manifests(),
+        MemoryRepository(repo_path, {}),
+    )
+
+    assert _codes(inventory) == ["SOURCE_SYMLINK_REJECTED"]
+    assert inventory.report.diagnostics[0].path == "Src"
+    assert inventory.components == ()
+
+
+def test_worktree_rejects_symlink_directories_and_files(tmp_path: Path) -> None:
+    repo_path = tmp_path / "repo"
+    source_root = repo_path / "Src"
+    outside = tmp_path / "outside-members"
+    source_root.mkdir(parents=True)
+    outside.mkdir()
+    external_file = outside / "External.bas"
+    external_file.write_bytes(b'Attribute VB_Name = "External"\r\n')
+    _symlink_or_skip(
+        source_root / "linked-directory",
+        outside,
+        target_is_directory=True,
+    )
+    _symlink_or_skip(source_root / "Linked.bas", external_file)
+
+    inventory = scan_inputs(
+        _snapshot(SnapshotMode.WORKTREE),
+        _manifests(),
+        MemoryRepository(repo_path, {}),
+    )
+
+    assert _codes(inventory) == [
+        "SOURCE_SYMLINK_REJECTED",
+        "SOURCE_SYMLINK_REJECTED",
+    ]
+    assert {
+        diagnostic.path for diagnostic in inventory.report.diagnostics
+    } == {"Src/Linked.bas", "Src/linked-directory"}
+    assert inventory.components == ()
 
 
 @pytest.mark.parametrize("mode", [SnapshotMode.CANDIDATE, SnapshotMode.WORKTREE])
