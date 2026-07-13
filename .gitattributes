@@ -1,8 +1,5 @@
-# ==========================
-# CATIA VBA ◊Ó”≈≈‰÷√£®◊Ó÷’∞Ê£©
-# ==========================
-*.bas     text diff=vb
-*.cls     text diff=vb
-*.frm     text diff=vb
-*.frx     binary merge=theirs
-*.catvba  binary merge=theirs
+*.bas     -text diff=vb
+*.cls     -text diff=vb
+*.frm     -text diff=vb
+*.frx     binary
+*.catvba  binary

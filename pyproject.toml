@@ -1,12 +1,30 @@
 [project]
 name = "macro-menu"
 version = "0.1.0"
-description = "Add your description here"
+description = "Offline CATVBA recovery, audit, and Build Kit tooling"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "jsonschema>=4.23,<5",
     "olefile>=0.47",
     "oletools>=0.60.2",
     "pcodedmp>=1.2.6",
-    "pytest>=9.1.1",
 ]
+
+[project.scripts]
+macro-menu-build = "catvba_refactor.macro_build.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9.1.1"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["catvba_refactor*"]
+exclude = ["catvba_refactor.tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["catvba_refactor/tests"]
+addopts = "--strict-markers --strict-config"

@@ -1,3 +1,8 @@
-.context\
-.antigravity\
-·¢°æ.md
+.context/
+.antigravity/
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+/catvba_refactor/build/
+/catvba_refactor/dist/
