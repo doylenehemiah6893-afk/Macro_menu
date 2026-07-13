@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any, cast
 
 from .encoding import decode_vba
@@ -19,7 +21,7 @@ from .model import (
     ValidationReport,
 )
 from .policy import validate_catalog
-from .portable_paths import validate_portable_paths
+from .portable_paths import portable_key, validate_portable_paths
 
 
 GENERATED_SOURCE_ID = "generated.tool-catalog"
@@ -88,6 +90,15 @@ def _report(*groups: tuple[Diagnostic, ...] | list[Diagnostic]) -> ValidationRep
     return ValidationReport(tuple(unique[key] for key in sorted(unique)))
 
 
+def _contains_forbidden_generated_character(value: str) -> bool:
+    return any(
+        ord(character) < 0x20
+        or 0x7F <= ord(character) <= 0x9F
+        or character in {"\u2028", "\u2029"}
+        for character in value
+    )
+
+
 def _tool_records(
     manifests: ManifestSet,
     diagnostics: list[Diagnostic],
@@ -96,7 +107,7 @@ def _tool_records(
     if not isinstance(records, list):
         diagnostics.append(
             _diagnostic(
-                "GENERATED_TOOL_INVALID",
+                "TOOL_RECORD_INVALID",
                 "tool catalog is not an array",
                 path="tools.json#/tools",
                 line=1,
@@ -111,7 +122,7 @@ def _tool_records(
         if not isinstance(record, dict):
             diagnostics.append(
                 _diagnostic(
-                    "GENERATED_TOOL_INVALID",
+                    "TOOL_RECORD_INVALID",
                     "tool entry is not an object",
                     path=f"tools.json#/tools/{index}",
                     line=1,
@@ -124,7 +135,7 @@ def _tool_records(
         if not isinstance(tool_id, str) or not isinstance(caption, str):
             diagnostics.append(
                 _diagnostic(
-                    "GENERATED_TOOL_INVALID",
+                    "TOOL_RECORD_INVALID",
                     "tool entry requires string tool_id and caption fields",
                     path=f"tools.json#/tools/{index}",
                     line=1,
@@ -136,7 +147,7 @@ def _tool_records(
             (
                 field
                 for field, value in (("tool_id", tool_id), ("caption", caption))
-                if "\r" in value or "\n" in value
+                if _contains_forbidden_generated_character(value)
             ),
             None,
         )
@@ -144,7 +155,7 @@ def _tool_records(
             diagnostics.append(
                 _diagnostic(
                     "GENERATED_STRING_INVALID",
-                    "generated VBA string cannot contain a physical newline",
+                    "generated VBA string cannot contain controls or line separators",
                     path=f"tools.json#/tools/{index}/{invalid_field}",
                     line=1,
                     token=invalid_field,
@@ -154,8 +165,8 @@ def _tool_records(
         if tool_id in seen_ids:
             diagnostics.append(
                 _diagnostic(
-                    "GENERATED_TOOL_DUPLICATE",
-                    "generated tool_id is not unique",
+                    "DUPLICATE_TOOL_ID",
+                    "tool_id is not unique",
                     path=f"tools.json#/tools/{index}/tool_id",
                     line=1,
                     token=tool_id,
@@ -233,6 +244,98 @@ def _core_package(
     return matches[0]
 
 
+def _vb_name_key(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).casefold()
+
+
+def _generated_collision_diagnostics(
+    resolved: ResolvedSourceSet, diagnostics: list[Diagnostic]
+) -> None:
+    generated_path_key = portable_key(GENERATED_PATH)
+    generated_basename = PurePosixPath(GENERATED_PATH).name
+    generated_basename_key = portable_key(generated_basename)
+    generated_name_key = _vb_name_key(GENERATED_VB_NAME)
+
+    for component in sorted(
+        resolved.components,
+        key=lambda item: (
+            item.source_id,
+            item.package_id or "",
+            item.vb_name,
+            tuple(member.path for member in item.members),
+        ),
+    ):
+        first_path = min(
+            (member.path for member in component.members),
+            default=GENERATED_PATH,
+        )
+        if component.source_id == GENERATED_SOURCE_ID:
+            diagnostics.append(
+                _diagnostic(
+                    "GENERATED_SOURCE_ID_COLLISION",
+                    "generated source_id collides with a resolved component",
+                    path=first_path,
+                    line=1,
+                    token=GENERATED_SOURCE_ID,
+                )
+            )
+
+        if (
+            component.package_id == GENERATED_PACKAGE_ID
+            and _vb_name_key(component.vb_name) == generated_name_key
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    "GENERATED_VB_NAME_COLLISION",
+                    "generated VB_Name collides within its package",
+                    path=first_path,
+                    line=1,
+                    token=GENERATED_VB_NAME,
+                )
+            )
+
+        for member in component.members:
+            try:
+                member_path_key = portable_key(member.path)
+                basename_key = portable_key(
+                    PurePosixPath(member.path.replace("\\", "/")).name
+                )
+            except SourceError:
+                diagnostics.append(
+                    _diagnostic(
+                        "GENERATED_COLLISION_CHECK_FAILED",
+                        "resolved member path cannot be checked for generated collisions",
+                        path=member.path,
+                        line=1,
+                        token=member.path,
+                    )
+                )
+                continue
+            if member_path_key == generated_path_key:
+                diagnostics.append(
+                    _diagnostic(
+                        "GENERATED_PATH_SHADOW",
+                        "generated path shadows a resolved member portable path",
+                        path=member.path,
+                        line=1,
+                        token=GENERATED_PATH,
+                    )
+                )
+            if (
+                component.package_id == GENERATED_PACKAGE_ID
+                and basename_key == generated_basename_key
+            ):
+                diagnostics.append(
+                    _diagnostic(
+                        "GENERATED_OUTPUT_BASENAME_COLLISION",
+                        "generated output basename collides within its package",
+                        path=member.path,
+                        line=1,
+                        token=generated_basename,
+                    )
+                )
+
+
 def _validate_identity(component: Component, diagnostics: list[Diagnostic]) -> None:
     if (
         component.source_id != GENERATED_SOURCE_ID
@@ -295,13 +398,35 @@ def generate_sources(
     tools = _tool_records(manifests, diagnostics)
     if diagnostics:
         return GeneratedSourceSet(components=(), report=_report(diagnostics))
+
+    packages = tuple(
+        record
+        for record in manifests.packages.get("packages", [])
+        if isinstance(record, dict)
+    )
+    resolved_policy_catalog = _CatalogView(
+        components=resolved.components,
+        packages=packages,
+        tools=tools,
+        report=ValidationReport(),
+    )
+    resolved_policy_report = validate_catalog(
+        cast(ResolvedCatalog, resolved_policy_catalog)
+    )
+    diagnostics.extend(resolved_policy_report.diagnostics)
+    if diagnostics:
+        return GeneratedSourceSet(components=(), report=_report(diagnostics))
     if not tools:
         return GeneratedSourceSet(components=(), report=inherited)
 
     core_package = _core_package(manifests, diagnostics)
+    _generated_collision_diagnostics(resolved, diagnostics)
+    if core_package is None or diagnostics:
+        return GeneratedSourceSet(components=(), report=_report(diagnostics))
+
     text = _source_text(tools)
     data = _encode_source(text, diagnostics)
-    if core_package is None or data is None:
+    if data is None:
         return GeneratedSourceSet(components=(), report=_report(diagnostics))
 
     member = SourceMember(
@@ -334,12 +459,8 @@ def generate_sources(
     _validate_identity(component, diagnostics)
 
     policy_catalog = _CatalogView(
-        components=(component,),
-        packages=tuple(
-            record
-            for record in manifests.packages.get("packages", [])
-            if isinstance(record, dict)
-        ),
+        components=(*resolved.components, component),
+        packages=packages,
         tools=tools,
         report=ValidationReport(),
     )

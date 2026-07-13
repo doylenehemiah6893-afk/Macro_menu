@@ -3,15 +3,19 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+import pytest
+
 from catvba_refactor.macro_build.generator import generate_sources
 from catvba_refactor.macro_build.manifests import ManifestSet
 from catvba_refactor.macro_build.model import (
+    Component,
     Diagnostic,
     InputSnapshot,
     Origin,
     ResolvedCatalog,
     ResolvedSourceSet,
     SnapshotMode,
+    SourceMember,
     ValidationReport,
 )
 from catvba_refactor.macro_build.policy import validate_catalog
@@ -52,11 +56,46 @@ def _manifests(
     )
 
 
+def _module(
+    source_id: str = "core.healthcheck-module",
+    *,
+    vb_name: str = "MM_HealthCheck",
+    path: str = "catvba_refactor/vba/new/MM_HealthCheck.bas",
+    package_id: str = "core",
+    body: str = "Public Sub Run()\r\nEnd Sub\r\n",
+) -> Component:
+    text = (
+        f'Attribute VB_Name = "{vb_name}"\r\n'
+        "Option Explicit\r\n"
+        f"{body}"
+    )
+    data = text.encode("utf-8")
+    return Component(
+        source_id=source_id,
+        origin=Origin.NEW,
+        component_type="standard_module",
+        vb_name=vb_name,
+        members=(
+            SourceMember(
+                path=path,
+                blob_oid="a" * 40,
+                raw_sha256=hashlib.sha256(data).hexdigest(),
+                role="source",
+                data=data,
+            ),
+        ),
+        package_id=package_id,
+        disposition="candidate",
+    )
+
+
 def _resolved(
     diagnostics: tuple[Diagnostic, ...] = (),
+    *,
+    components: tuple[Component, ...] | None = None,
 ) -> ResolvedSourceSet:
     return ResolvedSourceSet(
-        components=(),
+        components=components if components is not None else (_module(),),
         quarantined=(),
         report=ValidationReport(diagnostics),
     )
@@ -126,7 +165,7 @@ def test_generates_sorted_cp936_catalog_with_parallel_escaped_captions() -> None
 
     catalog = ResolvedCatalog(
         snapshot=_snapshot(),
-        components=generated.components,
+        components=(*_resolved().components, *generated.components),
         packages=tuple(manifests.packages["packages"]),
         tools=tuple(manifests.tools["tools"]),
         report=generated.report,
@@ -186,12 +225,60 @@ def test_missing_core_package_binding_excludes_generated_component() -> None:
 
     assert generated.components == ()
     assert [item.code for item in generated.report.diagnostics] == [
+        "PACKAGE_BINDING_INVALID",
+        "TOOL_PACKAGE_BINDING_INVALID",
+    ]
+    assert generated.report.diagnostics[1].details == {
+        "line": 1,
+        "token": "core",
+    }
+
+
+def test_non_core_classified_core_package_is_rejected_by_generator() -> None:
+    generated = generate_sources(
+        _resolved(),
+        _manifests(
+            [_tool("core.alpha", "Alpha")],
+            packages=[
+                {
+                    "package_id": "core",
+                    "classification": "FLEET_EXTENSION_SPA",
+                }
+            ],
+        ),
+    )
+
+    assert generated.components == ()
+    assert [item.code for item in generated.report.diagnostics] == [
         "GENERATED_PACKAGE_INVALID"
     ]
     assert generated.report.diagnostics[0].details == {
         "line": 1,
         "token": "core",
     }
+
+
+def test_duplicate_core_packages_are_rejected_before_generation() -> None:
+    generated = generate_sources(
+        _resolved(),
+        _manifests(
+            [_tool("core.alpha", "Alpha")],
+            packages=[
+                {"package_id": "core", "classification": "CORE_CANDIDATE"},
+                {
+                    "package_id": "core",
+                    "classification": "FLEET_EXTENSION_SPA",
+                },
+            ],
+        ),
+    )
+
+    assert generated.components == ()
+    assert [item.code for item in generated.report.diagnostics] == [
+        "DUPLICATE_PACKAGE_ID",
+        "PACKAGE_BINDING_INVALID",
+        "TOOL_PACKAGE_BINDING_INVALID",
+    ]
 
 
 def test_prior_diagnostic_is_inherited_and_prevents_generated_output() -> None:
@@ -230,3 +317,125 @@ def test_caption_with_physical_newline_is_rejected_before_vba_emission() -> None
         "line": 1,
         "token": "caption",
     }
+
+
+@pytest.mark.parametrize(
+    "control",
+    ["\x00", "\t", "\x1f", "\x7f", "\x80", "\x9f", "\u2028", "\u2029"],
+)
+def test_generated_strings_reject_raw_controls_and_unicode_line_separators(
+    control: str,
+) -> None:
+    generated = generate_sources(
+        _resolved(),
+        _manifests([_tool("core.control", f"before{control}after")]),
+    )
+
+    assert generated.components == ()
+    assert [item.code for item in generated.report.diagnostics] == [
+        "GENERATED_STRING_INVALID"
+    ]
+    assert generated.report.diagnostics[0].path == "tools.json#/tools/0/caption"
+    assert generated.report.diagnostics[0].details == {
+        "line": 1,
+        "token": "caption",
+    }
+
+
+def test_generator_has_fixed_independent_byte_and_hash_golden_oracle() -> None:
+    generated = generate_sources(
+        _resolved(),
+        _manifests([_tool("core.alpha", '菜单 "一"')]),
+    )
+
+    expected = bytes.fromhex(
+        "4174747269627574652056425f4e616d65203d20224d4d5f47656e6572617465"
+        "64436174616c6f67220d0a4f7074696f6e204578706c696369740d0a0d0a5075"
+        "626c69632046756e6374696f6e204d4d5f546f6f6c4964732829204173205661"
+        "7269616e740d0a202020204d4d5f546f6f6c496473203d204172726179282263"
+        "6f72652e616c70686122290d0a456e642046756e6374696f6e0d0a0d0a507562"
+        "6c69632046756e6374696f6e204d4d5f546f6f6c43617074696f6e7328292041"
+        "732056617269616e740d0a202020204d4d5f546f6f6c43617074696f6e73203d"
+        "2041727261792822b2cbb5a5202222d2bb222222290d0a456e642046756e6374"
+        "696f6e0d0a"
+    )
+    member = generated.components[0].members[0]
+    assert member.data == expected
+    assert member.raw_sha256 == (
+        "98ad313636424f616e05113d7515a8e4f0ba4aa505b4cfb641e7c321d0e9a5da"
+    )
+
+
+@pytest.mark.parametrize(
+    ("collision", "expected_code"),
+    [
+        (
+            _module(
+                "generated.tool-catalog",
+                vb_name="ExistingId",
+                path="existing/ExistingId.bas",
+            ),
+            "GENERATED_SOURCE_ID_COLLISION",
+        ),
+        (
+            _module(
+                "core.path-shadow",
+                vb_name="ExistingPath",
+                path="GENERATED/mm_generatedcatalog.BAS",
+            ),
+            "GENERATED_PATH_SHADOW",
+        ),
+        (
+            _module(
+                "core.basename-shadow",
+                vb_name="ExistingBasename",
+                path="another/MM_GeneratedCatalog.bas",
+            ),
+            "GENERATED_OUTPUT_BASENAME_COLLISION",
+        ),
+        (
+            _module(
+                "core.name-shadow",
+                vb_name="mm_generatedcatalog",
+                path="another/NameShadow.bas",
+            ),
+            "GENERATED_VB_NAME_COLLISION",
+        ),
+    ],
+)
+def test_generated_identity_collisions_with_resolved_sources_fail_closed(
+    collision: Component,
+    expected_code: str,
+) -> None:
+    generated = generate_sources(
+        _resolved(components=(_module(), collision)),
+        _manifests([_tool("core.alpha", "Alpha")]),
+    )
+
+    assert generated.components == ()
+    assert expected_code in {item.code for item in generated.report.diagnostics}
+
+
+def test_generator_requires_tool_to_bind_to_resolved_public_entrypoint() -> None:
+    generated = generate_sources(
+        _resolved(components=(_module(body="Private Sub Run()\r\nEnd Sub\r\n"),)),
+        _manifests([_tool("core.private", "Private")]),
+    )
+
+    assert generated.components == ()
+    assert [item.code for item in generated.report.diagnostics] == [
+        "TOOL_ENTRYPOINT_BINDING_INVALID"
+    ]
+    assert generated.report.diagnostics[0].path == (
+        "tools.json#/tools/0/entrypoint"
+    )
+
+
+def test_generated_cp936_caption_one_is_accepted_by_policy_view() -> None:
+    generated = generate_sources(
+        _resolved(),
+        _manifests([_tool("core.one", "一")]),
+    )
+
+    assert generated.report.ok
+    assert generated.components[0].members[0].data.decode("cp936").count("一") == 1

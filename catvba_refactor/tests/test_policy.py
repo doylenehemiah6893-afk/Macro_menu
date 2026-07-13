@@ -5,6 +5,8 @@ from typing import Any
 
 import pytest
 
+from catvba_refactor.macro_build.encoding import decode_vba
+from catvba_refactor.macro_build.errors import SourceError
 from catvba_refactor.macro_build.model import (
     Component,
     Diagnostic,
@@ -103,6 +105,7 @@ def _catalog(
     components: tuple[Component, ...],
     *,
     packages: tuple[dict[str, Any], ...] | None = None,
+    tools: tuple[dict[str, Any], ...] = (),
     diagnostics: tuple[Diagnostic, ...] = (),
 ) -> ResolvedCatalog:
     return ResolvedCatalog(
@@ -110,7 +113,7 @@ def _catalog(
         components=components,
         packages=packages
         or (_package("core", "CORE_CANDIDATE"),),
-        tools=(),
+        tools=tools,
         report=ValidationReport(diagnostics),
     )
 
@@ -121,6 +124,26 @@ def _source(body: str = "") -> str:
         "Option Explicit\r\n"
         f"{body}"
     )
+
+
+def _tool(
+    tool_id: str = "core.safe",
+    *,
+    package_id: str = "core",
+    module_name: str = "SafeModule",
+    entrypoint: str = "Run",
+) -> dict[str, Any]:
+    return {
+        "tool_id": tool_id,
+        "caption": "Safe",
+        "group_id": "core.general",
+        "package_id": package_id,
+        "module_name": module_name,
+        "entrypoint": entrypoint,
+        "document_types": ["none"],
+        "required_capabilities": [],
+        "risk_level": "read-only",
+    }
 
 
 def test_requires_option_explicit_and_reports_exact_source_location() -> None:
@@ -227,6 +250,7 @@ def test_strings_comments_and_identifier_substrings_do_not_trigger_tokens() -> N
             "    Dim ExcelReport As String\r\n"
             "    VBProjectCache = \"Shell \"\"VBProject\"\" Excel\" ' PowerShell WSH\r\n"
             "    ' URLDownloadToFile SetLicense SPAWorkbench AnnotationSet Cls_PDM\r\n"
+            "    Rem SystemService ExecuteScript VBProject\r\n"
             "End Sub\r\n"
         ),
     )
@@ -412,3 +436,439 @@ def test_existing_diagnostics_are_preserved_and_all_findings_sort_stably() -> No
         "Z_EXISTING",
     ]
     assert report.diagnostics[1] is existing
+
+
+def test_policy_accepts_inventory_decided_ambiguous_cp936_without_replacement() -> None:
+    ambiguous_bytes = (
+        b'Attribute VB_Name = "Ambiguous"\r\n'
+        b"Option Explicit\r\n"
+        b"Public Sub Run()\r\n"
+        b'    Dim caption As String: caption = "\xc2\xa1"\r\n'
+        b"End Sub\r\n"
+    )
+    assert decode_vba(ambiguous_bytes, "cp936").encoding == "cp936"
+    with pytest.raises(SourceError, match="ENC_AMBIGUOUS"):
+        decode_vba(ambiguous_bytes)
+    member = SourceMember(
+        path="catvba_refactor/vba/new/Ambiguous.bas",
+        blob_oid="a" * 40,
+        raw_sha256=hashlib.sha256(ambiguous_bytes).hexdigest(),
+        role="source",
+        data=ambiguous_bytes,
+    )
+    component = Component(
+        source_id="core.ambiguous",
+        origin=Origin.NEW,
+        component_type="standard_module",
+        vb_name="Ambiguous",
+        members=(member,),
+        package_id="core",
+        disposition="candidate",
+    )
+
+    assert validate_catalog(_catalog((component,))).ok
+
+
+def test_policy_unions_and_deduplicates_findings_across_ambiguous_decodings() -> None:
+    data = (
+        b'Attribute VB_Name = "AmbiguousDenied"\r\n'
+        b"Option Explicit\r\n"
+        b"Public Sub Run()\r\n"
+        b'    Dim caption As String: caption = "\xc2\xa1"\r\n'
+        b"    Call VBProject\r\n"
+        b"End Sub\r\n"
+    )
+    member = SourceMember(
+        path="catvba_refactor/vba/new/AmbiguousDenied.bas",
+        blob_oid="b" * 40,
+        raw_sha256=hashlib.sha256(data).hexdigest(),
+        role="source",
+        data=data,
+    )
+    component = Component(
+        source_id="core.ambiguous-denied",
+        origin=Origin.NEW,
+        component_type="standard_module",
+        vb_name="AmbiguousDenied",
+        members=(member,),
+        package_id="core",
+        disposition="candidate",
+    )
+
+    report = validate_catalog(_catalog((component,)))
+
+    assert [(item.code, item.details) for item in report.diagnostics] == [
+        ("CORE_TOKEN_DENIED", {"line": 5, "token": "VBProject"})
+    ]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Public Sub Run(): Option Explicit: End Sub\r\n",
+        "Public Sub Run()\r\n    Option Explicit\r\nEnd Sub\r\n",
+        "Public Sub Run(): End Sub: Option Explicit\r\n",
+    ],
+)
+def test_option_explicit_inside_or_after_a_procedure_does_not_satisfy_policy(
+    body: str,
+) -> None:
+    component = _component(
+        "core.misplaced-option",
+        "standard_module",
+        "MisplacedOption",
+        'Attribute VB_Name = "MisplacedOption"\r\n' + body,
+    )
+
+    report = validate_catalog(_catalog((component,)))
+
+    assert [item.code for item in report.diagnostics] == [
+        "OPTION_EXPLICIT_REQUIRED"
+    ]
+
+
+def test_module_level_option_before_colon_delimited_procedure_is_accepted() -> None:
+    component = _component(
+        "core.colon-option",
+        "standard_module",
+        "ColonOption",
+        'Attribute VB_Name = "ColonOption"\r\n'
+        "Option Explicit: Public Sub Run(): End Sub\r\n",
+    )
+
+    assert validate_catalog(_catalog((component,))).ok
+
+
+def test_every_colon_delimited_declare_requires_adjacent_ptrsafe_grammar() -> None:
+    component = _component(
+        "core.declares",
+        "standard_module",
+        "Declares",
+        'Attribute VB_Name = "Declares"\r\n'
+        "Option Explicit\r\n"
+        'Private Declare Function UnsafeA Lib "x" () As Long: '
+        'Private Declare PtrSafe Function SafeA Lib "x" () As Long\r\n'
+        'Private Declare Function UnsafeB Lib "x" () As Long PtrSafe\r\n',
+    )
+
+    report = validate_catalog(_catalog((component,)))
+
+    assert [(item.code, item.details) for item in report.diagnostics] == [
+        ("DECLARE_PTRSAFE_REQUIRED", {"line": 3, "token": "Declare"}),
+        ("DECLARE_PTRSAFE_REQUIRED", {"line": 4, "token": "Declare"}),
+    ]
+
+
+def test_declare_on_own_line_inside_procedure_is_still_checked() -> None:
+    component = _component(
+        "core.procedure-declare",
+        "standard_module",
+        "ProcedureDeclare",
+        'Attribute VB_Name = "ProcedureDeclare"\r\n'
+        "Option Explicit\r\n"
+        "Public Sub Run()\r\n"
+        'Private Declare Sub Unsafe Lib "x" ()\r\n'
+        "End Sub\r\n",
+    )
+
+    report = validate_catalog(_catalog((component,)))
+
+    assert [(item.code, item.details) for item in report.diagnostics] == [
+        ("DECLARE_PTRSAFE_REQUIRED", {"line": 4, "token": "Declare"})
+    ]
+
+
+def test_later_declare_token_cannot_hide_behind_a_safe_declare_prefix() -> None:
+    component = _component(
+        "core.double-declare",
+        "standard_module",
+        "DoubleDeclare",
+        'Attribute VB_Name = "DoubleDeclare"\r\n'
+        "Option Explicit\r\n"
+        'Private Declare PtrSafe Function SafeOne Lib "x" () As Long '
+        'Declare Function UnsafeTwo Lib "x" () As Long\r\n',
+    )
+
+    report = validate_catalog(_catalog((component,)))
+
+    assert [item.code for item in report.diagnostics] == [
+        "DECLARE_PTRSAFE_REQUIRED"
+    ]
+
+
+@pytest.mark.parametrize(
+    "packages",
+    [
+        (
+            _package("core", "CORE_CANDIDATE"),
+            _package("core", "FLEET_EXTENSION_SPA"),
+        ),
+        (
+            _package("core", "FLEET_EXTENSION_SPA"),
+            _package("core", "CORE_CANDIDATE"),
+        ),
+    ],
+)
+def test_duplicate_package_ids_are_ambiguous_and_cannot_weaken_core_policy(
+    packages: tuple[dict[str, Any], ...],
+) -> None:
+    component = _component(
+        "core.duplicate-package",
+        "standard_module",
+        "DuplicatePackage",
+        _source("Public Sub Run()\r\n    Call VBProject\r\nEnd Sub\r\n"),
+    )
+
+    report = validate_catalog(_catalog((component,), packages=packages))
+
+    assert [item.code for item in report.diagnostics] == [
+        "CORE_TOKEN_DENIED",
+        "DUPLICATE_PACKAGE_ID",
+        "PACKAGE_BINDING_INVALID",
+    ]
+
+
+def test_system_service_execute_script_self_call_is_code_owned_core_deny() -> None:
+    component = _component(
+        "core.self-call",
+        "standard_module",
+        "SelfCall",
+        _source(
+            "Public Sub Run()\r\n"
+            "    Call Application.SystemService.ExecuteScript()\r\n"
+            "End Sub\r\n"
+        ),
+    )
+    packages = (
+        _package(
+            "core",
+            "CORE_CANDIDATE",
+            reference_allowlist=["SystemService", "ExecuteScript"],
+        ),
+    )
+
+    report = validate_catalog(_catalog((component,), packages=packages))
+
+    assert [(item.code, item.details["token"]) for item in report.diagnostics] == [
+        ("CORE_TOKEN_DENIED", "ExecuteScript"),
+        ("CORE_TOKEN_DENIED", "SystemService"),
+    ]
+
+
+def test_udt_name_used_only_as_parameter_name_is_not_a_type_exposure() -> None:
+    standard = _component(
+        "core.contract-name",
+        "standard_module",
+        "ContractName",
+        _source("Public Type MM_Result\r\nValue As Long\r\nEnd Type\r\n"),
+    )
+    class_module = _component(
+        "core.gateway-name",
+        "class_module",
+        "GatewayName",
+        _source(
+            "Public Function ReadResult(ByVal MM_Result As Long) As Long\r\n"
+            "End Function\r\n"
+        ),
+    )
+
+    assert validate_catalog(_catalog((standard, class_module))).ok
+
+
+def test_public_event_signature_exposing_public_udt_is_diagnosed() -> None:
+    standard = _component(
+        "core.contract-event",
+        "standard_module",
+        "ContractEvent",
+        _source("Public Type MM_Result\r\nValue As Long\r\nEnd Type\r\n"),
+    )
+    class_module = _component(
+        "core.gateway-event",
+        "class_module",
+        "GatewayEvent",
+        _source("Public Event Completed(ByVal result As MM_Result)\r\n"),
+    )
+
+    report = validate_catalog(_catalog((standard, class_module)))
+
+    assert [(item.code, item.details) for item in report.diagnostics] == [
+        (
+            "PUBLIC_UDT_EXPOSED",
+            {
+                "declared_path": "catvba_refactor/vba/new/ContractEvent.bas",
+                "line": 3,
+                "token": "MM_Result",
+            },
+        )
+    ]
+
+
+def test_public_property_signature_exposing_public_udt_is_diagnosed() -> None:
+    standard = _component(
+        "core.contract-property",
+        "standard_module",
+        "ContractProperty",
+        _source("Public Type MM_Result\r\nValue As Long\r\nEnd Type\r\n"),
+    )
+    class_module = _component(
+        "core.gateway-property",
+        "class_module",
+        "GatewayProperty",
+        _source(
+            "Public Property Get Result() As MM_Result\r\n"
+            "End Property\r\n"
+        ),
+    )
+
+    report = validate_catalog(_catalog((standard, class_module)))
+
+    assert [item.code for item in report.diagnostics] == ["PUBLIC_UDT_EXPOSED"]
+    assert report.diagnostics[0].details["line"] == 3
+    assert report.diagnostics[0].details["token"] == "MM_Result"
+
+
+def test_valid_tool_binds_to_exact_public_standard_module_entrypoint() -> None:
+    module = _component(
+        "core.safe-module",
+        "standard_module",
+        "SafeModule",
+        _source("Public Sub Run()\r\nEnd Sub\r\n"),
+    )
+
+    assert validate_catalog(_catalog((module,), tools=(_tool(),))).ok
+
+
+def test_valid_tool_may_bind_to_exact_public_function_entrypoint() -> None:
+    module = _component(
+        "core.safe-function",
+        "standard_module",
+        "SafeModule",
+        _source("Public Function Run() As Variant\r\nEnd Function\r\n"),
+    )
+
+    assert validate_catalog(_catalog((module,), tools=(_tool(),))).ok
+
+
+@pytest.mark.parametrize(
+    ("tools", "expected_code", "expected_path"),
+    [
+        (
+            ({"tool_id": "core.malformed"},),
+            "TOOL_RECORD_INVALID",
+            "tools.json#/tools/0",
+        ),
+        (
+            (_tool("Core Invalid"),),
+            "TOOL_ID_INVALID",
+            "tools.json#/tools/0/tool_id",
+        ),
+        (
+            (_tool(), _tool()),
+            "DUPLICATE_TOOL_ID",
+            "tools.json#/tools/1/tool_id",
+        ),
+        (
+            (_tool(package_id="missing"),),
+            "TOOL_PACKAGE_BINDING_INVALID",
+            "tools.json#/tools/0/package_id",
+        ),
+    ],
+)
+def test_tool_records_fail_closed_with_stable_pointer_diagnostics(
+    tools: tuple[dict[str, Any], ...],
+    expected_code: str,
+    expected_path: str,
+) -> None:
+    module = _component(
+        "core.safe-module",
+        "standard_module",
+        "SafeModule",
+        _source("Public Sub Run()\r\nEnd Sub\r\n"),
+    )
+
+    report = validate_catalog(_catalog((module,), tools=tools))
+
+    finding = next(item for item in report.diagnostics if item.code == expected_code)
+    assert finding.path == expected_path
+    assert finding.details["line"] >= 1
+    assert finding.details["token"]
+
+
+@pytest.mark.parametrize(
+    ("components", "tool", "expected_code"),
+    [
+        (
+            (),
+            _tool(module_name="Missing"),
+            "TOOL_MODULE_BINDING_INVALID",
+        ),
+        (
+            (
+                _component(
+                    "core.class",
+                    "class_module",
+                    "SafeModule",
+                    _source("Public Sub Run()\r\nEnd Sub\r\n"),
+                ),
+            ),
+            _tool(),
+            "TOOL_MODULE_BINDING_INVALID",
+        ),
+        (
+            (
+                _component(
+                    "core.module-one",
+                    "standard_module",
+                    "SafeModule",
+                    _source("Public Sub Run()\r\nEnd Sub\r\n"),
+                ),
+                _component(
+                    "core.module-two",
+                    "standard_module",
+                    "SafeModule",
+                    _source("Public Sub Run()\r\nEnd Sub\r\n"),
+                ),
+            ),
+            _tool(),
+            "TOOL_MODULE_BINDING_INVALID",
+        ),
+        (
+            (
+                _component(
+                    "core.private",
+                    "standard_module",
+                    "SafeModule",
+                    _source("Private Sub Run()\r\nEnd Sub\r\n"),
+                ),
+            ),
+            _tool(),
+            "TOOL_ENTRYPOINT_BINDING_INVALID",
+        ),
+        (
+            (
+                _component(
+                    "core.duplicate-entry",
+                    "standard_module",
+                    "SafeModule",
+                    _source(
+                        "Public Sub Run()\r\nEnd Sub\r\n"
+                        "Public Function Run() As Variant\r\nEnd Function\r\n"
+                    ),
+                ),
+            ),
+            _tool(),
+            "TOOL_ENTRYPOINT_BINDING_INVALID",
+        ),
+    ],
+)
+def test_tool_module_and_entrypoint_binding_is_exact_and_unambiguous(
+    components: tuple[Component, ...],
+    tool: dict[str, Any],
+    expected_code: str,
+) -> None:
+    report = validate_catalog(_catalog(components, tools=(tool,)))
+
+    finding = next(item for item in report.diagnostics if item.code == expected_code)
+    assert finding.path.startswith("tools.json#/tools/0/")
+    assert finding.details["line"] >= 1
+    assert finding.details["token"]
