@@ -27,6 +27,7 @@ from catvba_refactor.macro_build.policy import (
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_SOURCE_ROOT = ROOT / "catvba_refactor" / "vba" / "new"
+CORE_OVERRIDE_ROOT = ROOT / "catvba_refactor" / "vba" / "overrides"
 
 
 def _snapshot() -> InputSnapshot:
@@ -215,6 +216,20 @@ def test_first_core_tool_sources_pass_policy_with_exact_abi(
     )
 
     assert validate_catalog(_catalog((component,), tools=(tool,))).ok
+
+
+def test_core_form_override_passes_core_policy_without_legacy_bindings() -> None:
+    text = (CORE_OVERRIDE_ROOT / "Cat_Macro_Menu_View.frm").read_bytes().decode(
+        "cp936", errors="strict"
+    )
+    component = _component(
+        "core.menu-form",
+        "user_form",
+        "Cat_Macro_Menu_View",
+        text,
+    )
+
+    assert validate_catalog(_catalog((component,))).ok
 
 
 def test_requires_option_explicit_and_reports_exact_source_location() -> None:

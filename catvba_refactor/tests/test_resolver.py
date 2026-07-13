@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -438,6 +439,77 @@ def test_form_override_rejects_local_and_upstream_member_mixing() -> None:
     )
     override = next(record for record in records if record["source_id"] == "core.menu-form")
     override["members"] = [_binding(member) for member in components[local_index].members]
+
+    resolved = resolve_sources(_inventory(components), _manifests(records))
+
+    assert "COMPONENT_MEMBER_ORIGIN_MIXED" in _codes(resolved)
+    assert "core.menu-form" not in {
+        component.source_id for component in resolved.components
+    }
+
+
+def test_actual_core_form_override_cannot_cross_pair_with_upstream_frx() -> None:
+    root = Path(__file__).resolve().parents[2]
+    components, records = _valid_fixture()
+    local_index = next(
+        index
+        for index, component in enumerate(components)
+        if component.source_id == "core.menu-form"
+    )
+    local = components[local_index]
+    form_path = "catvba_refactor/vba/overrides/Cat_Macro_Menu_View.frm"
+    resource_path = "catvba_refactor/vba/overrides/Cat_Macro_Menu_View.frx"
+    actual = replace(
+        local,
+        vb_name="Cat_Macro_Menu_View",
+        members=(
+            _member(form_path, "frm", (root / form_path).read_bytes()),
+            _member(resource_path, "frx", (root / resource_path).read_bytes()),
+        ),
+    )
+    components[local_index] = actual
+    override = next(
+        record for record in records if record["source_id"] == "core.menu-form"
+    )
+    override.update(
+        vb_name="Cat_Macro_Menu_View",
+        members=[_binding(member) for member in actual.members],
+    )
+    upstream_index = next(
+        index
+        for index, component in enumerate(components)
+        if component.source_id == "discovered-base-form"
+    )
+    upstream_form_path = "Src/Cat_Macro_Menu_View.frm"
+    upstream_resource_path = "Src/Cat_Macro_Menu_View.frx"
+    upstream = replace(
+        components[upstream_index],
+        vb_name="Cat_Macro_Menu_View",
+        members=(
+            _member(
+                upstream_form_path,
+                "frm",
+                (root / upstream_form_path).read_bytes(),
+            ),
+            _member(
+                upstream_resource_path,
+                "frx",
+                (root / upstream_resource_path).read_bytes(),
+            ),
+        ),
+    )
+    assert upstream.origin is Origin.UPSTREAM
+    components[upstream_index] = upstream
+    override["base_members"] = [_binding(member) for member in upstream.members]
+    upstream_frx = upstream.members[1]
+    assert upstream_frx.data == actual.members[1].data
+    components[local_index] = replace(
+        actual,
+        members=(actual.members[0], upstream_frx),
+    )
+    override["members"] = [
+        _binding(member) for member in components[local_index].members
+    ]
 
     resolved = resolve_sources(_inventory(components), _manifests(records))
 

@@ -214,6 +214,30 @@ def test_entry_presenter_and_button_handler_keep_dispatch_narrow() -> None:
     assert "MM_MenuPresenter.InvokeTool mToolId" in handler
     assert "moduleName" not in handler
     assert "procedureName" not in handler
+    assert "Public Function Initialize(" in handler
+    assert ") As Boolean" in handler
+    assert "Initialize = True" in handler
+    assert "Initialize = False" in handler
+    assert "mToolId = toolId" in handler
+    assert "LCase$(" not in handler
+
+
+def test_presenter_initializes_form_from_all_generated_catalog_arrays() -> None:
+    presenter = _text("MM_MenuPresenter.bas")
+    initialize = "Cat_Macro_Menu_View.InitializeMenu("
+    show = "Cat_Macro_Menu_View.Show vbModeless"
+    assert presenter.count(initialize) == 1
+    assert presenter.index(initialize) < presenter.index(show)
+    for function_name in (
+        "MM_ToolIds",
+        "MM_ToolCaptions",
+        "MM_ToolTooltips",
+        "MM_ToolGroupIds",
+        "MM_ToolGroupCaptions",
+        "MM_ToolControlNames",
+        "MM_ToolPageNames",
+    ):
+        assert f"MM_MenuCatalog.{function_name}()" in presenter
 
 
 def test_logging_is_scalar_redacted_and_production_sink_is_disabled() -> None:

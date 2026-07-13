@@ -3,6 +3,14 @@ Option Explicit
 
 Public Sub ShowCoreMenu()
     On Error GoTo Fail
+    If Not Cat_Macro_Menu_View.InitializeMenu( _
+        MM_MenuCatalog.MM_ToolIds(), _
+        MM_MenuCatalog.MM_ToolCaptions(), _
+        MM_MenuCatalog.MM_ToolTooltips(), _
+        MM_MenuCatalog.MM_ToolGroupIds(), _
+        MM_MenuCatalog.MM_ToolGroupCaptions(), _
+        MM_MenuCatalog.MM_ToolControlNames(), _
+        MM_MenuCatalog.MM_ToolPageNames()) Then GoTo CleanExit
     Cat_Macro_Menu_View.Show vbModeless
 CleanExit:
     Exit Sub

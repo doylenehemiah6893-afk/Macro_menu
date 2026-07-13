@@ -12,17 +12,20 @@ Option Explicit
 Private WithEvents mButton As MSForms.CommandButton
 Private mToolId As String
 
-Public Sub Initialize(ByVal button As MSForms.CommandButton, ByVal toolId As String)
+Public Function Initialize(ByVal button As MSForms.CommandButton, ByVal toolId As String) As Boolean
     On Error GoTo Fail
+    Initialize = False
     Set mButton = button
-    mToolId = LCase$(toolId)
+    mToolId = toolId
+    Initialize = True
 CleanExit:
-    Exit Sub
+    Exit Function
 Fail:
     Set mButton = Nothing
     mToolId = vbNullString
+    Initialize = False
     Resume CleanExit
-End Sub
+End Function
 
 Private Sub mButton_Click()
     On Error GoTo Fail

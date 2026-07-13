@@ -264,6 +264,93 @@ def test_exported_form_accepts_indented_ole_object_blob(tmp_path: Path) -> None:
     assert inventory.components[0].vb_name == "IndentedForm"
 
 
+def test_local_core_form_override_is_one_exact_same_root_bundle(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    form_path = "catvba_refactor/vba/overrides/Cat_Macro_Menu_View.frm"
+    resource_path = "catvba_refactor/vba/overrides/Cat_Macro_Menu_View.frx"
+    form = (root / form_path).read_bytes()
+    resource = (root / resource_path).read_bytes()
+    source_root = _root(
+        "catvba_refactor/vba/overrides",
+        root_id="override-forms",
+        origin="override",
+        default_disposition="candidate",
+    )
+    declared = _component(
+        "core.menu-form",
+        "user_form",
+        "Cat_Macro_Menu_View",
+        [
+            _binding(form_path, "frm", form),
+            _binding(resource_path, "frx", resource),
+        ],
+        origin="override",
+    )
+
+    inventory = scan_inputs(
+        _snapshot(),
+        _manifests(roots=[source_root], components=[declared]),
+        MemoryRepository(
+            tmp_path,
+            {WORK_COMMIT: {form_path: form, resource_path: resource}},
+        ),
+    )
+
+    assert inventory.report.ok
+    assert len(inventory.components) == 1
+    assert inventory.components[0].origin is Origin.OVERRIDE
+    assert [member.data for member in inventory.components[0].members] == [
+        form,
+        resource,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tree", "expected_code"),
+    [
+        (
+            {
+                "catvba_refactor/vba/overrides/Local.frm": (
+                    b'Attribute VB_Name = "Local"\r\n'
+                    b'OleObjectBlob = "Local.frx":0000\r\n'
+                )
+            },
+            "FORM_FRX_MISSING",
+        ),
+        (
+            {
+                "catvba_refactor/vba/overrides/Local.frm": (
+                    b'Attribute VB_Name = "Local"\r\n'
+                    b'OleObjectBlob = "Other.frx":0000\r\n'
+                ),
+                "catvba_refactor/vba/overrides/Local.frx": b"resource",
+            },
+            "FORM_OLE_BLOB_MISMATCH",
+        ),
+    ],
+)
+def test_local_form_override_rejects_missing_or_mismatched_resource(
+    tmp_path: Path,
+    tree: dict[str, bytes],
+    expected_code: str,
+) -> None:
+    source_root = _root(
+        "catvba_refactor/vba/overrides",
+        root_id="override-forms",
+        origin="override",
+        default_disposition="candidate",
+    )
+
+    inventory = scan_inputs(
+        _snapshot(),
+        _manifests(roots=[source_root]),
+        MemoryRepository(tmp_path, {WORK_COMMIT: tree}),
+    )
+
+    assert expected_code in _codes(inventory)
+    assert inventory.components == ()
+
+
 @pytest.mark.parametrize(
     "prefix",
     [b"\v", b"\f"],
