@@ -2,17 +2,17 @@
 
 > evidence_as_of：2026-07-11（原始审查快照）
 >
-> 审查分支：`codex/dev-review-report`
+> 审查分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 >
 > 审查快照：`c584202`
 >
-> 目标环境：CATIA V5-6R2018（R28/B28）、DS VBA 7.1、64 位 Windows，许可证基线 AB3 / MD2 / HD2
+> 目标环境：CATIA V5-6R2018（R28/B28）、DS VBA 7.1、64 位 Windows；每台至少有 AB3/HD2/MD2 中一种，并保证 SPA+FTA
 >
-> decision_overlay_as_of：2026-07-13（源码优先、严格 Core 交集、`catvba_refactor/` 唯一命名空间与文档治理）
+> decision_overlay_as_of：2026-07-13（源码优先、严格 Core 交集、Fleet-SPA/Fleet-FTA 隔离、`catvba_refactor/` 唯一命名空间与完整仓库拓扑）
 >
 > current_delivery_status：**NO-GO。现有 CATVBA 不能作为 R2018 正式产物继续安装或分发。**
 >
-> 决策叠加：采用“源码优先、分包渐进重构”；Core 定义为 AB3-only、MD2-only、HD2-only 三套 profile 实测能力的严格交集，并增加 Baseline Extensions 承接只属于部分基线配置的能力。详细过程见 [CATVBA 重构调查与设计决策记录](CATVBA重构调查与决策记录.md)。
+> 决策叠加：正式资格为 `(AB3 OR HD2 OR MD2) AND SPA AND FTA`。Core 取 P-AB3/P-HD2/P-MD2 的严格实测交集且不早绑定 SPA/FTA；SPA、FTA 作为默认 Fleet 包独立构建和隔离。详细过程见 [CATVBA 重构调查与设计决策记录](CATVBA重构调查与决策记录.md)。
 
 本文是针对“CATIA 中编译报错、CATVBA 工程保护、R2018 可用性与安全性存疑、当前无法使用”的专项恢复文档。通用分支审查见 [dev 分支审查报告](dev分支审查报告.md)。本文没有修改业务源码，也没有声称已经在 R2018 中完成编译；它给出已核实的根因、依赖、许可证边界、恢复架构、实机步骤和验收门槛。
 
@@ -26,19 +26,20 @@
 2. **源码本身存在必然编译错误。**已确认 2 处 `Option Explicit` 下未声明变量，以及 4 个类公共接口非法暴露标准模块 UDT；解决引用后仍会继续报错。
 3. **“工程加锁”与核心运行机制互相冲突。**CATVBA 被 VBE 保护，但主菜单和动态 UI 必须在运行时读取自身 `VBComponents/CodeModule` 注释；锁定状态或企业禁用 VBA 工程对象模型访问时，主路径可能直接失败。
 4. **菜单即使编译，也会在创建 UI 时失败。**页面和控件把 `R&W`、`3`、`4` 等业务标识直接用作 MSForms `Name`，不符合对象名规则。
-5. **所有 77 个模块被装进一个工程。**Excel、SPA、Layout2D、FTA、STEP、DL1 等任一可选域的缺引用或编译错误，都能拖垮整个菜单；项目没有许可证/能力门禁。
+5. **所有 77 个模块被装进一个工程。**Excel、SPA、Layout2D、FTA、STEP、DL1 等任一专业或外部域的缺引用或编译错误，都能拖垮整个菜单；项目没有许可证/能力门禁。
 
 因此，不建议通过“在 R2018 机器继续安装各种旧 DLL”来救活当前 CATVBA。正确路线是：
 
 ```text
-origin/dev@cutoff 的 Src blobs
-  + catvba_refactor 中审定的 new/override/config/schema/generator
+verysolecd/Macro_menu:dev@cutoff 的 Src/resources blobs
+  + doylenehemiah6893-afk/Macro_menu:codex/dev-review-report 中审定的 overlay/tooling
+  + 根 pyproject.toml / uv.lock / .python-version
   -> 修复确定性编译错误
   -> 构建期生成静态 Menu/UI manifest
-  -> 按 Core严格交集 / Baseline Extensions / Licensed Optional / DevTools 拆包
+  -> 按 Core / Fleet-SPA / Fleet-FTA / 其他候选 / DevTools 拆包
   -> 在干净 R2018/B28 构建机创建新 CATVBA
   -> 只绑定 B28 白名单引用
-  -> Compile + 重启 + 冒烟 + 三许可证矩阵
+  -> Compile + 重启 + 冒烟 + P-AB3/P-HD2/P-MD2 矩阵
   -> 源码/FRX/引用/p-code 核验
   -> 签名或受管安装 + SHA-256 + 可回滚发布
 ```
@@ -159,7 +160,7 @@ Microsoft 对该 UDT 编译错误的定义与这里完全匹配：标准模块�
 
 ### 4.3 消除引用后会出现的下一层错误
 
-- [ASM_CMP.bas:14-15](../Src/ASM_CMP.bas#L14) 早绑定 `OptimizerWorkBench` / `PartComps`；移除 `SPATypeLib` 后会出现 `User-defined type not defined`。该模块应进入 SPA 可选包，不能污染 Core。
+- [ASM_CMP.bas:14-15](../Src/ASM_CMP.bas#L14) 早绑定 `OptimizerWorkBench` / `PartComps`；移除 `SPATypeLib` 后会出现 `User-defined type not defined`。该模块应进入 Fleet-SPA，不能污染 Core。
 - [Cls_WsEvt.cls:10](../Src/Cls_WsEvt.cls#L10) 早绑定 Excel `Workbook`；[Cls_XLM.cls:299-300](../Src/Cls_XLM.cls#L299) 早绑定 `Range` / `Shape`。不装 Excel 时全工程会被拖垮。
 - [Drw_myframe.bas:680](../Src/Drw_myframe.bas#L680) 早绑定 `Layout2DView`；即使只想使用普通 CATDrawing 图框，也会要求 Layout2D 类型库。
 - [OTH_Minibox.bas:249](../Src/OTH_Minibox.bas#L249) 和 `:458` 早绑定 `Length`，需要 Knowledgeware 类型库。
@@ -288,23 +289,23 @@ CATMain
 
 ---
 
-## 8. AB3 / MD2 / HD2 与额外许可证矩阵
+## 8. 目标许可证、Fleet 扩展与额外许可证矩阵
 
-### 8.1 基线原则
+### 8.1 正式目标与 Core 原则
 
 - AB3：Automotive Body In White Design 3 Configuration；
 - MD2：Mechanical Design 2 Configuration；
 - HD2：Hybrid Design 2 Configuration。
 
-三者是 configuration，不应由宏取消或切换。本项目已经确认采用严格交集：
+三者是 configuration，不应由宏取消或切换。正式目标每台至少持有其中一种，并保证 SPA 与 FTA；最小验收 profile 是 P-AB3、P-HD2、P-MD2，三者都包含 SPA+FTA。本项目采用严格交集：
 
 ```text
-Core = Verified(AB3-only) ∩ Verified(MD2-only) ∩ Verified(HD2-only)
+Core = Verified(P-AB3) ∩ Verified(P-HD2) ∩ Verified(P-MD2)
 ```
 
-`Verified` 表示在相同 R2018 SP/HF 和审定构建物上，完成编译、启动、执行、取消、错误恢复和重启复测。三个许可证同时存在时通过，不足以证明属于 Core。即使是基础 Product、Part 或标准 Drawing API，在三套 profile 实测前也只能标为 `core-candidate`。
+`Verified` 表示在相同 R2018 SP/HF 和审定构建物上，完成编译、启动、执行、取消、错误恢复和重启复测。P-ALL 或现场实际 P-PROD 通过不能替代三个最小 profile。即使三者都带 SPA+FTA，Core 也不得早绑定 SPA/FTA 类型、Reference 或启动路径。基础 Product、Part 或标准 Drawing API 在三套 profile 实测前仍只能标为 `core-candidate`。
 
-只在一个或两个基线 profile 通过的能力进入 **Baseline Extensions**。它们不应被误写成“必须额外购买许可证”，但也不能随 Core 无条件加载。超出三者并集或需要 SPA、ST1、DL1、LO1、DMN、FTA、KWA 等独立产品代码的能力进入 **Licensed Optional**。
+只在一个或两个最小 base profile 通过的能力进入 **Baseline Extensions**。SPA 与 FTA 已是现场保证能力，但仍分别进入默认部署、物理隔离的 **Fleet-SPA** 与 **Fleet-FTA**。ST1、DL1、LO1、DMN、KWA 等进入 **CATIA Licensed Optional Candidate**；Excel、网络和外部 COM 属于 **External Integration**。
 
 公开的 R2018 Licensed Program Specifications 没有给出客户合同中三种 configuration 的完整产品组成；历史配置矩阵只能用于形成候选假设，最终以客户 DSLS 权益和三套隔离 profile 的实测证据为准。
 
@@ -321,16 +322,16 @@ Core = Verified(AB3-only) ∩ Verified(MD2-only) ∩ Verified(HD2-only)
 
 | 功能/模块 | 额外产品/能力 | 处理 | 无额外许可证降级；其他替代须注明权益 |
 |---|---|---|---|
-| [ASM_CMP.bas](../Src/ASM_CMP.bas) `OptimizerWorkBench/PartComps` | **SPA：DMU Space Analysis 2 的高概率候选**；API 名称易被误认为 DMO，R2018 实测前不能据名字采购 | 进入 Optional-SPA；无 SPA 时入口可见但禁用，并显示缺失能力与降级说明 | 比较 Product 树、PN、实例名、数量、文件版本和普通属性；不能声称等价于 Added/Removed 几何图 |
-| [MDL_BdyDel.bas](../Src/MDL_BdyDel.bas)、[MDL_Shapeinfo.bas](../Src/MDL_Shapeinfo.bas)、[OTH_Minibox.bas](../Src/OTH_Minibox.bas)、[KCL.bas:1261-1276](../Src/KCL.bas#L1261) `GetMeas/getlength` | SPAWorkbench/测量，按 **SPA** 门禁 | 当前 SPA helper 仍混在共享 `KCL` 中；必须先抽到 Optional-SPA，Core 不能仅靠隐藏按钮隔离 | 使用已有 Part Analyze/参数的只读质量、体积或包围信息；精确距离不可用时明确禁用 |
+| [ASM_CMP.bas](../Src/ASM_CMP.bas) `OptimizerWorkBench/PartComps` | **SPA：DMU Space Analysis 2 的高概率候选**；现场保证 SPA，但 API/Reference 仍需 R2018 实测 | 进入 Fleet-SPA；缺包、加载或 checkout 失败时该扩展禁用，Core 与 Fleet-FTA 继续启动 | 比较 Product 树、PN、实例名、数量、文件版本和普通属性；不能声称等价于 Added/Removed 几何图 |
+| [MDL_BdyDel.bas](../Src/MDL_BdyDel.bas)、[MDL_Shapeinfo.bas](../Src/MDL_Shapeinfo.bas)、[OTH_Minibox.bas](../Src/OTH_Minibox.bas)、[KCL.bas:1261-1276](../Src/KCL.bas#L1261) `GetMeas/getlength` | SPAWorkbench/测量，按 **SPA** 门禁 | 当前 SPA helper 仍混在共享 `KCL` 中；必须先抽到 Fleet-SPA，Core 不能仅靠隐藏按钮隔离 | 使用已有 Part Analyze/参数的只读质量、体积或包围信息；精确距离不可用时明确禁用 |
 | [ASM_1ex2stp.bas](../Src/ASM_1ex2stp.bas) | **ST1：STEP Core Interface 1** | 进入 Optional-ST1；同时移除 PowerShell 压缩 | 无额外权益时只保存 CATPart/CATProduct；若交给另一受控工作站或服务转换，必须明确该端仍需 ST1 |
 | [OTH_unfoldme.bas](../Src/OTH_unfoldme.bas) `HybridShapeUnfold` | **DL1：Developed Shapes 1**（或现场配置中明确包含的等价能力） | 进入 Optional-DL1，实机 probe | 无额外权益时禁用自由曲面展开；Sheet Metal 路径仅在现场已经具备相应权益时作为另一替代，不能绕过许可 |
 | [Drw_myframe.bas](../Src/Drw_myframe.bas) 与 [Drw_myframe2.bas](../Src/Drw_myframe2.bas) 中的 `CAT2DL_ViewLayout/Layout2DSheet/LAY/Layout2DView` 路径 | **LO1：2D Layout for 3D Design** | LO1 类型散布在普通图框共用过程，不是现成独立分支；必须抽出 Optional-LO1 实现，并让 Core 图框过程完全不声明这些类型 | 保留标准 CATDrawing 图框，只处理普通 Drawing View，不访问 Layout2D API |
 | [OTH_3Dmark.bas:14-68](../Src/OTH_3Dmark.bas#L14) `newlabel/c3Dmark/Marker3Ds` | **DMN：DMU Navigator 2**，并需在实际 configuration 中确认 | 与同模块 FTA 过程物理拆开，DMN 入口进入 Optional-DMN；其 `getBomLine/Bomline` 依赖改为 Core-safe DTO/reader，不能复制包含 KWA 路径的整个 `Cls_PDM` | 写 UserRefProperties、CSV 或普通 CATDrawing 文本；不创建 3D Marker |
-| [OTH_3Dmark.bas:77-98](../Src/OTH_3Dmark.bas#L77) `Pt_annotation/AnnotationSets` | **FTA：3D Functional Tolerancing and Annotation 2** | 与同模块 DMN 过程物理拆开，FTA 入口进入 Optional-FTA | 输出 CSV、UserRefProperties 或普通 CATDrawing 文本；不创建语义 3D Annotation |
+| [OTH_3Dmark.bas:77-98](../Src/OTH_3Dmark.bas#L77) `Pt_annotation/AnnotationSets` | **FTA：3D Functional Tolerancing and Annotation 2** | 与同模块 DMN 过程物理拆开，FTA 入口进入 Fleet-FTA；缺包或 checkout 失败不影响 Core/Fleet-SPA | 输出 CSV、UserRefProperties 或普通 CATDrawing 文本；不创建语义 3D Annotation |
 | [RW_3initme.bas:10-49](../Src/RW_3initme.bas#L10) → [Cls_PDM.cls:269-328](../Src/Cls_PDM.cls#L269) → `:403-432` `CreateProgram/CreateFormula` | **KWA：Knowledge Advisor 2**，需核实 AB3/MD2/HD2 现场配置是否已含权益 | 当前 [KCL.bas:46](../Src/KCL.bas#L46) 以全局 `As New Cls_PDM` 把 KWA 路径反向带入共享层；取消全局单例，把 `RW_3initme` 拆为基础属性初始化与 Optional-KWA writer，基础 `initPrd` 不得自动调用 KWA | 在 VBA 中即时计算并写经确认的普通属性，不创建 EKL Program/Formula；失去关联自动更新 |
 | [OTH_Flower.bas](../Src/OTH_Flower.bas) 高级曲面 | AB3/HD2/GSD 具体能力需逐 API 验证，MD2 不应默认假定 | 作为实验/参考，不进入 MVP | 简化为基础曲线/实体流程；不满足则隐藏 |
-| [KCL.bas:43-47](../Src/KCL.bas#L43) 的 Excel 全局对象与 `As New Cls_XLM`、`Cls_XLM/Cls_WsEvt`、`DRW_Tb2xl`、`MDL_pt2xl_abscoord`、[DRW_VIewBOM.bas:87-110](../Src/DRW_VIewBOM.bas#L87) `AsmConv2xl`、`RW_Cbom/read/write` | 非 CATIA 许可证；需兼容 Excel 安装，且 Class 中存在 `Workbook/Range/Shape` 早绑定 | 先移除共享 `KCL` 对 `Cls_XLM` 的静态依赖，再按过程拆出 Optional-Excel；`DRW_VIewBOM` 的非 Excel 主流程保留原包，`ZZ_BCK` 的无菜单 Excel 遗留代码不发布；仅改成 `CreateObject` 不能消除类型污染 | CSV/TSV 作为正式降级路径，但当前 `Src` 尚未实现，必须列为待开发并单独验收 |
+| [KCL.bas:43-47](../Src/KCL.bas#L43) 的 Excel 全局对象与 `As New Cls_XLM`、`Cls_XLM/Cls_WsEvt`、`DRW_Tb2xl`、`MDL_pt2xl_abscoord`、[DRW_VIewBOM.bas:87-110](../Src/DRW_VIewBOM.bas#L87) `AsmConv2xl`、`RW_Cbom/read/write` | 非 CATIA 许可证；需兼容 Excel 安装，且 Class 中存在 `Workbook/Range/Shape` 早绑定 | 先移除共享 `KCL` 对 `Cls_XLM` 的静态依赖，再按过程拆出 External-Excel；`DRW_VIewBOM` 的非 Excel 主流程保留原包，`ZZ_BCK` 的无菜单 Excel 遗留代码不发布；仅改成 `CreateObject` 不能消除类型污染 | CSV/TSV 作为正式降级路径，但当前 `Src` 尚未实现，必须列为待开发并单独验收 |
 
 DMO（DMU Optimizer 2）和 PEO（Product Engineering Optimizer 2）是不同产品。目前没有充分证据证明本项目必须购买它们；不要仅因 `OptimizerWorkBench` 名称而采购。`ASM_CMP` 应先按 SPA 在 R2018 实测。
 
@@ -354,7 +355,7 @@ LO1 不是 `Drw_myframe.bas:680` 一个声明：`Drw_myframe.bas:91-106,179-190,
 - 删除、批量改名、跨文档复制；
 - 模块导入/覆盖导出；
 - 所有网络、PowerShell、许可证修改入口；
-- 所有 Baseline Extension 和 Optional-SPA/ST1/DL1/LO1/DMN/FTA/KWA/Excel 未通过各自 capability/compatibility test 的入口；入口采用“可见但禁用并显示原因”，受管部署策略明确要求隐藏时除外。
+- 所有 Baseline Extension、Fleet-SPA/Fleet-FTA、CATIA Licensed Optional Candidate 和 External Integration 未通过各自 capability/compatibility test 的入口；入口采用“可见但禁用并显示原因”，受管部署策略明确要求隐藏时除外。
 
 ---
 
@@ -426,23 +427,22 @@ py -3.12 -m venv .venv-audit
 | DS VBA | **从同一 R2018 安装介质安装 DS VBA 7.1** | VBE 可打开；运行 VBA7/Win64 probe；APC 7.1 可创建 |
 | Microsoft Forms 2.0 | 应由 DS VBA/受支持 Office 安装提供，不从第三方下载 FM20.DLL | References 无 MISSING；4 个 UserForm 可打开 |
 | DSLS 客户端 | 与企业服务器/策略兼容 | 登录、借用/并发状态由管理员确认 |
-| AB3、MD2、HD2 | 按真实部署分别测试，基线不允许脚本取消 | 只读记录当前 configuration；逐一冒烟 |
+| AB3、MD2、HD2 | 每台至少一种；分别建立 P-AB3/P-HD2/P-MD2 | 只读记录 configuration 与 checkout；三个最小 profile 逐一验收 |
+| SPA、FTA | 正式 Fleet 目标保证；不得并入 Core Reference | 分别记录 checkout，并独立构建/加载/故障隔离 |
 | B28 CATIA 类型库 | 由 CATIA 安装提供，禁止复制 B30 TLB | 引用路径只允许 B28 |
 | 脱敏测试数据 | CATPart/CATProduct/CATDrawing，多种状态 | 测试夹具只读副本 |
 
 不要在同一构建 VM 并排安装 B30。历史 CATIA/VBA 宿主存在多版本注册互相覆盖问题；一台干净 VM 对应一个 CATIA release/SP/HF 最可控。
 
-#### 按功能可选
+#### 其他功能按席位可选
 
 | 依赖 | 何时安装/启用 | 备注 |
 |---|---|---|
 | Excel/Office | 只测 `MacroMenu.Excel` 包时 | 当前源码有 Excel 16.0 早绑定；重构后改 Object + 自定义常量。版本/位数必须与现场一致 |
-| SPA | 只测 Compare/Measurement 包 | 需 DSLS 实际权益；不是普通 DLL 安装问题 |
 | ST1 | 只测 STEP Export 包 | 没有权益就禁用，不提供绕过 |
 | DL1 | 只测 Unfold 包 | `HybridShapeUnfold` |
 | LO1 | 只测 Layout2D 包 | 普通 CATDrawing 不应被拖入此依赖 |
 | DMN | 只测 3D Marker 包 | 默认 `newlabel` 入口使用 `Marker3Ds` |
-| FTA | 只测 Annotation 包 | 与 Marker/普通文本分开 |
 | KWA | 只测持久 EKL/Formula 包 | 基础只读 PDM 不应依赖 KWA |
 | 7-Zip | 仅外部受管打包或专项测试 | 不使用硬编码 `D:\for use`；不由 CATIA 隐藏执行未知副本 |
 
@@ -524,7 +524,7 @@ Windows 自带但应做策略预检、而非单独下载的组件：
 | Part | `MecModTypeLib.tlb`、`PartTypeLib.tlb`、`CATGSMIDLItfTypeLib.tlb` |
 | Knowledge | `KweTypeLib.tlb` |
 | Drawing | `DraftingTypeLib.tlb` |
-| Optional | `Layout2DTypeLib.tlb`、`SPATypeLib.tlb` |
+| Fleet / optional candidates | `SPATypeLib.tlb`（Fleet-SPA）、`Layout2DTypeLib.tlb`（LO1 candidate） |
 
 `VBA/VBE7` 和 CATIA Application 宿主库可能是隐式引用；仍须记录版本和路径。白名单门禁拒绝：
 
@@ -632,24 +632,24 @@ CATStiWIPBridgeSurrogateCOMExe.exe
 ```text
 MacroMenu.Core.catvba
 MacroMenu.Baseline-CAPABILITY.catvba
-MacroMenu.Optional-SPA.catvba
+MacroMenu.Fleet-SPA.catvba
 MacroMenu.Optional-ST1.catvba
 MacroMenu.Optional-DL1.catvba
 MacroMenu.Optional-LO1.catvba
 MacroMenu.Optional-DMN.catvba
-MacroMenu.Optional-FTA.catvba
+MacroMenu.Fleet-FTA.catvba
 MacroMenu.Optional-KWA.catvba
-MacroMenu.Optional-Excel.catvba
+MacroMenu.External-Excel.catvba
 MacroMenu.DevTools.catvba        # 永不发布到普通用户
 ```
 
 `CAPABILITY` 是经现场矩阵确认、只属于部分 AB3/MD2/HD2 profile 的能力名，不是固定文件名。Assembly、Part、Drawing 保留为菜单和源码的业务分区，但不能仅凭业务分类决定物理包：具体工具通过三 profile 后可进入 Core；未通过则进入相应 Baseline Extension 或 Licensed Optional。
 
-VBA 是工程级编译。物理拆包后 Excel、SPA 或其他可选引用失败不会拖垮 Core，许可证差异也能在库级隔离。Core 不建立到可选 CATVBA 的 VBA Project Reference；可选包只通过受控安装清单和稳定入口按需调用，启动时不加载。
+VBA 是工程级编译。Core、Fleet-SPA、Fleet-FTA 分别从空白工程构建；Excel 或其他候选引用失败不能拖垮 Core。Core 不建立到扩展 CATVBA 的 VBA Project Reference；扩展只通过受控安装清单和待 B28 spike 验证的稳定入口惰性调用，启动时不加载。
 
 ### 13.2 静态 manifest
 
-本地新实现不写回 `Src/`。构建工具从 `origin/dev@cutoff` 的上游 blobs 与
+本地新实现不写回 `Src/`。构建工具从 `verysolecd/Macro_menu:dev@cutoff` 的上游 blobs 与
 `catvba_refactor/vba/{new,overrides,shared_contracts}` 解析出的唯一组件集生成标准模块或只读资源。
 override 必须绑定 upstream path/blob/SHA 和组件身份；base 漂移时停止，不得静默回退。
 
@@ -673,7 +673,7 @@ ui_schema
 
 构建完成后另生成安装清单，记录 `package_id/library_id/version/managed_path/artifact_sha256`。运行时只读取审定的静态目录和安装清单，不扫描 CodeModule。Dispatcher 使用生成的精确 allowlist；每次调用返回成功/失败/错误号/耗时。可选库不可用时按钮保持可见但禁用，并显示缺失包、能力或兼容性原因。
 
-Optional 对 Core 只允许单向、版本化的逻辑依赖：公共 DTO、结果和日志协议属于 Core contract；VBA 实现通过构建期复制进入各自 staging，或经稳定入口传递纯 Variant/字符串数据。禁止建立 Optional→Core 或 Core→Optional 的 VBA Project Reference，也禁止可选包直接依赖 `KCL/Cls_DynaWD` 的内部实现。
+扩展对 Core 只允许单向、版本化的逻辑依赖：公共 DTO、结果和日志协议属于 Core contract；VBA 实现通过构建期复制进入各自 staging，或经稳定入口传递纯 Variant/字符串数据。禁止建立扩展→Core 或 Core→扩展的 VBA Project Reference，也禁止扩展包直接依赖 `KCL/Cls_DynaWD` 的内部实现。
 
 ### 13.3 KCL 拆分
 
@@ -690,7 +690,7 @@ Optional 对 Core 只允许单向、版本化的逻辑依赖：公共 DTO、结�
 拆分的第一个编译边界不是原地修改 [KCL.bas:46-47](../Src/KCL.bas#L46)，而是在 namespaced
 Core/new 或整组件 override 中建立不含 `Public pdm As New Cls_PDM`、`Public xlm As New Cls_XLM`
 的新边界，并由 manifest 排除污染的上游模块。原声明让任何引用 KCL 的 Core 模块在编译期同时依赖
-KWA/Excel 路径。`KCL.GetMeas/getlength` 也必须进入 Optional-SPA candidate；保留共享 KCL 再隐藏按钮
+KWA/Excel 路径。`KCL.GetMeas/getlength` 也必须进入 Fleet-SPA candidate；保留共享 KCL 再隐藏按钮
 不构成许可证隔离。
 
 ### 13.4 破坏性操作事务化
@@ -765,7 +765,7 @@ MVP 粗估 20-35 人日；完整恢复 77 个模块约 50-90 人日。估算取�
 ### 16.1 环境轴
 
 - CATIA：正式 R2018 SP/HF；
-- 许可证：AB3、MD2、HD2 分别单独测试，再测现场组合；
+- 许可证：P-AB3、P-HD2、P-MD2 分别测试；三者都含 SPA+FTA；P-ALL/P-PROD 只作补充；
 - UI：中文和英文；
 - 用户：构建账号、新普通用户；
 - Office：未安装；Excel 包另测现场 Office；
@@ -784,7 +784,7 @@ MVP 粗估 20-35 人日；完整恢复 77 个模块约 50-90 人日。估算取�
 - 重启后仍能运行；
 - 不访问 VBE/CodeModule；
 - 所有 MSForms Name 合法且唯一；
-- AB3-only、MD2-only、HD2-only 三种测试均启动成功；
+- P-AB3、P-HD2、P-MD2 三种测试均启动成功；
 - 每个 Core 工具在三种 profile 中分别完成执行、取消、失败恢复和重复执行，不能只测试菜单启动；
 - Core staging 不包含 Baseline Extension、Licensed Optional 或 DevTools 的模块和 References；
 - 每个工具的能力台账包含 package、profile 结果、证据、降级实现和构建物哈希；
@@ -805,7 +805,7 @@ MVP 粗估 20-35 人日；完整恢复 77 个模块约 50-90 人日。估算取�
 - 测试只在脱敏副本执行；
 - 日志记录操作结果但不泄露模型名称/客户数据。
 
-### 16.4 Baseline Extension 与 Licensed Optional 放行门槛
+### 16.4 Fleet 扩展、Baseline Extension 与其他候选放行门槛
 
 - 每个包在独立空白 CATVBA 中 Compile，不依赖其他可选包的 Project Reference；
 - Core 不安装或安装损坏的可选包时仍能完成全部 Core 测试；相关入口保持可见但禁用，并明确显示“未安装/损坏”；
@@ -813,10 +813,10 @@ MVP 粗估 20-35 人日；完整恢复 77 个模块约 50-90 人日。估算取�
 - 分别覆盖类型库缺失/存在、API 或工作台不可取得/可取得、DSLS 无权益/有权益、会话 checkout 失败/成功四层状态；
 - `build-metadata` 记录产品代码、profile、References、实际 checkout 证据和测试结果；
 - 有许可证路径和无额外许可证降级路径分别测试，且 UI 不把降级结果描述为语义等价；
-- Optional-SPA 覆盖测量失败和几何比较非等价提示；
+- Fleet-SPA 覆盖 Reference/加载/checkout/测量失败和几何比较非等价提示；
 - Optional-ST1 覆盖导出失败、已有文件、路径和“原生文件不删除”；
-- Optional-DL1/LO1/DMN/FTA/KWA 分别验证对应对象创建失败时不残留半成品；
-- Optional-Excel 覆盖未安装 Excel、版本差异、用户取消、只读文件、COM 残留进程，以及完成待实现 CSV/TSV 后的降级测试；
+- Fleet-FTA 单独覆盖 Reference/加载/checkout/对象创建失败；Optional-DL1/LO1/DMN/KWA 分别验证对应对象创建失败时不残留半成品；
+- External-Excel 覆盖未安装 Excel、版本差异、用户取消、只读文件、COM 残留进程，以及完成待实现 CSV/TSV 后的降级测试；
 - 任一可选包失败不能改变 Core 的 References、启动结果或 CATIA 全局状态。
 
 ---
@@ -828,7 +828,8 @@ MVP 粗估 20-35 人日；完整恢复 77 个模块约 50-90 人日。估算取�
 ```text
 MacroMenu.Core-0.2.0-R28-x64.catvba
 MacroMenu.Baseline-CAPABILITY-0.2.0-R28-x64.catvba
-MacroMenu.Optional-SPA-0.2.0-R28-x64.catvba
+MacroMenu.Fleet-SPA-0.2.0-R28-x64.catvba
+MacroMenu.Fleet-FTA-0.2.0-R28-x64.catvba
 manifest-0.2.0.json
 checksums-0.2.0.txt
 build-metadata-0.2.0.json
@@ -857,7 +858,7 @@ build-metadata-0.2.0.json
 后续实现前应固定：
 
 1. 正式 Windows 版本、R2018 SP/HF；
-2. 能否提供 AB3-only、MD2-only、HD2-only 三套相互隔离的测试 profile，以及对应 DSLS checkout 证据；
+2. 能否提供 P-AB3、P-HD2、P-MD2 三套相互隔离的测试 profile，以及 base configuration、SPA、FTA 的 DSLS checkout 证据；
 3. 首版最重要的 5-10 个业务流程；
 4. 是否接受 CSV/TSV 作为 Excel 的正式降级；
 5. 是否允许任何网络请求、PowerShell 或 WSH；建议 Core 全部不允许；
@@ -865,7 +866,7 @@ build-metadata-0.2.0.json
 7. 可否提供脱敏 CATPart、CATProduct、CATDrawing 和冲突样例；
 8. 是否必须锁定 VBA 源码；如必须，应先完成静态 manifest；
 9. 哪些 Baseline Extensions 需要默认随安装包提供，哪些只在指定席位部署；
-10. SPA、ST1、DL1、LO1、DMN、FTA、KWA 在 DSLS 中是否实际有权益。
+10. 已保证 SPA、FTA 的具体 DSLS checkout 行为，以及 ST1、DL1、LO1、DMN、KWA 是否另有权益。
 
 ---
 
@@ -917,8 +918,8 @@ build-metadata-0.2.0.json
 
 现有 `CATIA_V5_SimpleMacroMenu.catvba` 的问题不能靠“补装一个依赖”解决。B30 引用污染、6 个必然编译错误、受保护工程与源码自省冲突、非法 UI Name、可选许可证未隔离和高风险外部能力，任何一项都足以阻断可信生产使用。
 
-建议立即停止分发现有二进制。正式构建真源是 `origin/dev@cutoff` 的 upstream blobs、
+建议立即停止分发现有二进制。正式构建真源是 `verysolecd/Macro_menu:dev@cutoff` 的 upstream blobs、
 `catvba_refactor/` 中获批的 new/override 组件、package/capability/source manifests、schema 和确定性
 生成规则的组合；`Src/` 不再作为本地修复写区。在干净 R2018/B28 环境先交付无 VBE 自省、无外部
-命令、无网络、无 Office 强依赖的 Core。只有通过本文的 Compile、三许可证、重启、引用、源码/p-code、
+命令、无网络、无 Office 强依赖的 Core，并分别构建 Fleet-SPA/Fleet-FTA。只有通过本文的 Compile、三最小 profile、Fleet 隔离、重启、引用、源码/p-code、
 签名/哈希和回滚门槛后，才能把状态从 NO-GO 改为可试点。
