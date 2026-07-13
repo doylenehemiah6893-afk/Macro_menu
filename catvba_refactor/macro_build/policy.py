@@ -107,11 +107,11 @@ _VALID_DECLARE_TAIL = re.compile(
 _PROCEDURE_START = re.compile(
     r"^\s*(?:(?:Public|Private|Friend)\s+)?"
     r"(?:(?:Default|Static)\s+)*"
-    r"(?:Sub|Function|Property\s+(?:Get|Let|Set))\b",
+    r"(?P<kind>Sub|Function|Property\s+(?:Get|Let|Set))\b",
     re.IGNORECASE,
 )
 _PROCEDURE_END = re.compile(
-    r"^\s*End\s+(?:Sub|Function|Property)\s*$", re.IGNORECASE
+    r"^\s*End\s+(?P<kind>Sub|Function|Property)\s*$", re.IGNORECASE
 )
 _PUBLIC_TYPE = re.compile(
     rf"^\s*Public\s+Type\s+({_IDENTIFIER})\b", re.IGNORECASE
@@ -139,6 +139,12 @@ class _SourceText:
 class _LogicalStatement:
     text: str
     line: int
+
+
+@dataclass(frozen=True)
+class _ProcedureFrame:
+    kind: str
+    candidate_line: int | None
 
 
 def _diagnostic(
@@ -557,23 +563,44 @@ def _module_scope_entrypoint_lines(
     source: _SourceText, entrypoint_pattern: re.Pattern[str]
 ) -> tuple[int, ...]:
     lines: list[int] = []
-    procedure_depth = 0
+    procedure_stack: list[_ProcedureFrame] = []
+    poisoned = False
     for statement in _logical_statements(source.lines):
         text = statement.text
-        if _PROCEDURE_END.fullmatch(text):
-            procedure_depth = max(0, procedure_depth - 1)
-            continue
-        if _PROCEDURE_START.match(text) is None:
+        procedure_end = _PROCEDURE_END.fullmatch(text)
+        if procedure_end is not None:
+            if not procedure_stack:
+                poisoned = True
+                continue
+
+            frame = procedure_stack.pop()
+            closing_kind = procedure_end.group("kind").casefold()
+            if frame.kind != closing_kind:
+                poisoned = True
+                continue
+            if not procedure_stack and frame.candidate_line is not None:
+                lines.append(frame.candidate_line)
             continue
 
-        # A declaration starts its procedure after its own module-scope
-        # eligibility has been determined. Tracking depth (rather than a
-        # boolean) keeps malformed nested declarations contained until every
-        # corresponding End statement has been observed.
-        if procedure_depth == 0 and entrypoint_pattern.match(text) is not None:
-            lines.append(statement.line)
-        procedure_depth += 1
-    return tuple(lines)
+        procedure_start = _PROCEDURE_START.match(text)
+        if procedure_start is None:
+            continue
+
+        at_module_scope = not procedure_stack
+        if not at_module_scope:
+            poisoned = True
+        raw_kind = procedure_start.group("kind").casefold()
+        kind = "property" if raw_kind.startswith("property") else raw_kind
+        candidate_line = (
+            statement.line
+            if at_module_scope and entrypoint_pattern.match(text) is not None
+            else None
+        )
+        procedure_stack.append(_ProcedureFrame(kind, candidate_line))
+
+    if procedure_stack:
+        poisoned = True
+    return () if poisoned else tuple(lines)
 
 
 def _tool_binding_findings(

@@ -786,12 +786,83 @@ def test_tool_entrypoint_nested_inside_a_procedure_is_not_module_scope(
 @pytest.mark.parametrize(
     "body",
     [
+        (
+            "Private Sub Broken()\r\n"
+            "End Function\r\n"
+            "Public Sub Run()\r\n"
+            "End Sub\r\n"
+        ),
+        (
+            "Private Function Broken() As Boolean\r\n"
+            "End Property\r\n"
+            "Public Function Run() As Variant\r\n"
+            "End Function\r\n"
+        ),
+        (
+            "Private Property Get Broken() As Long\r\n"
+            "End Sub\r\n"
+            "Public Sub Run()\r\n"
+            "End Sub\r\n"
+        ),
+        (
+            "End Sub\r\n"
+            "Public Sub Run()\r\n"
+            "End Sub\r\n"
+        ),
+        "Public Sub Run()\r\n",
+        (
+            "Public Sub Run()\r\n"
+            "End Sub\r\n"
+            "Private Function Dangling() As Boolean\r\n"
+        ),
+    ],
+    ids=[
+        "sub-closed-by-function",
+        "function-closed-by-property",
+        "property-closed-by-sub",
+        "stray-end-before-entrypoint",
+        "unclosed-entrypoint",
+        "unclosed-trailing-procedure",
+    ],
+)
+def test_tool_entrypoint_scope_parser_fails_closed_for_malformed_procedures(
+    body: str,
+) -> None:
+    module = _component(
+        "core.malformed-procedure-scope",
+        "standard_module",
+        "SafeModule",
+        _source(body),
+    )
+
+    report = validate_catalog(_catalog((module,), tools=(_tool(),)))
+
+    assert [item.code for item in report.diagnostics] == [
+        "TOOL_ENTRYPOINT_BINDING_INVALID"
+    ]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
         "Public Sub Run()\r\nEnd Sub\r\n",
         (
             "Private Function Prepare() As Boolean\r\n"
             "End Function\r\n"
             "Public Sub Run()\r\n"
             "End Sub\r\n"
+        ),
+        (
+            "Private Property Get Ready() As Boolean\r\n"
+            "End Property\r\n"
+            "Public Sub Run()\r\n"
+            "End Sub\r\n"
+        ),
+        (
+            "Private Sub Prepare(): End Sub: "
+            "Private Function IsReady() As Boolean: End Function: "
+            "Private Property Get Ready() As Boolean: End Property: "
+            "Public Sub Run(): End Sub\r\n"
         ),
     ],
 )
