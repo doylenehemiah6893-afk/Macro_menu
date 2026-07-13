@@ -21,7 +21,7 @@
 - [CATVBA 重构调查与决策记录](CATVBA重构调查与决策记录.md)
 - [R2018 恢复、依赖与安全交付指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
 
-## 待复审规格
+## 已批准规格
 
 - [恢复总架构](superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md)
 - [离线 Build Kit](superpowers/specs/2026-07-13-catvba-offline-build-kit-design.md)
@@ -29,7 +29,8 @@
 - [B28 验证、许可证与交付](superpowers/specs/2026-07-13-catvba-b28-validation-delivery-design.md)
 - [上游 intake 与 fork 同步](superpowers/specs/2026-07-13-catvba-upstream-intake-design.md)
 
-全部保持 DRAFT，等待用户书面复审；尚无获批实施计划。
+用户已于 2026-07-13 书面确认全部五份规格。第一阶段实施计划：
+[离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)。
 
 ## 当前许可证模型
 
