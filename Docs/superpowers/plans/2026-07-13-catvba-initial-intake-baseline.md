@@ -367,7 +367,25 @@ release_eligible=false
 
 Also replace the obsolete `STATUS` phrase that Core Runtime MVP still needs spec approval with: the Core spec is approved and its implementation plan is next.
 
-- [ ] **Step 11: Run full verification and commit status evidence**
+- [ ] **Step 11: Validate and commit status evidence before candidate verification**
+
+Run:
+
+```bash
+git diff --check
+git status --short
+```
+
+Expected: only the planned status files are modified. Commit them before running candidate-mode commands because both `catvba_refactor` README files are governed inputs and an uncommitted change must correctly block candidate checks.
+
+Commit:
+
+```bash
+git add Docs/STATUS.md catvba_refactor/config/README.md catvba_refactor/macro_build/README.md
+git commit -m "docs: record accepted upstream cutoff"
+```
+
+- [ ] **Step 12: Run full verification on the clean governed tree**
 
 Run:
 
@@ -377,17 +395,10 @@ UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q
 UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build check --format json
 UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build build-kit --format json
 git diff --check
-git status --short
+git status --short --branch
 ```
 
-Expected: frozen sync and all tests pass; `check` reports a formal zero-candidate diagnostic state; `build-kit` fails closed with exit 3 and no completed output; only planned status files remain modified before commit.
-
-Commit:
-
-```bash
-git add Docs/STATUS.md catvba_refactor/config/README.md catvba_refactor/macro_build/README.md
-git commit -m "docs: record accepted upstream cutoff"
-```
+Expected: frozen sync and all tests pass; `check` reports a formal zero-candidate state; `build-kit` fails closed with exit 3 and no completed output; the working tree is clean. Do not create another commit only to record command output.
 
 ---
 
