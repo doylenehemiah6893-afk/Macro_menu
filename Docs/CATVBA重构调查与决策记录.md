@@ -10,7 +10,7 @@
 >
 > 目标环境：CATIA V5-6R2018（R28/B28）、VBA7 64 位 Windows
 >
-> 当前阶段：总架构已重写，并拆出离线 Build Kit、Core Runtime MVP、B28 验收交付、上游 intake 四份子规格；许可证与仓库拓扑已按 DR-012/DR-013 收口，整套规格仍待用户书面复核
+> 当前阶段：用户已书面确认恢复总架构与四份子规格；离线 Build Kit 实施计划已编写，等待选择执行方式；项目仍为 NO-GO，G0-G7 状态未因文档批准而提升
 
 本文记录本轮重构开始前已经完成的调查过程、证据边界、独立复核结果和用户确认的设计决策。它不是“当前 CATVBA 已经修复”的证明，也不替代 R2018 目标机的编译、运行和许可证验收。
 
@@ -418,6 +418,23 @@ Eligible = (AB3 OR HD2 OR MD2) AND SPA AND FTA
 - 旧文档中的 AB3-only/HD2-only/MD2-only 与 Optional-SPA/Optional-FTA 只保留为历史术语，当前设计
   一律以本决策为准。
 
+
+### DR-014：批准总架构与四份子规格
+
+**状态：已批准，2026-07-13。**
+
+用户已书面确认以下设计：
+
+1. `2026-07-13-catvba-r2018-recovery-design.md`；
+2. `2026-07-13-catvba-offline-build-kit-design.md`；
+3. `2026-07-13-catvba-core-runtime-mvp-design.md`；
+4. `2026-07-13-catvba-b28-validation-delivery-design.md`；
+5. `2026-07-13-catvba-upstream-intake-design.md`。
+
+该批准使设计状态从 DRAFT 变为 APPROVED，并授权编写分阶段实施计划；它不等于已经执行计划、生成
+Build Kit/CATVBA、完成 CATIA Compile 或通过任何许可证/发布门禁。第一份计划只覆盖 A 环境离线
+Build Kit 工具链，见 [`2026-07-13-catvba-offline-build-kit.md`](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)；Core Runtime、B28/Fleet 验证和 intake 执行继续使用各自独立计划。开始实现前仍需选择 Subagent-Driven 或 Inline Execution。
+
 ---
 
 ## 6. 已批准的总体架构边界（DR-013 后）
@@ -446,27 +463,25 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 
 依赖方向：
 
-- Core 可以读取“某可选包已由受管安装器部署”的静态安装清单；
-- Core 只能通过一个稳定、可记录错误的执行边界按需调用可选包；
-- Core 启动不能加载可选包，也不能引用它们的类型；
+- Core 可以读取“某扩展已由受管安装器部署”的静态安装清单；
+- Core 只能通过一个稳定、可记录错误的执行边界按需调用扩展；
+- Core 启动不能加载扩展，也不能引用它们的类型；
 - 工具目录至少要能定位 `package_id/library_id/minimum_version/call_kind`；目标机构建完成后的安装清单再记录受管路径和 CATVBA SHA-256，具体 schema 在下一设计节确认；
-- Optional 对 Core 只有版本化的逻辑契约依赖，公共 DTO/结果/日志代码在构建期复制或以纯 Variant/字符串跨入口传递，不引用 `KCL/Cls_DynaWD` 内部实现；
-- 可选包不能要求另一个可选包存在；确有组合能力时必须声明组合包并单独验收；
-- DevTools 不能被正式 Core 或可选业务包引用。
+- 扩展对 Core 只有版本化的逻辑契约依赖，公共 DTO/结果/日志代码在构建期复制或以纯 Variant/字符串跨入口传递，不引用 `KCL/Cls_DynaWD` 内部实现；
+- 扩展不能隐式要求另一扩展存在；确有组合能力时必须声明组合包并单独验收；
+- DevTools 不能被正式 Core 或扩展业务包引用。
 
 ---
 
-## 7. 尚未批准、不得提前固化的设计
+## 7. 已批准后仍待执行或现场确认的内容
 
-以下内容仍需逐节提交用户确认：
+1. 离线 Build Kit 实施计划已编写，等待选择执行方式，尚未创建真实 manifest/schema/Python 实现；
+2. Core Runtime、B28/Fleet 和 upstream intake 需要各自日期化实施计划；
+3. Production 安装根、宏库注册和跨 CATVBA 调用仍由 B28 spike/现场证据确认；
+4. 危险操作事务模型、现场调试版与正式版差异继续留在后续安全计划；
+5. 在 G0-G7 对应证据完成前，不得把设计批准描述为 CATIA、许可证、试点或发布通过。
 
-1. 重写后的总规格与四份子规格的整体书面批准；
-2. 子规格内仍标为待 B28 spike/现场确认的安装路径、宏库注册和跨 CATVBA 调用细节；
-3. 安全策略、危险操作事务模型、现场调试版与正式版差异；
-4. manifest/schema/CLI 的实施级字段、错误码和任务拆分；
-5. 用户批准规格后再编写实施计划；批准前不得创建候选 CATVBA 或声称目标机通过。
-
-本文件可以记录调查事实和已经确认的决策，但不能把这些待评审内容写成“已批准实现”。
+设计批准是实施输入，不是运行证据。
 
 ---
 
@@ -511,3 +526,4 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 | 2026-07-13 | 以 DR-011 将所有本地实现收进 `catvba_refactor/`，把 `Src/` 定义为 intake-only upstream mirror，并采用显式整组件 override |
 | 2026-07-13 | 以 DR-012 固定完整仓库拓扑、唯一工作分支和唯一根 Python project/lock |
 | 2026-07-13 | 以 DR-013 确认 `(AB3 OR HD2 OR MD2) AND SPA AND FTA`，并将 SPA/FTA 改为默认但物理隔离的 Fleet 包 |
+| 2026-07-13 | 以 DR-014 记录用户批准恢复总架构和四份子规格，并进入离线 Build Kit 实施计划阶段 |
