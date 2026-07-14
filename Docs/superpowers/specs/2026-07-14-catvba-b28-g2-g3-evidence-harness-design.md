@@ -1,6 +1,6 @@
 # CATVBA B28 G2/G3 证据工具与操作交接设计
 
-> 状态：PROPOSED — 用户已于 2026-07-14 选择方案 B，待本文书面复核
+> 状态：APPROVED — 用户已于 2026-07-14 书面确认
 >
 > 上位规格：
 > [CATVBA B28 验证、许可证与交付设计](2026-07-13-catvba-b28-validation-delivery-design.md)
@@ -479,6 +479,14 @@ observation 通过 GUID/version/hash 交叉绑定，并明确输出 `verified|pa
 新增命令：
 
 ```text
+macro-menu-build create-target-handoff <primary-build-root> \
+  --compare-build-root <second-build-root> --purpose discovery|formal \
+  [--supersedes-handoff <discovery-handoff.json>] \
+  --revocation-snapshot <revocation-snapshot.json> \
+  --prepared-record-id <id> --review-record-id <id> \
+  [--created-at <utc>] --expires-at <utc> \
+  --output-root <dir>
+
 macro-menu-build init-target-session <kit> --mode discovery|g2|g3-c \
   --package core --profile <profile-id> --handoff <handoff.json> \
   [--prerequisite-evidence <g2-sealed-dir-or-zip>] \
@@ -510,6 +518,11 @@ macro-menu-build pack-target-evidence <capture-dir> \
 - 不联网、不启动 CATIA、不修改传入 Kit/capture/receipt/approval；
 - directory/ZIP 两种输入验证语义一致；
 - 所有失败在写输出前 fail-closed，封包使用临时目录后原子 rename。
+
+`create-target-handoff` 在两个输出根中各要求且只接受一个同 ID 的 completed Kit directory/ZIP/sidecar，
+执行两目录+两 ZIP verifier，并比较 catalog、manifest、Kit ID、ZIP bytes/hash 后才生成 detached handoff。
+formal purpose 必须绑定并撤回 discovery handoff；discovery purpose 禁止 `--supersedes-handoff`。操作员不得
+手写或从多个 Kit 中自行选择 handoff。
 
 默认 session ID/UTC 可以安全生成；确定性测试必须注入固定 `--session-id`/`--created-at`。相同显式输入产生
 byte-identical skeleton；随机默认值不参与“相同输入确定性”声明。
