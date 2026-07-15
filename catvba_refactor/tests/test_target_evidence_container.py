@@ -253,6 +253,31 @@ def test_directory_entry_limit_stops_before_pinning_excess_files(
     assert _codes(snapshot) == {"EVIDENCE_ENTRY_LIMIT"}
 
 
+def test_raw_entry_budget_is_reserved_across_recursive_siblings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "capture"
+    child = root / "a"
+    child.mkdir(parents=True)
+    os.mkfifo(child / "x.fifo")
+    os.mkfifo(root / "z.fifo")
+    monkeypatch.setattr(container, "MAX_EVIDENCE_ENTRIES", 1)
+    monkeypatch.setattr(container, "MAX_EVIDENCE_DIRECTORIES", 1)
+    original = container.os.stat
+
+    def guard_stat(path: object, *args: object, **kwargs: object) -> os.stat_result:
+        if path == "x.fifo":
+            raise AssertionError("scanner descended beyond reserved raw budget")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(container.os, "stat", guard_stat)
+
+    snapshot = read_evidence_container(root, phase=EvidencePhase.CAPTURE)
+
+    assert snapshot.files == ()
+    assert "EVIDENCE_ENTRY_LIMIT" in _codes(snapshot)
+
+
 def test_directory_and_zip_entry_budgets_have_logical_file_parity(
     tmp_path: Path,
 ) -> None:

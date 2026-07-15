@@ -320,7 +320,7 @@ def _scan_directory(
             names: list[str] = []
             with os.scandir(record.fd) as entries:
                 for entry in entries:
-                    if entry_count + len(names) >= (
+                    if entry_count >= (
                         MAX_EVIDENCE_ENTRIES + MAX_EVIDENCE_DIRECTORIES
                     ):
                         diagnostics.append(
@@ -333,6 +333,7 @@ def _scan_directory(
                         limit_reached = True
                         return
                     names.append(entry.name)
+                    entry_count += 1
             names.sort()
         except OSError:
             diagnostics.append(
@@ -346,7 +347,6 @@ def _scan_directory(
         for name in names:
             if limit_reached:
                 return
-            entry_count += 1
             relative = f"{record.path}/{name}" if record.path else name
             try:
                 observed = os.stat(name, dir_fd=record.fd, follow_symlinks=False)
