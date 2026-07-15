@@ -1460,6 +1460,13 @@ def test_g3_capture_accepts_one_fully_sealed_g2_zip_at_depth_one() -> None:
     assert _validate(_capture_files("g3-c"), "g3-c").ok
 
 
+def test_g3_snapshot_started_at_depth_one_cannot_add_a_prerequisite_zip() -> None:
+    _assert_invalid(
+        _validate(_capture_files("g3-c"), "g3-c", depth=1),
+        "TARGET_EVIDENCE_NESTING_DEPTH",
+    )
+
+
 def test_nested_g2_zip_cannot_contain_another_evidence_zip() -> None:
     nested_g2 = _sealed_files("g2")
     nested_g2["prerequisites/g2-evidence.zip"] = _sealed_zip("g2")

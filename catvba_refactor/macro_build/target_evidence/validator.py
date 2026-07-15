@@ -1035,6 +1035,15 @@ def _nested_g2_diagnostics(
     nesting_depth: int,
     diagnostics: list[Diagnostic],
 ) -> None:
+    if nesting_depth >= 1:
+        diagnostics.append(
+            _diagnostic(
+                "TARGET_EVIDENCE_NESTING_DEPTH",
+                NESTED_G2_PATH,
+                "G2 prerequisite exceeds the one-level evidence nesting limit",
+            )
+        )
+        return
     nested_snapshot = _read_zip_bytes(
         data,
         phase=EvidencePhase.SEALED,
