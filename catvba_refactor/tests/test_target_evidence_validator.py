@@ -16,8 +16,12 @@ from catvba_refactor.macro_build.target_evidence.container import (
     canonical_evidence_zip_bytes,
     canonical_payload_manifest,
 )
-from catvba_refactor.macro_build.target_evidence.model import EvidencePhase
+from catvba_refactor.macro_build.target_evidence.model import (
+    EvidencePhase,
+    TargetEvidenceReport,
+)
 from catvba_refactor.macro_build.target_evidence.validator import (
+    TargetEvidenceInspection,
     environment_fingerprint,
     validate_target_evidence,
 )
@@ -659,6 +663,21 @@ def _executed_g3_files() -> dict[str, bytes]:
     documents, members = _documents("g3-c")
     operator_ids: dict[str, str] = {}
 
+    entitlement_statuses = {
+        "configuration_product": "observed",
+        "reference_visibility": "available",
+        "api_workbench": "available",
+        "session_checkout": "available",
+        "tool_result": "observed",
+    }
+    for field, status_value in entitlement_statuses.items():
+        operator_id = f"record-entitlement-{field.replace('_', '-')}"
+        documents["entitlements.json"][field] = {
+            "status": status_value,
+            "operator_record_id": operator_id,
+        }
+        operator_ids[operator_id] = "entitlement"
+
     for ordinal, point in enumerate(documents["references.json"]["points"], start=1):
         operator_id = f"record-reference-point-{ordinal:02d}"
         point.update(
@@ -752,28 +771,44 @@ def _executed_g3_files() -> dict[str, bytes]:
 
 
 def _sealed_files(mode: str) -> dict[str, bytes]:
+    from catvba_refactor.macro_build.target_evidence.gate import (
+        evaluate_gate_rules,
+        gate_receipt_document,
+    )
+
     files = _capture_files(mode)
-    _, payload_digest, _ = canonical_payload_manifest(files)
+    _, payload_digest, payload_members = canonical_payload_manifest(files)
     gate_id = {"discovery": "DISCOVERY", "g2": "G2", "g3-c": "G3-C"}[mode]
-    receipt = {
-        "schema_version": 1,
-        "receipt_id": f"gate-receipt-20260714-{mode}",
-        "session_id": _binding(mode)["session_id"],
-        "session_mode": mode,
-        "gate_id": gate_id,
-        "kit_id": KIT_ID,
-        "kit_zip_sha256": KIT_ZIP_SHA,
-        "kit_verifier_report_digest": CLEAN_VERIFIER_SHA,
-        "evidence_payload_digest": payload_digest,
-        "rule_version": "b28-g2-g3-c-v1",
-        "computed_outcome": "blocked" if mode == "discovery" else "eligible",
-        "reason": "discovery-only" if mode == "discovery" else "all-rules-satisfied",
-        "audit_rule_version": 1,
-        "audit_status": "not-run",
-        "audit_report_digest": None,
-        "diagnostics": [],
-        "release_eligible": False,
-    }
+    document_paths = {*ROOT_DOCUMENTS, "handoff.json"}
+    inspection = TargetEvidenceInspection(
+        report=TargetEvidenceReport(
+            phase=EvidencePhase.CAPTURE,
+            session_id=_binding(mode)["session_id"],
+            evidence_payload_digest=payload_digest,
+            payload_members=payload_members,
+            diagnostics=(),
+        ),
+        files=tuple(sorted(files.items())),
+        documents=tuple(
+            sorted(
+                (path, json.loads(data))
+                for path, data in files.items()
+                if path in document_paths
+            )
+        ),
+        kit=_kit(formal=mode != "discovery"),
+    )
+    rule_result = evaluate_gate_rules(
+        inspection,
+        gate_id=gate_id,
+        audit_report=None,
+    )
+    receipt = gate_receipt_document(
+        inspection,
+        gate_id=gate_id,
+        rule_result=rule_result,
+        audit_report=None,
+    )
     receipt_bytes = canonical_json_bytes(receipt)
     approval = {
         "schema_version": 1,

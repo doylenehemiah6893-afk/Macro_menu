@@ -13,7 +13,7 @@ from ..canonical import (
     sha256_bytes,
 )
 from ..handoff import validate_handoff
-from ..errors import EvidenceError
+from ..errors import BuildKitError, EvidenceError
 from ..model import BuildKitInspection, Diagnostic
 from ..portable_paths import validate_portable_ascii_paths
 from ..reference_contract import resolved_reference_id
@@ -1367,12 +1367,46 @@ def _inspect_snapshot(
         payload_members=(payload_members if not stable_diagnostics else ()),
         diagnostics=stable_diagnostics,
     )
-    return TargetEvidenceInspection(
+    inspection = TargetEvidenceInspection(
         report=report,
         files=snapshot.files,
         documents=tuple(sorted(documents.items())),
         kit=kit,
     )
+    if phase is EvidencePhase.SEALED and inspection.report.ok:
+        # Import lazily so Gate evaluation can reuse the structural validator
+        # without creating a module import cycle.
+        from .gate import sealed_gate_diagnostics
+
+        try:
+            gate_diagnostics = sealed_gate_diagnostics(inspection)
+        except (BuildKitError, OSError, TypeError, ValueError):
+            gate_diagnostics = (
+                _diagnostic(
+                    "TARGET_EVIDENCE_GATE_MISMATCH",
+                    "gate-receipt.json",
+                    "embedded Gate receipt cannot be recomputed",
+                ),
+            )
+        if gate_diagnostics:
+            stable_diagnostics = tuple(
+                sorted(set((*inspection.report.diagnostics, *gate_diagnostics)))
+            )
+            inspection = TargetEvidenceInspection(
+                report=TargetEvidenceReport(
+                    phase=phase,
+                    session_id=(
+                        binding.get("session_id") if binding is not None else None
+                    ),
+                    evidence_payload_digest=None,
+                    payload_members=(),
+                    diagnostics=stable_diagnostics,
+                ),
+                files=inspection.files,
+                documents=inspection.documents,
+                kit=inspection.kit,
+            )
+    return inspection
 
 
 def validate_target_evidence(

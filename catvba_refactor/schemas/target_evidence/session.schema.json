@@ -42,7 +42,7 @@
         {"type": "null"}
       ]
     },
-    "production_macro_library_touched": {"const": false},
+    "production_macro_library_touched": {"type": "boolean"},
     "supersedes_session_id": {
       "oneOf": [
         {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/session_id"},

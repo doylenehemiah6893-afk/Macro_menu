@@ -489,7 +489,7 @@ def test_audits_a_readonly_copy_without_mutating_repository_catvba(
     observed: dict[str, Any] = {}
 
     def fake_run(args: list[str], **kwargs: Any) -> Any:
-        readonly_copy = Path(args[-1])
+        readonly_copy = Path(kwargs["cwd"]) / args[-1]
         observed["args"] = args
         observed["kwargs"] = kwargs
         observed["copy"] = readonly_copy
@@ -540,8 +540,10 @@ def test_audits_a_readonly_copy_without_mutating_repository_catvba(
         "timeout": 60,
         "env": {
             "PATH": os.environ.get("PATH", ""),
+            "PYTHONHASHSEED": "0",
             "PYTHONNOUSERSITE": "1",
         },
+        "cwd": observed["copy"].parent,
     }
     assert observed["copy"] != returned
     assert observed["mode"] == 0o444
@@ -1378,6 +1380,17 @@ def test_pcode_timeout_and_nonzero_are_diagnostic_only(
     assert unavailable_report.pcode.status == "unavailable"
     assert unavailable_report.pcode.diagnostic_only is True
     assert "PCODE_UNAVAILABLE" in _codes(unavailable_report)
+
+
+def test_audit_report_is_deterministic_across_private_copy_roots(
+    tmp_path: Path,
+) -> None:
+    returned = _copy_legacy(tmp_path)
+
+    first = audit_catvba(returned)
+    second = audit_catvba(returned)
+
+    assert first == second
 
 
 def test_pcode_output_is_truncated_before_hashing(

@@ -36,8 +36,8 @@
       "minItems": 2,
       "maxItems": 2
     },
-    "set_license_used": {"const": false},
-    "scripted_reference_selection_used": {"const": false},
-    "licensing_repository_modified": {"const": false}
+    "set_license_used": {"type": "boolean"},
+    "scripted_reference_selection_used": {"type": "boolean"},
+    "licensing_repository_modified": {"type": "boolean"}
   }
 }

@@ -1763,7 +1763,11 @@ def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
 
 
 def _run_bounded_process(
-    args: list[str], *, env: dict[str, str], timeout: float
+    args: list[str],
+    *,
+    env: dict[str, str],
+    timeout: float,
+    cwd: str | os.PathLike[str] | None = None,
 ) -> _ProcessCapture:
     """Run a subprocess while continuously draining and discarding overflow."""
     popen_options: dict[str, Any] = {}
@@ -1781,6 +1785,7 @@ def _run_bounded_process(
         text=False,
         shell=False,
         env=env,
+        cwd=cwd,
         **popen_options,
     )
     if process.stdout is None or process.stderr is None:
@@ -1863,13 +1868,18 @@ def _run_pcode(
         "-m",
         "pcodedmp.pcodedmp",
         "-d",
-        os.fspath(readonly_copy),
+        readonly_copy.name,
     ]
     try:
         capture = _run_bounded_process(
             args,
             timeout=60,
-            env={"PATH": os.environ.get("PATH", ""), "PYTHONNOUSERSITE": "1"},
+            env={
+                "PATH": os.environ.get("PATH", ""),
+                "PYTHONHASHSEED": "0",
+                "PYTHONNOUSERSITE": "1",
+            },
+            cwd=readonly_copy.parent,
         )
         stdout_sha256 = hashlib.sha256(capture.stdout).hexdigest()
         stderr_sha256 = hashlib.sha256(capture.stderr).hexdigest()
