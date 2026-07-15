@@ -3,15 +3,17 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import replace
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
 from .audit import AuditReport, audit_catvba
 from .canonical import canonical_json_bytes
-from .errors import BuildKitError, ExitCode
+from .errors import BuildKitError, ExitCode, InfrastructureError
 from .generator import generate_sources
 from .git_objects import GitRepository, freeze_snapshot
+from .handoff import HandoffReceipt, HandoffRequest, issue_target_handoff
 from .inventory import scan_inputs
 from .kit import assemble_catalog, stage_build_kit, verify_build_kit
 from .manifests import ManifestSet, load_and_validate_config
@@ -36,6 +38,18 @@ except PackageNotFoundError:  # pragma: no cover - editable/root install is cano
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _GLOBAL_OPTIONS = frozenset(
     {"--repo-root", "--config-dir", "--schema-dir", "--output-root", "--format"}
+)
+_HANDOFF_SCALAR_OPTIONS = frozenset(
+    {
+        "--compare-build-root",
+        "--purpose",
+        "--supersedes-handoff",
+        "--revocation-snapshot",
+        "--prepared-record-id",
+        "--review-record-id",
+        "--created-at",
+        "--expires-at",
+    }
 )
 
 
@@ -108,6 +122,22 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("returned_catvba", type=Path)
     audit.add_argument("--expect", required=True, type=Path, dest="expected_manifest")
     audit.add_argument("--package", dest="package_id")
+
+    handoff = commands.add_parser(
+        "create-target-handoff",
+        parents=[common],
+        allow_abbrev=False,
+        help="issue one detached authenticated target handoff",
+    )
+    handoff.add_argument("primary_build_root", type=Path)
+    handoff.add_argument("--compare-build-root", required=True, type=Path)
+    handoff.add_argument("--purpose", required=True, choices=("discovery", "formal"))
+    handoff.add_argument("--supersedes-handoff", type=Path)
+    handoff.add_argument("--revocation-snapshot", required=True, type=Path)
+    handoff.add_argument("--prepared-record-id", required=True)
+    handoff.add_argument("--review-record-id", required=True)
+    handoff.add_argument("--created-at")
+    handoff.add_argument("--expires-at", required=True)
     return parser
 
 
@@ -118,6 +148,21 @@ def _reject_duplicate_global_options(
     for token in argv:
         option = token.split("=", 1)[0]
         if option not in _GLOBAL_OPTIONS:
+            continue
+        if option in seen:
+            parser.error(f"{option} may be specified at most once")
+        seen.add(option)
+
+
+def _reject_duplicate_handoff_options(
+    parser: argparse.ArgumentParser, argv: list[str]
+) -> None:
+    if "create-target-handoff" not in argv:
+        return
+    seen: set[str] = set()
+    for token in argv:
+        option = token.split("=", 1)[0]
+        if option not in _HANDOFF_SCALAR_OPTIONS:
             continue
         if option in seen:
             parser.error(f"{option} may be specified at most once")
@@ -424,6 +469,56 @@ def _audit_command(args: argparse.Namespace) -> int:
     return int(ExitCode.SUCCESS if not report.diagnostics else ExitCode.VERIFICATION)
 
 
+def _handoff_receipt_document(receipt: HandoffReceipt) -> dict[str, Any]:
+    return {
+        "command": "create-target-handoff",
+        "ok": True,
+        "handoff_id": receipt.handoff_id,
+        "handoff_path": receipt.handoff_path,
+        "handoff_sha256": receipt.handoff_sha256,
+        "kit_id": receipt.kit_id,
+        "kit_zip_sha256": receipt.kit_zip_sha256,
+        "diagnostics": [],
+    }
+
+
+def _current_utc() -> str:
+    return datetime.now(UTC).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _read_handoff_input(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise InfrastructureError(f"HANDOFF_INPUT_READ_FAILED: {path}") from error
+
+
+def _create_target_handoff_command(args: argparse.Namespace) -> int:
+    supersedes_path = getattr(args, "supersedes_handoff", None)
+    created_at = getattr(args, "created_at", None) or _current_utc()
+    request = HandoffRequest(
+        purpose=args.purpose,
+        created_at=created_at,
+        expires_at=args.expires_at,
+        revocation_snapshot=_read_handoff_input(args.revocation_snapshot),
+        prepared_record_id=args.prepared_record_id,
+        review_record_id=args.review_record_id,
+        supersedes_handoff=(
+            _read_handoff_input(supersedes_path)
+            if supersedes_path is not None
+            else None
+        ),
+    )
+    receipt = issue_target_handoff(
+        args.primary_build_root,
+        args.compare_build_root,
+        request,
+        args.output_root,
+    )
+    _emit(_handoff_receipt_document(receipt), _format(args))
+    return int(ExitCode.SUCCESS)
+
+
 def dispatch(args: argparse.Namespace) -> int:
     if args.command == "inventory":
         return _inventory_command(args)
@@ -435,6 +530,8 @@ def dispatch(args: argparse.Namespace) -> int:
         return _verify_command(args)
     if args.command == "audit-catvba":
         return _audit_command(args)
+    if args.command == "create-target-handoff":
+        return _create_target_handoff_command(args)
     raise AssertionError(f"unknown command: {args.command}")
 
 
@@ -461,7 +558,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = list(sys.argv[1:] if argv is None else argv)
     _reject_duplicate_global_options(parser, arguments)
+    _reject_duplicate_handoff_options(parser, arguments)
     args = parser.parse_args(arguments)
+    if args.command == "create-target-handoff" and not hasattr(args, "output_root"):
+        parser.error("create-target-handoff requires --output-root")
     try:
         return dispatch(args)
     except BuildKitError as error:

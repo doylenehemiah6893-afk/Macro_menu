@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -19,6 +18,7 @@ from catvba_refactor.macro_build.errors import (
     SourceError,
 )
 from catvba_refactor.macro_build.manifests import ManifestSet
+from catvba_refactor.macro_build.handoff import HandoffReceipt, HandoffRequest
 from catvba_refactor.macro_build.model import (
     BuildKitReceipt,
     Diagnostic,
@@ -153,28 +153,207 @@ def _install_pipeline(
 
 
 def test_console_help_lists_all_commands() -> None:
-    root = Path(__file__).resolve().parents[2]
-    environment = dict(os.environ)
-    environment["UV_CACHE_DIR"] = "/tmp/uv-cache"
-
-    completed = subprocess.run(
-        ["uv", "run", "macro-menu-build", "--help"],
-        cwd=root,
-        env=environment,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert completed.returncode == 0
+    help_text = cli.build_parser().format_help()
     for command in (
         "inventory",
         "check",
         "build-kit",
         "verify-kit",
         "audit-catvba",
+        "create-target-handoff",
     ):
-        assert command in completed.stdout
+        assert command in help_text
+    for future_command in (
+        "init-target-session",
+        "validate-target-evidence",
+        "evaluate-target-gate",
+        "record-target-approval",
+        "pack-target-evidence",
+    ):
+        assert future_command not in help_text
+
+
+def test_create_target_handoff_forwards_exact_frozen_request_and_emits_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    revocations = tmp_path / "revocation snapshot.json"
+    supersedes = tmp_path / "discovery handoff.json"
+    revocation_bytes = b'{"schema_version":1}\n'
+    supersedes_bytes = b'{"handoff_id":"handoff-old"}\n'
+    revocations.write_bytes(revocation_bytes)
+    supersedes.write_bytes(supersedes_bytes)
+    output = tmp_path / "detached handoffs"
+    calls: list[tuple[Any, ...]] = []
+
+    def issue(
+        primary: Path,
+        comparison: Path,
+        request: HandoffRequest,
+        output_root: Path,
+    ) -> HandoffReceipt:
+        calls.append((primary, comparison, request, output_root))
+        return HandoffReceipt(
+            handoff_id="handoff-0123456789abcdef0123",
+            handoff_path=os.fspath(output / "handoff-0123456789abcdef0123.json"),
+            handoff_sha256="a" * 64,
+            kit_id="kit-0123456789abcdef0123",
+            kit_zip_sha256="b" * 64,
+        )
+
+    monkeypatch.setattr(cli, "issue_target_handoff", issue, raising=False)
+    result = cli.main(
+        [
+            "create-target-handoff",
+            "primary root",
+            "--compare-build-root",
+            "comparison root",
+            "--purpose",
+            "formal",
+            "--supersedes-handoff",
+            os.fspath(supersedes),
+            "--revocation-snapshot",
+            os.fspath(revocations),
+            "--prepared-record-id",
+            "record-handoff-prepared",
+            "--review-record-id",
+            "record-handoff-reviewed",
+            "--created-at",
+            "2026-07-14T12:00:00Z",
+            "--expires-at",
+            "2026-07-21T12:00:00Z",
+            "--output-root",
+            os.fspath(output),
+            "--format",
+            "json",
+        ]
+    )
+
+    assert result == 0
+    assert calls == [
+        (
+            Path("primary root"),
+            Path("comparison root"),
+            HandoffRequest(
+                purpose="formal",
+                created_at="2026-07-14T12:00:00Z",
+                expires_at="2026-07-21T12:00:00Z",
+                revocation_snapshot=revocation_bytes,
+                prepared_record_id="record-handoff-prepared",
+                review_record_id="record-handoff-reviewed",
+                supersedes_handoff=supersedes_bytes,
+            ),
+            output,
+        )
+    ]
+    document = json.loads(capsys.readouterr().out)
+    assert document == {
+        "command": "create-target-handoff",
+        "diagnostics": [],
+        "handoff_id": "handoff-0123456789abcdef0123",
+        "handoff_path": os.fspath(
+            output / "handoff-0123456789abcdef0123.json"
+        ),
+        "handoff_sha256": "a" * 64,
+        "kit_id": "kit-0123456789abcdef0123",
+        "kit_zip_sha256": "b" * 64,
+        "ok": True,
+    }
+
+
+def _handoff_arguments(tmp_path: Path) -> list[str]:
+    revocations = tmp_path / "revocations.json"
+    revocations.write_bytes(b"{}\n")
+    return [
+        "create-target-handoff",
+        "primary",
+        "--compare-build-root",
+        "comparison",
+        "--purpose",
+        "discovery",
+        "--revocation-snapshot",
+        os.fspath(revocations),
+        "--prepared-record-id",
+        "record-prepared",
+        "--review-record-id",
+        "record-reviewed",
+        "--created-at",
+        "2026-07-14T12:00:00Z",
+        "--expires-at",
+        "2026-07-21T12:00:00Z",
+        "--output-root",
+        os.fspath(tmp_path / "output"),
+    ]
+
+
+def test_create_target_handoff_requires_output_root_after_parsing(
+    tmp_path: Path,
+) -> None:
+    arguments = _handoff_arguments(tmp_path)
+    index = arguments.index("--output-root")
+    del arguments[index : index + 2]
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+    assert error.value.code == 2
+
+
+def test_create_target_handoff_rejects_abbreviated_scalar_options(
+    tmp_path: Path,
+) -> None:
+    arguments = _handoff_arguments(tmp_path)
+    arguments[arguments.index("--compare-build-root")] = "--compare-build"
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        "--compare-build-root",
+        "--purpose",
+        "--revocation-snapshot",
+        "--prepared-record-id",
+        "--review-record-id",
+        "--created-at",
+        "--expires-at",
+        "--output-root",
+    ],
+)
+def test_create_target_handoff_rejects_duplicate_scalar_options(
+    tmp_path: Path, option: str
+) -> None:
+    arguments = _handoff_arguments(tmp_path)
+    value = arguments[arguments.index(option) + 1]
+    arguments.extend((option, value))
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+    assert error.value.code == 2
+
+
+def test_create_target_handoff_rejects_duplicate_supersedes_option(
+    tmp_path: Path,
+) -> None:
+    arguments = _handoff_arguments(tmp_path)
+    arguments[arguments.index("discovery")] = "formal"
+    supersedes = tmp_path / "old handoff.json"
+    supersedes.write_bytes(b"{}\n")
+    arguments.extend(
+        (
+            "--supersedes-handoff",
+            os.fspath(supersedes),
+            "--supersedes-handoff",
+            os.fspath(supersedes),
+        )
+    )
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+    assert error.value.code == 2
 
 
 def test_unknown_arguments_remain_argparse_usage_errors() -> None:

@@ -45,12 +45,14 @@
     "comparison_zip_verifier_report_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
     "prepared_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
     "review_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+    "supersedes_handoff_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/handoff_id"},
     "reference_contract": {"$ref": "#/$defs/reference_contract"}
   },
   "allOf": [
     {
       "if": {"properties": {"purpose": {"const": "discovery"}}},
       "then": {
+        "not": {"required": ["supersedes_handoff_id"]},
         "properties": {
           "reference_contract": {
             "properties": {"status": {"const": "discovery-required"}}
@@ -61,6 +63,7 @@
     {
       "if": {"properties": {"purpose": {"const": "formal"}}},
       "then": {
+        "required": ["supersedes_handoff_id"],
         "properties": {
           "reference_contract": {"properties": {"status": {"const": "approved"}}}
         }

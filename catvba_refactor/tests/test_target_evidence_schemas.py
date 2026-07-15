@@ -442,6 +442,9 @@ def _formal_documents(mode: str) -> dict[str, dict]:
         record["profile_id"] = profile
 
     documents["handoff.json"]["purpose"] = "formal"
+    documents["handoff.json"][
+        "supersedes_handoff_id"
+    ] = "handoff-20260714-discovery"
     documents["handoff.json"]["reference_contract"] = _reference_contract("approved")
     gate_id = "G2" if mode == "g2" else "G3-C"
     documents["gate-receipt.json"].update(
@@ -720,6 +723,7 @@ def test_g2_compile_records_are_all_not_run(schemas) -> None:
 def test_formal_handoff_requires_complete_reference_approval_provenance(schemas) -> None:
     document = copy.deepcopy(_documents()["handoff.json"])
     document["purpose"] = "formal"
+    document["supersedes_handoff_id"] = "handoff-20260714-discovery"
     document["reference_contract"] = _reference_contract("approved")
     assert validate_target_document("handoff.json", document, schemas).ok
 
@@ -857,6 +861,35 @@ def test_review_contract_handoff_requires_all_authenticated_verifier_digests(
     uppercase = copy.deepcopy(canonical)
     uppercase[field] = "A" * 64
     assert not validate_target_document("handoff.json", uppercase, schemas).ok
+
+
+def test_formal_handoff_requires_valid_supersedes_id_and_discovery_forbids_it(
+    schemas,
+) -> None:
+    discovery = _documents()["handoff.json"]
+    assert validate_target_document("handoff.json", discovery, schemas).ok
+
+    formal = copy.deepcopy(discovery)
+    formal["purpose"] = "formal"
+    formal["reference_contract"] = _reference_contract("approved")
+    formal["supersedes_handoff_id"] = "handoff-20260714-discovery"
+    assert validate_target_document("handoff.json", formal, schemas).ok
+
+    missing = copy.deepcopy(formal)
+    del missing["supersedes_handoff_id"]
+    assert not validate_target_document("handoff.json", missing, schemas).ok
+
+    discovery_with_supersedes = copy.deepcopy(discovery)
+    discovery_with_supersedes["supersedes_handoff_id"] = formal[
+        "supersedes_handoff_id"
+    ]
+    assert not validate_target_document(
+        "handoff.json", discovery_with_supersedes, schemas
+    ).ok
+
+    malformed = copy.deepcopy(formal)
+    malformed["supersedes_handoff_id"] = "not-a-handoff"
+    assert not validate_target_document("handoff.json", malformed, schemas).ok
 
 
 def test_review_contract_gate_receipt_uses_exact_public_rule_version(schemas) -> None:
