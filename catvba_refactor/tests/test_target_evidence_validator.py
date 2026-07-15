@@ -1407,6 +1407,10 @@ def test_schema_invalid_reference_sort_fields_return_diagnostics_not_type_errors
             lambda document: document.__setitem__("operator_record_id", []),
         ),
         (
+            "handoff.json",
+            lambda document: document.__setitem__("purpose", []),
+        ),
+        (
             "test-results.json",
             lambda document: document["records"][0].__setitem__(
                 "state_diff_record_id", []

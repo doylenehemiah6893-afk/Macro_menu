@@ -1265,11 +1265,20 @@ def _inspect_snapshot(
     if binding is not None and mode is not None:
         handoff = documents.get("handoff.json")
         if session is not None and type(session.get("started_at")) is str:
-            diagnostics.extend(
-                validate_handoff(
+            try:
+                handoff_report = validate_handoff(
                     kit, handoff, effective_at=session["started_at"]
-                ).diagnostics
-            )
+                )
+            except (TypeError, ValueError):
+                diagnostics.append(
+                    _diagnostic(
+                        "TARGET_EVIDENCE_SCHEMA_INVALID",
+                        "handoff.json",
+                        "invalid handoff value cannot cross the schema boundary",
+                    )
+                )
+            else:
+                diagnostics.extend(handoff_report.diagnostics)
         _time_diagnostics(documents, phase, diagnostics)
         environment = _mapping(documents.get("environment.json"))
         if environment is not None:
