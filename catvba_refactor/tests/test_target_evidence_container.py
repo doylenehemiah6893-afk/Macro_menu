@@ -227,6 +227,32 @@ def test_directory_enforces_limits_before_returning_bytes(
     assert code in _codes(snapshot)
 
 
+def test_directory_entry_limit_stops_before_pinning_excess_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "capture"
+    root.mkdir()
+    _write_tree(root, {"a.txt": b"a", "b.txt": b"b"})
+    monkeypatch.setattr(container, "MAX_EVIDENCE_ENTRIES", 1)
+    original = container.os.open
+    evidence_opens = 0
+
+    def guard_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        nonlocal evidence_opens
+        if isinstance(path, str) and path.endswith(".txt"):
+            evidence_opens += 1
+            if evidence_opens > 1:
+                raise AssertionError("scanner pinned a file beyond the entry limit")
+        return original(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(container.os, "open", guard_open)
+
+    snapshot = read_evidence_container(root, phase=EvidencePhase.CAPTURE)
+
+    assert snapshot.files == ()
+    assert _codes(snapshot) == {"EVIDENCE_ENTRY_LIMIT"}
+
+
 @pytest.mark.parametrize(
     ("archive_bytes", "code"),
     [

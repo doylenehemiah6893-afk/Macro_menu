@@ -41,10 +41,10 @@ _FILE_CREATE_FLAGS = (
 )
 _RENAME_NOREPLACE = 1
 _OS_LINK = os.link
-_OS_LISTDIR = os.listdir
 _OS_MKDIR = os.mkdir
 _OS_OPEN = os.open
 _OS_RMDIR = os.rmdir
+_OS_SCANDIR = os.scandir
 _OS_STAT = os.stat
 _OS_UNLINK = os.unlink
 
@@ -121,7 +121,7 @@ def _require_descriptor_capabilities() -> None:
         _OS_OPEN in os.supports_dir_fd
         and _OS_STAT in os.supports_dir_fd
         and _OS_STAT in os.supports_follow_symlinks
-        and _OS_LISTDIR in os.supports_fd
+        and _OS_SCANDIR in os.supports_fd
     ):
         raise InfrastructureError("EVIDENCE_NOFOLLOW_UNAVAILABLE")
 
@@ -306,10 +306,29 @@ def _scan_directory(
     ]
     files: list[_FileRecord] = []
     diagnostics: list[Diagnostic] = []
+    entry_count = 0
+    limit_reached = False
 
     def visit(record: _DirectoryRecord) -> None:
+        nonlocal entry_count, limit_reached
+        if limit_reached:
+            return
         try:
-            names = sorted(os.listdir(record.fd))
+            names: list[str] = []
+            with os.scandir(record.fd) as entries:
+                for entry in entries:
+                    if entry_count + len(names) >= MAX_EVIDENCE_ENTRIES:
+                        diagnostics.append(
+                            _diagnostic(
+                                "EVIDENCE_ENTRY_LIMIT",
+                                record.path,
+                                "evidence entry count exceeds policy",
+                            )
+                        )
+                        limit_reached = True
+                        return
+                    names.append(entry.name)
+            names.sort()
         except OSError:
             diagnostics.append(
                 _diagnostic(
@@ -320,6 +339,9 @@ def _scan_directory(
             )
             return
         for name in names:
+            if limit_reached:
+                return
+            entry_count += 1
             relative = f"{record.path}/{name}" if record.path else name
             try:
                 observed = os.stat(name, dir_fd=record.fd, follow_symlinks=False)
