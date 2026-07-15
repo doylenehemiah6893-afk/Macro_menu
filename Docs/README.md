@@ -20,6 +20,7 @@
 - [项目结构、所有权与分支规划](PROJECT_STRUCTURE.md)
 - [CATVBA 重构调查与决策记录](CATVBA重构调查与决策记录.md)
 - [R2018 恢复、依赖与安全交付指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
+- [B28 discovery、G2 与 Core-only G3-C 操作手册](runbooks/2026-07-14-catvba-b28-g2-g3-core.md)
 
 ## 已批准规格
 
@@ -28,9 +29,11 @@
 - [Core Runtime MVP](superpowers/specs/2026-07-13-catvba-core-runtime-mvp-design.md)
 - [B28 验证、许可证与交付](superpowers/specs/2026-07-13-catvba-b28-validation-delivery-design.md)
 - [上游 intake 与 fork 同步](superpowers/specs/2026-07-13-catvba-upstream-intake-design.md)
+- [B28 G2/G3 证据工具链](superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md)
 
-用户已于 2026-07-13 书面确认全部五份规格。第一阶段实施计划：
-[离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)。
+用户已书面确认上述规格。实施计划：
+[离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)、
+[B28 G2/G3 证据工具链实施计划](superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md)。
 
 ## 当前许可证模型
 

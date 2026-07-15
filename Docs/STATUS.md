@@ -2,7 +2,7 @@
 
 > 状态：CURRENT
 >
-> 更新日期：2026-07-13
+> 更新日期：2026-07-14
 >
 > 分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 >
@@ -35,11 +35,11 @@
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
-| 设计 | 总架构和四份子规格已于 2026-07-13 获用户书面确认 |
-| 实施计划 | 离线 Build Kit、baseline intake 和 Core Runtime MVP A 环境切片已实施 |
+| 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
+| 实施计划 | 离线 Build Kit、baseline intake、Core Runtime MVP 和 B28 evidence harness 的 A 环境实现已完成 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | 证据提交 `2645033a25e770fe9855b67e05bdefce42bc1c6a`：`uv run pytest -q` 为 589 passed |
-| 当前仓库 CLI | `inventory` 发现 90 个：13 个获批固定 candidate + 77 个 quarantine；`check`/Kit catalog 由 generator 加入 3 个组件后为 16 个 component、2 个 tool |
+| 离线测试 | 历史 Kit 证据提交 `2645033a...` 为 589 passed；evidence harness 提交 `2082419` 为 1306 passed，均非 CATIA 证据 |
+| 当前仓库 CLI | 6 个离线 Build Kit/audit/handoff 命令加 5 个 target evidence 命令；目标 session/receipt/approval/seal 仍需 B28 真实输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
 ## 3. 遗留证据
@@ -57,6 +57,9 @@
 - [B28 验证、许可证与交付](superpowers/specs/2026-07-13-catvba-b28-validation-delivery-design.md)
 - [上游 intake 与 fork 同步](superpowers/specs/2026-07-13-catvba-upstream-intake-design.md)
 - [离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)
+- [B28 G2/G3 证据工具链规格](superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md)
+- [B28 G2/G3 证据工具链实施计划](superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md)
+- [B28 discovery、G2 与 Core-only G3-C 操作手册](runbooks/2026-07-14-catvba-b28-g2-g3-core.md)
 - [项目结构](PROJECT_STRUCTURE.md)
 - [调查与决策台账](CATVBA重构调查与决策记录.md)
 
@@ -153,7 +156,7 @@ Python PASS 或已验证 Kit 推导 CATIA Compile、References、许可证、UI�
 | fixture dirty candidate | exit 3，错误 JSON 写入 stderr；无 Kit/输出目录 | governed tree 漂移失败关闭 |
 | fixture worktree check | exit 0，`formal_eligible=false` | 只作诊断，不产生 Kit |
 | 早期 clone `inventory/check` | exit 0，`formal_eligible=true`，77 个上游组件、零获批 candidate component/tool | accepted baseline 可复现；当时不能升级 G0/G1 |
-| 早期 clone `build-kit` | exit 3，`NO_BUILDABLE_COMPONENTS`；无 Kit/输出目录 | 当时的失败关闭证据，已由第 6 节真实 Core Kit 证据取代 |
+| 早期 clone `build-kit` | source exit 3；无 Kit/输出目录 | 历史失败关闭证据，已由第 6 节真实 Core Kit 证据取代 |
 
 首次 baseline intake 已分别只读查询 fork 与上游 `dev`，两者均指向
 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；严格 record 已提交，本地 `refs/heads/dev` 仅在所有
@@ -163,9 +166,10 @@ Python PASS 或已验证 Kit 推导 CATIA Compile、References、许可证、UI�
 
 ## 8. 当前下一动作
 
-Core Runtime MVP A 环境切片已到 G1。下一步是在受控 B28 空白工程执行 G2/G3：环境声明、
-References 证据、按 import-order 导入、Compile、保存、关闭/重启并回传审计制品。不得在无 CATIA
-的本工作区将这些步骤标记为完成。
+Evidence harness 已在无 CATIA 的 A 环境实现。唯一下一动作是：从当前干净提交构建并双重验证一个新的
+`discovery-required` Kit，签发唯一 discovery handoff，再按 B28 操作手册进入目标机 discovery。只有回传并
+封存真实五点 Reference observation 后，才可在 A 环境批准 formal contract、重建不同的 Kit/handoff 并进入
+G2/G3-C；不得预填未来 Kit/handoff 哈希，也不得在本工作区把这些步骤标记为完成。
 
 ## 9. 外部阻塞
 

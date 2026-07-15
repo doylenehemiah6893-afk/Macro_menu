@@ -984,12 +984,13 @@ git commit -m "feat: expose target evidence workflow"
 - Modify: `catvba_refactor/macro_build/README.md`
 - Modify: `catvba_refactor/schemas/README.md`
 - Modify: `catvba_refactor/tests/README.md`
+- Modify: `Docs/superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md`
 
 **Interfaces:**
 - Produces: one sequential human runbook for discovery, formal G2 and G3-C.
 - Preserves: G2-G7 `BLOCKED`, all target cases `not-run`, `release_eligible=false` until authentic B28 sealed evidence exists.
 
-- [ ] **Step 1: Write the runbook from the approved command contracts**
+- [x] **Step 1: Write the runbook from the approved command contracts**
 
 The runbook must contain these executable phases in order:
 
@@ -1004,11 +1005,11 @@ The runbook must contain these executable phases in order:
 
 Include exact CLI syntax, optional `certutil` SHA commands plus a manual UI recording alternative, operator record naming/redaction, no PowerShell/WSH dependency, no customer names/paths/PN/model data and no Production macro library registration.
 
-- [ ] **Step 2: Correct documentation drift without inventing new evidence**
+- [x] **Step 2: Correct documentation drift without inventing new evidence**
 
 Update `macro_build/README.md` to remove the obsolete “zero candidates/no Kit” statement and list all commands/exits. Update `Docs/发版.md` so existing historical G0/G1 are A-environment PASS while G2+ stay blocked. Update `Docs/STATUS.md` next action to “implement harness → new discovery Kit/handoff → B28 discovery”; add approved spec/plan/runbook links but do not prefill the future Kit/handoff hashes.
 
-- [ ] **Step 3: Run policy/document scans**
+- [x] **Step 3: Run policy/document scans**
 
 ```bash
 rg -n "release_eligible=true|compile_status[=: ]+(pass|passed)|G[2-7].*PASS|CATIA.*已编译通过" README.md Docs catvba_refactor
@@ -1019,14 +1020,17 @@ git diff --check
 
 Expected: only negated/checklist/schema enum text is found in the first scan; no stale current-authority status in the second; no nested Python project files.
 
-- [ ] **Step 4: Verify docs-linked tests and commit**
+- [x] **Step 4: Verify docs-linked tests and commit**
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q \
+UV_NO_SYNC=1 \
+UV_PYTHON=/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+UV_CACHE_DIR=/tmp/uv-cache \
+.venv/bin/python -m pytest -q \
   catvba_refactor/tests/test_project_layout.py \
   catvba_refactor/tests/test_target_evidence_schemas.py \
   catvba_refactor/tests/test_cli.py
-git add Docs/runbooks/2026-07-14-catvba-b28-g2-g3-core.md Docs/README.md Docs/STATUS.md Docs/PROJECT_STRUCTURE.md Docs/发版.md catvba_refactor/README.md catvba_refactor/macro_build/README.md catvba_refactor/schemas/README.md catvba_refactor/tests/README.md
+git add Docs/runbooks/2026-07-14-catvba-b28-g2-g3-core.md Docs/README.md Docs/STATUS.md Docs/PROJECT_STRUCTURE.md Docs/发版.md Docs/superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md catvba_refactor/README.md catvba_refactor/macro_build/README.md catvba_refactor/schemas/README.md catvba_refactor/tests/README.md
 git commit -m "docs: add b28 evidence operator runbook"
 ```
 

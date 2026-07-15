@@ -20,9 +20,9 @@ vba/overrides/         绑定上游基线的 Core Form `.frm/.frx` 完整替代
 vba/shared_contracts/  经批准的小型跨包协议组件（当前无生产 candidate）
 resources/             本地受管资源
 config/                project/components/packages/tools JSON manifests
-schemas/               对应四份严格 JSON Schema
-macro_build/            离线 Python 实现与 CLI
-tests/                  A 环境 pytest 与端到端 fixture
+schemas/               输入 manifest、intake 与 target evidence 严格 JSON Schema
+macro_build/            离线 Python、Build Kit、audit、evidence harness 与 CLI
+tests/                  A 环境 pytest、攻击面与 synthetic 端到端 fixture
 build/                  可再生目录输出，不入 Git
 dist/                   可再生归档，不入 Git
 ```
@@ -38,10 +38,18 @@ uv run macro-menu-build --help
 uv run macro-menu-build inventory --format json
 uv run macro-menu-build check --format json
 uv run macro-menu-build build-kit --format json
+uv run macro-menu-build create-target-handoff --help
+uv run macro-menu-build init-target-session --help
+uv run macro-menu-build validate-target-evidence --help
+uv run macro-menu-build evaluate-target-gate --help
+uv run macro-menu-build record-target-approval --help
+uv run macro-menu-build pack-target-evidence --help
 ```
 
 命令必须从仓库根项目运行。当前固定证据提交 `2645033a` 生成
 `kit-134ecc68d131cdff743b`：16 个 component、2 个 tool，目录/ZIP verifier 均通过，双构建字节一致。
 该 Kit 只包含 Core 源码；`fleet-spa`/`fleet-fta` 是隔离的 package 政策记录，当前 import-order 为空。
 目标机要求至少一项 AB3/HD2/MD2，并额外具备 SPA 和 FTA；这些权益和隔离行为仍待 B28 证据。
-详细哈希、清单、命令和证据上限见 `Docs/STATUS.md`。
+Evidence harness 已可生成/验证 discovery、G2、Core-only G3-C 的 session、Gate receipt、detached approval
+和确定性 sealed directory/ZIP；本地 synthetic E2E 只证明工具链，不证明 CATIA。详细哈希、清单、命令和
+证据上限见 `Docs/STATUS.md`，现场顺序见 `Docs/runbooks/2026-07-14-catvba-b28-g2-g3-core.md`。

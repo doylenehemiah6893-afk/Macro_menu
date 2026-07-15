@@ -2,7 +2,7 @@
 
 > 状态：IMPLEMENTED CORE SOURCE CANDIDATE — 离线工具与首轮 Core 源码绑定已实现；CATIA/目标机测试未运行
 >
-> 更新日期：2026-07-13
+> 更新日期：2026-07-14
 >
 > 适用分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 
@@ -13,8 +13,8 @@
 - `codex/dev-review-report` 是唯一重构写分支；
 - 所有本地 VBA、Python、配置、schema、测试和派生输出进入 `catvba_refactor/`；
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
-- 离线 Python、manifest/schema、CLI 和 pytest 已实现；首轮 Core Runtime 源码已固定为候选输入，但尚未生成或
-  验证 CATVBA，也没有 CATIA/目标机通过证据。
+- 离线 Python、manifest/schema、11 个 CLI 命令、target evidence harness 和 pytest 已实现；首轮 Core Runtime
+  源码已固定为候选输入，但尚未生成或验证 CATVBA，也没有 CATIA/目标机通过证据。
 
 ## 2. 仓库拓扑
 
@@ -44,17 +44,19 @@ Macro_menu/
 │  │  └─ shared_contracts/README.md
 │  ├─ resources/README.md
 │  ├─ config/*.json                   # 四份严格 manifest；13 个 Core component、2 个首轮 tool
-│  ├─ schemas/*.schema.json           # 四份输入 schema + 固定 initial-baseline evidence schema
+│  ├─ schemas/*.schema.json           # 四份输入 schema + intake schema
+│  ├─ schemas/target_evidence/        # discovery/G2/G3-C 严格证据 schema family
 │  ├─ intake/
 │  │  ├─ README.md                    # 首次 no-content baseline 的证据边界
 │  │  └─ records/                     # 经批准的 intake records；当前不创建 baseline record
-│  ├─ macro_build/*.py                # snapshot/inventory/resolver/policy/Kit/audit/CLI
+│  ├─ macro_build/*.py                # snapshot/inventory/resolver/policy/Kit/audit/evidence/CLI
 │  ├─ tests/test_*.py                 # A 环境单元、攻击面和端到端测试
 │  ├─ build/                          # 按需生成、Git ignored
 │  └─ dist/                           # 按需生成、Git ignored
 ├─ Docs/
 │  ├─ STATUS.md
 │  ├─ CATVBA重构调查与决策记录.md
+│  ├─ runbooks/                       # B28 顺序操作、停止和脱敏边界
 │  └─ superpowers/specs/
 ├─ CATIA_V5_SimpleMacroMenu.catvba   # legacy evidence only
 ├─ CAT_menu.catvba                   # legacy evidence only
@@ -142,7 +144,8 @@ QUARANTINE
    staging/verifier、只读 audit、CLI 和端到端 fixture；
 3. 已建立最小 Core Form override、12 个固定模块/类和两个首轮工具，并精确绑定已提交 Git object；
 4. 当前 candidate 仅含 `core.healthcheck` 与 `core.document-summary`，不含 Fleet、Optional 或第二回合审计；
-5. 下一步从固定输入生成并复验仓库 Build Kit；A 环境最高到 G1，不能声称 CATIA Compile；
-6. 在 B28 完成 profile、SPA/FTA、安装和回滚门禁。
+5. 已实现 discovery/G2/G3-C session、validator、Gate、approval、确定性 seal 和 CLI；synthetic E2E 不升级状态；
+6. 下一步从当前提交生成新的 discovery Kit/handoff，在 B28 完成真实 discovery，再顺序进入 G2/G3-C；
+7. 后续仍需三个最小 profile、SPA/FTA、安装和回滚门禁。
 
 离线实现不会创建已验证 CATVBA。B28 与交付工作必须分别按已批准子规格继续。

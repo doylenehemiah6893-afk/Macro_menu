@@ -41,3 +41,6 @@ canonical JSON bytes 的 SHA-256，不写回 manifest 本身。handoff 另外绑
 证据 schema 只保证单份文档的严格形状。跨文件 identity、时间单调性、payload 文件闭合、30-case 与特定
 Kit plan 的逐项相等、Gate 重算和 sealed directory/ZIP 验证由后续语义层执行，schema 通过本身不构成目标机
 事实证明或 Gate 批准。
+
+`approval.schema.json` 为独立历史记录保留 `pending` 语法兼容；normalizer、packer 和 sealed validator 只接受
+最终 `approved|rejected`。`approved` 的 `fail|blocked` 表示批准保存该计算结论，不表示 Gate PASS。
