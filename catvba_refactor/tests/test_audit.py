@@ -7,6 +7,7 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path, PurePath
 from typing import Any
@@ -921,32 +922,102 @@ def test_bounded_process_timeout_is_not_held_open_by_descendant_pipes() -> None:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX detached process-group test")
-def test_bounded_process_timeout_closes_pipes_held_by_detached_descendant() -> None:
-    started = time.monotonic()
-    capture = audit_module._run_bounded_process(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import subprocess,sys,time;"
-                "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'],"
-                "start_new_session=True);"
-                "print(p.pid,flush=True);"
-                "time.sleep(30)"
-            ),
-        ],
-        env={"PATH": os.environ.get("PATH", "")},
-        timeout=0.1,
-    )
-    detached_pid = int(capture.stdout.strip())
+def test_bounded_process_timeout_closes_pipes_held_by_detached_descendant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pid_path = tmp_path / "detached.pid"
+    keepalive_path = tmp_path / "detached.keepalive"
+    keepalive_path.write_bytes(b"")
+    real_popen = subprocess.Popen
+    real_thread = threading.Thread
+    spawned: list[subprocess.Popen[bytes]] = []
+    reader_threads: list[threading.Thread] = []
+    detached_pid: int | None = None
+    timeout_started: float | None = None
+
+    class HandshakePopen(real_popen):  # type: ignore[type-arg]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            spawned.append(self)
+
+        def wait(self, timeout: float | None = None) -> int:
+            nonlocal detached_pid, timeout_started
+            if timeout == 0.1 and detached_pid is None:
+                ready_deadline = time.monotonic() + 3
+                while time.monotonic() < ready_deadline:
+                    try:
+                        detached_pid = int(pid_path.read_text(encoding="ascii"))
+                    except (FileNotFoundError, ValueError):
+                        time.sleep(0.01)
+                        continue
+                    break
+                if detached_pid is None:
+                    audit_module._kill_process_group(self)
+                    try:
+                        super().wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    for pipe in (self.stdout, self.stderr):
+                        if pipe is not None:
+                            pipe.close()
+                    raise AssertionError("detached descendant did not publish its PID")
+                timeout_started = time.monotonic()
+            return super().wait(timeout=timeout)
+
+    def tracked_thread(*args: Any, **kwargs: Any) -> threading.Thread:
+        reader = real_thread(*args, **kwargs)
+        reader_threads.append(reader)
+        return reader
+
+    monkeypatch.setattr(audit_module.subprocess, "Popen", HandshakePopen)
+    monkeypatch.setattr(audit_module.threading, "Thread", tracked_thread)
+    capture: Any = None
+    child_gone = False
     try:
+        capture = audit_module._run_bounded_process(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import pathlib,subprocess,sys,time;"
+                    "p=subprocess.Popen(['/bin/sh','-c',"
+                    "'while [ -e \"$1\" ]; do sleep 0.01; done',"
+                    "'detached-child',sys.argv[2]],"
+                    "start_new_session=True);"
+                    "pathlib.Path(sys.argv[1]).write_text(str(p.pid),encoding='ascii');"
+                    "time.sleep(30)"
+                ),
+                os.fspath(pid_path),
+                os.fspath(keepalive_path),
+            ],
+            env={"PATH": os.environ.get("PATH", "")},
+            timeout=0.1,
+        )
         assert capture.timed_out is True
-        assert time.monotonic() - started < 3
+        assert timeout_started is not None
+        assert time.monotonic() - timeout_started < 3
+        assert len(reader_threads) == 2
+        assert all(not reader.is_alive() for reader in reader_threads)
+        assert len(spawned) == 1
+        assert spawned[0].stdout is not None and spawned[0].stdout.closed
+        assert spawned[0].stderr is not None and spawned[0].stderr.closed
     finally:
-        try:
-            os.killpg(detached_pid, audit_module.signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        keepalive_path.unlink(missing_ok=True)
+        if detached_pid is not None:
+            try:
+                os.killpg(detached_pid, audit_module.signal.SIGKILL)
+            except ProcessLookupError:
+                child_gone = True
+            deadline = time.monotonic() + 3
+            while not child_gone and time.monotonic() < deadline:
+                try:
+                    os.kill(detached_pid, 0)
+                except ProcessLookupError:
+                    child_gone = True
+                else:
+                    time.sleep(0.01)
+    assert detached_pid is not None
+    assert child_gone, f"detached descendant PID {detached_pid} survived cleanup"
 
 
 @pytest.mark.parametrize(
