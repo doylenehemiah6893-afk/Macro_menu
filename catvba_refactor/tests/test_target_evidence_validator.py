@@ -890,6 +890,35 @@ def test_canonical_capture_for_each_mode_is_structurally_valid(mode: str) -> Non
     assert report.payload_members == expected_members
 
 
+def test_directory_and_zip_inputs_have_identical_validation_semantics(
+    tmp_path: Path,
+) -> None:
+    files = _capture_files("discovery")
+    directory = tmp_path / "capture"
+    for path, data in files.items():
+        member = directory / path
+        member.parent.mkdir(parents=True, exist_ok=True)
+        member.write_bytes(data)
+    zip_path = tmp_path / "capture.zip"
+    zip_path.write_bytes(canonical_evidence_zip_bytes(files))
+
+    directory_report = validate_target_evidence(
+        directory,
+        _kit(formal=False),
+        phase=EvidencePhase.CAPTURE,
+        schema_dir=SCHEMA_DIR,
+    )
+    zip_report = validate_target_evidence(
+        zip_path,
+        _kit(formal=False),
+        phase=EvidencePhase.CAPTURE,
+        schema_dir=SCHEMA_DIR,
+    )
+
+    assert directory_report == zip_report
+    assert directory_report.ok
+
+
 @pytest.mark.parametrize("missing", [*ROOT_DOCUMENTS, "handoff.json"])
 def test_capture_requires_every_evidence_document(missing: str) -> None:
     files = _capture_files("discovery")
