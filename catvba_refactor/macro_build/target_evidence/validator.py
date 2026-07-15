@@ -319,7 +319,7 @@ def _file_policy(
                 "G2 evidence forbids a returned CATVBA artifact",
             )
         )
-    if mode in {"discovery", "g2"} and prerequisite:
+    if mode in ("discovery", "g2") and prerequisite:
         diagnostics.append(
             _diagnostic(
                 "TARGET_EVIDENCE_FILE_POLICY",
@@ -409,7 +409,11 @@ def _binding_diagnostics(
     expected_contract = "discovery-required" if mode == "discovery" else "approved"
     mode_valid = (
         (mode == "discovery" and profile == "DISCOVERY")
-        or (mode in {"g2", "g3-c"} and profile in _FORMAL_PROFILES)
+        or (
+            mode in ("g2", "g3-c")
+            and type(profile) is str
+            and profile in _FORMAL_PROFILES
+        )
     )
     if (
         not mode_valid
@@ -659,10 +663,21 @@ def _compile_diagnostics(
     record_ids = [
         item.get("record_id") for item in records if type(item) is dict
     ]
+    witness_ids = {
+        witness_id
+        for item in records
+        if type(item) is dict
+        for witness_id in (
+            item.get("catia_operator_record_id"),
+            item.get("vbe_operator_record_id"),
+        )
+        if type(witness_id) is str
+    }
     if (
         len(record_ids) != len(_COMPILE_POINTS)
         or any(type(record_id) is not str for record_id in record_ids)
         or len(set(record_ids)) != len(record_ids)
+        or bool(set(record_ids) & witness_ids)
     ):
         diagnostics.append(
             _diagnostic(
@@ -745,10 +760,11 @@ def _entitlement_diagnostics(
         "P-HD2": ["HD2"],
         "P-MD2": ["MD2"],
         "P-ALL": ["AB3", "HD2", "MD2"],
-    }.get(profile)
+    }.get(profile) if type(profile) is str else None
     valid = (
         type(baseline) is list
         and bool(baseline)
+        and all(type(item) is str for item in baseline)
         and set(baseline) <= {"AB3", "HD2", "MD2"}
         and document.get("additional_required") == ["SPA", "FTA"]
     )
@@ -797,7 +813,7 @@ def _execution_link_diagnostics(
         if type(record) is dict and type(record.get("record_id")) is str
     }
     link_invalid = False
-    if mode in {"discovery", "g2"} and (
+    if mode in ("discovery", "g2") and (
         state_document is not None
         and (
             state_document.get("overall_status") != "not-run" or bool(state_records)
@@ -810,7 +826,7 @@ def _execution_link_diagnostics(
             continue
         state_id = record.get("state_diff_record_id")
         if state_id is not None:
-            state_record = state_by_id.get(state_id)
+            state_record = state_by_id.get(state_id) if type(state_id) is str else None
             if (
                 state_record is None
                 or state_record.get("case_id") != record.get("case_id")
@@ -851,9 +867,11 @@ def _execution_link_diagnostics(
                     link_invalid = True
 
     referenced_state_ids = {
-        record.get("state_diff_record_id")
+        state_id
         for record in test_records
-        if type(record) is dict and record.get("state_diff_record_id") is not None
+        if type(record) is dict
+        for state_id in (record.get("state_diff_record_id"),)
+        if type(state_id) is str
     }
     if set(state_by_id) != referenced_state_ids:
         link_invalid = True
@@ -1000,7 +1018,9 @@ def _operator_and_record_diagnostics(
     if approval is not None:
         referenced.append(("approval.json#/review_record_id", approval.get("review_record_id")))
     for path, record_id in referenced:
-        if record_id is not None and record_id not in by_id:
+        if record_id is not None and (
+            type(record_id) is not str or record_id not in by_id
+        ):
             invalid = True
             diagnostics.append(
                 _diagnostic(
@@ -1058,7 +1078,7 @@ def _seal_diagnostics(
     if receipt is None or approval is None or completion is None:
         return
     mode = binding.get("session_mode")
-    gate = _MODE_GATE.get(mode)
+    gate = _MODE_GATE.get(mode) if type(mode) is str else None
     receipt_bytes = files.get("gate-receipt.json")
     approval_bytes = files.get("approval.json")
     sums = files.get("SHA256SUMS")
@@ -1366,6 +1386,24 @@ def validate_target_evidence(
             diagnostics=(
                 _diagnostic(
                     "TARGET_EVIDENCE_PHASE_INVALID", "phase", "invalid evidence phase"
+                ),
+            ),
+        )
+    if (
+        type(nesting_depth) is not int
+        or nesting_depth < 0
+        or nesting_depth > 1
+    ):
+        return TargetEvidenceReport(
+            phase=stable_phase,
+            session_id=None,
+            evidence_payload_digest=None,
+            payload_members=(),
+            diagnostics=(
+                _diagnostic(
+                    "TARGET_EVIDENCE_NESTING_DEPTH",
+                    "nesting_depth",
+                    "invalid evidence nesting depth",
                 ),
             ),
         )

@@ -1274,6 +1274,27 @@ def test_compile_checkpoint_record_ids_are_explicit_and_unique() -> None:
     )
 
 
+def test_compile_event_ids_cannot_alias_operator_witness_ids() -> None:
+    files = _executed_g3_files()
+
+    def alias_event_to_witness(document: dict[str, Any]) -> None:
+        document["records"][1]["record_id"] = "record-compile-post-import-vbe"
+
+    files = _replace_json(files, "compile-result.json", alias_event_to_witness)
+    files = _replace_json(
+        files,
+        "artifact-manifest.json",
+        lambda document: document["artifact"].__setitem__(
+            "post_import_compile_record_id", "record-compile-post-import-vbe"
+        ),
+    )
+
+    _assert_invalid(
+        _validate(files, "g3-c"),
+        "TARGET_EVIDENCE_RECORD_LINK",
+    )
+
+
 @pytest.mark.parametrize(
     ("filename", "mutate", "code"),
     [
@@ -1365,6 +1386,40 @@ def test_schema_invalid_reference_sort_fields_return_diagnostics_not_type_errors
             "discovery", status="failed", observations=observations
         ),
         "discovery",
+    )
+
+    _assert_invalid(report, "TARGET_EVIDENCE_SCHEMA_INVALID")
+
+
+@pytest.mark.parametrize(
+    ("filename", "mutate"),
+    [
+        (
+            "session.json",
+            lambda document: document["binding"].__setitem__("session_mode", []),
+        ),
+        (
+            "entitlements.json",
+            lambda document: document.__setitem__("baseline_any_of", [["AB3"]]),
+        ),
+        (
+            "environment.json",
+            lambda document: document.__setitem__("operator_record_id", []),
+        ),
+        (
+            "test-results.json",
+            lambda document: document["records"][0].__setitem__(
+                "state_diff_record_id", []
+            ),
+        ),
+    ],
+)
+def test_other_schema_invalid_types_return_diagnostics_not_type_errors(
+    filename: str, mutate: Callable[[dict[str, Any]], None]
+) -> None:
+    report = _validate(
+        _replace_json(_capture_files("g2"), filename, mutate),
+        "g2",
     )
 
     _assert_invalid(report, "TARGET_EVIDENCE_SCHEMA_INVALID")
@@ -1565,6 +1620,21 @@ def test_g3_snapshot_started_at_depth_one_cannot_add_a_prerequisite_zip() -> Non
         _validate(_capture_files("g3-c"), "g3-c", depth=1),
         "TARGET_EVIDENCE_NESTING_DEPTH",
     )
+
+
+@pytest.mark.parametrize("depth", [-1, 2, True])
+def test_direct_snapshot_rejects_invalid_nesting_depth_arguments(
+    depth: object,
+) -> None:
+    report = validate_target_evidence(
+        _snapshot(_capture_files("discovery")),
+        _kit(formal=False),
+        phase=EvidencePhase.CAPTURE,
+        schema_dir=SCHEMA_DIR,
+        nesting_depth=depth,  # type: ignore[arg-type]
+    )
+
+    _assert_invalid(report, "TARGET_EVIDENCE_NESTING_DEPTH")
 
 
 def test_nested_g2_zip_cannot_contain_another_evidence_zip() -> None:
