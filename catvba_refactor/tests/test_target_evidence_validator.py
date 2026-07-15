@@ -810,9 +810,8 @@ def _sealed_files(mode: str) -> dict[str, bytes]:
         audit_report=None,
     )
     receipt_bytes = canonical_json_bytes(receipt)
-    approval = {
+    approval_body = {
         "schema_version": 1,
-        "approval_id": f"approval-20260714-{mode}",
         "session_id": _binding(mode)["session_id"],
         "session_mode": mode,
         "gate_id": gate_id,
@@ -821,8 +820,15 @@ def _sealed_files(mode: str) -> dict[str, bytes]:
         "approval_scope": "observation" if mode == "discovery" else "gate",
         "approval_status": "approved",
         "reviewer_role": "independent-reviewer",
-        "review_record_id": "record-handoff-reviewed",
+        "review_record_id": f"record-independent-{mode}-review",
         "approved_at": APPROVED,
+    }
+    approval = {
+        "approval_id": (
+            "approval-"
+            + sha256_bytes(canonical_json_bytes(approval_body))[:20]
+        ),
+        **approval_body,
     }
     files["gate-receipt.json"] = receipt_bytes
     files["approval.json"] = canonical_json_bytes(approval)
@@ -1706,6 +1712,78 @@ def test_canonical_sealed_envelope_for_each_mode_is_structurally_valid(mode: str
     assert report.ok
     assert report.evidence_payload_digest == expected_digest
     assert report.payload_members == expected_members
+
+
+@pytest.mark.parametrize(
+    ("mode", "field", "value"),
+    [
+        ("g2", "approval_status", "pending"),
+        ("g2", "review_record_id", "record-compile-blank-project"),
+        ("g3-c", "review_record_id", "record-independent-g2-review"),
+    ],
+    ids=["pending-review", "reused-capture-record", "reused-nested-g2-review"],
+)
+def test_sealed_approval_requires_a_final_independent_review(
+    mode: str, field: str, value: str
+) -> None:
+    sealed = _sealed_files(mode)
+    approval = json.loads(sealed["approval.json"])
+    approval[field] = value
+    approval_body = dict(approval)
+    approval_body.pop("approval_id")
+    approval["approval_id"] = (
+        "approval-"
+        + sha256_bytes(canonical_json_bytes(approval_body))[:20]
+    )
+    receipt_bytes = sealed["gate-receipt.json"]
+    approval_bytes = canonical_json_bytes(approval)
+    capture = {
+        path: data
+        for path, data in sealed.items()
+        if path
+        not in {
+            "gate-receipt.json",
+            "approval.json",
+            "SHA256SUMS",
+            "SESSION_COMPLETE",
+        }
+    }
+    bundle_files = {
+        **capture,
+        "gate-receipt.json": receipt_bytes,
+        "approval.json": approval_bytes,
+    }
+    _, bundle_digest, _ = canonical_payload_manifest(bundle_files)
+    sums = "".join(
+        f"{sha256_bytes(data)}  {path}\n"
+        for path, data in sorted(
+            bundle_files.items(), key=lambda item: item[0].encode("ascii")
+        )
+    ).encode("ascii")
+    _, payload_digest, _ = canonical_payload_manifest(capture)
+    completion = {
+        "schema_version": 1,
+        "session_id": _binding(mode)["session_id"],
+        "sealed_at": approval["approved_at"],
+        "bundle_content_digest": bundle_digest,
+        "evidence_payload_digest": payload_digest,
+        "sha256sums_sha256": sha256_bytes(sums),
+        "gate_receipt_sha256": sha256_bytes(receipt_bytes),
+        "approval_sha256": sha256_bytes(approval_bytes),
+    }
+    candidate = {
+        **bundle_files,
+        "SHA256SUMS": sums,
+        "SESSION_COMPLETE": canonical_json_bytes(completion),
+    }
+
+    report = _validate(candidate, mode, EvidencePhase.SEALED)
+
+    assert not report.ok
+    assert any(
+        item.code == "TARGET_EVIDENCE_HASH_CLOSURE"
+        for item in report.diagnostics
+    )
 
 
 def test_sealed_phase_rejects_an_in_progress_capture() -> None:

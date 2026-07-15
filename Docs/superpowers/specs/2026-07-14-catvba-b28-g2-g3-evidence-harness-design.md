@@ -539,7 +539,8 @@ macro-menu-build pack-target-evidence <capture-dir> \
 - exit code 复用既有分类并为 evidence/gate failure 增加明确代码；
 - 不联网、不启动 CATIA、不修改传入 Kit/capture/receipt/approval；
 - directory/ZIP 两种输入验证语义一致；
-- 所有失败在写输出前 fail-closed，封包使用临时目录后原子 rename。
+- 所有输入失败在写输出前 fail-closed；封包以临时 sibling staging、no-replace 发布、发布后验证和
+  identity-safe rollback 构成一次命令级事务。
 
 `create-target-handoff` 在两个输出根中各要求且只接受一个同 ID 的 completed Kit directory/ZIP/sidecar，
 执行两目录+两 ZIP verifier，并比较 catalog、manifest、Kit ID、ZIP bytes/hash 后才生成 detached handoff。
@@ -558,6 +559,13 @@ detached `gate-receipt.json`，至少绑定 payload digest、Gate ID、规则版
 `observation|gate`、status、复核者 role/record ID 和 UTC。Discovery 只能使用
 `approval_scope=observation`，不得使用 Gate approval。
 
+`review_record_id` 是 Gate receipt 生成后的 detached 独立复核 provenance，不由不可变 capture 的 current
+operator index 解析，也不得复用 capture operator、handoff prepared/review 或 Reference approval record ID；
+复核者 role 不得等于本 session 的 builder/standard-user role。schema 保留 `pending` 以解析独立历史记录，但
+`record-target-approval`、packer 和 sealed closure 只接受已完成复核的 `approved|rejected`。G3 外层复核 ID
+还不得复用嵌套 G2 的 capture/approval provenance。`approved` 的 `fail|blocked` 只表示批准保存该计算结论，
+不表示 Gate PASS。
+
 Gate receipt 还必须绑定 Kit ZIP SHA-256、Kit verifier report digest、audit rule/version 和 canonical audit report
 digest。G3-C 对 returned artifact 必须使用传入 Kit 重跑 `audit-catvba`，以 Kit 内 approved Reference contract、
 source/import/FRX receipts 为期望，并把完整报告摘要纳入 computed outcome；无 returned artifact 时 audit 状态为
@@ -568,8 +576,9 @@ canonical ZIP 形式复制到 capture。G3-C evaluator 必须递归验证该包�
 `computed_outcome=eligible`、`approval_scope=gate`、`approval_status=approved`。G2 与当前 session 的 Kit、
 handoff、environment fingerprint、package 和 profile 必须满足明确的继承规则。嵌套验证具有独立 size、entry、
 compression ratio 和 depth=1 限制。packer 在复制后重新计算所有 digest，任何 detached 文件或 prerequisite
-不匹配都禁止封包。directory prerequisite 与 `output_root` 或最终 session directory 的包含/身份重叠必须在
-写入前通过 canonical no-follow 路径与目录身份检查拒绝，initializer 不得把输出写进或包住前置证据树。
+不匹配都禁止封包。directory capture/prerequisite 的认证快照必须携带当次 pinned scan 的目录身份；其与
+`output_root` 或最终输出的包含/身份重叠必须在写入前通过 canonical no-follow 路径和该快照身份拒绝，不得
+通过重新打开可交换的源路径来建立身份。initializer、approval 和 packer 均不得把输出写进不可变输入树。
 handoff 读取上限为 4 MiB，必须在读取前按文件大小 fail-closed，不得先按通用容器上限读入内存再拒绝。
 
 session mode 与 Gate 参数必须精确对应：`discovery -> DISCOVERY`、`g2 -> G2`、`g3-c -> G3-C`，不允许
@@ -577,6 +586,9 @@ session mode 与 Gate 参数必须精确对应：`discovery -> DISCOVERY`、`g2 
 
 packer 不读取当前时钟：`SESSION_COMPLETE.sealed_at` 取 approval UTC，ZIP 使用固定元数据。相同 capture、
 receipt、approval 和 prerequisite 必须产生 byte-identical sealed directory/ZIP。
+directory 与 ZIP 以 no-replace sibling 形式发布；任一 stage、发布后完整验证或 root identity 复核失败时，
+必须按已发布 inode 回滚本次创建的两个产物且清理临时项。由于两个 sibling 无法通过一次 filesystem rename
+同时出现，外部消费者只可在命令成功返回且 directory/ZIP 均通过 sealed validator 后把它们视为完成 bundle。
 
 ## 10. G2/G3-C 计算规则
 

@@ -95,6 +95,49 @@ def _mapping(value: object) -> Mapping[str, Any] | None:
     return value if isinstance(value, Mapping) else None
 
 
+def _capture_record_ids(
+    documents: Mapping[str, Any],
+    files: Mapping[str, bytes] | None = None,
+) -> frozenset[str]:
+    """Collect record provenance from immutable capture documents only."""
+    record_ids: set[str] = set()
+
+    def visit(value: object) -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                if (
+                    type(key) is str
+                    and (key == "record_id" or key.endswith("_record_id"))
+                    and type(child) is str
+                ):
+                    record_ids.add(child)
+                visit(child)
+        elif type(value) is list:
+            for child in value:
+                visit(child)
+
+    for path in _JSON_DOCUMENTS:
+        if path in documents:
+            visit(documents[path])
+    nested_data = files.get(NESTED_G2_PATH) if files is not None else None
+    if type(nested_data) is bytes:
+        nested = _read_zip_bytes(
+            nested_data,
+            phase=EvidencePhase.SEALED,
+            nesting_depth=1,
+            container_sha256=sha256_bytes(nested_data),
+        )
+        if not nested.diagnostics:
+            for path, data in nested.files:
+                if path not in {*_JSON_DOCUMENTS, "approval.json"}:
+                    continue
+                try:
+                    visit(parse_canonical_json_bytes(data))
+                except CanonicalJsonError:
+                    continue
+    return frozenset(record_ids)
+
+
 def _sort_text(value: object) -> str:
     return value if type(value) is str else ""
 
@@ -1058,9 +1101,6 @@ def _operator_and_record_diagnostics(
         for index_value, record in enumerate(state_records):
             if type(record) is dict:
                 referenced.append((f"state-diff.json#/records/{index_value}/operator_record_id", record.get("operator_record_id")))
-    approval = _mapping(documents.get("approval.json"))
-    if approval is not None:
-        referenced.append(("approval.json#/review_record_id", approval.get("review_record_id")))
     for path, record_id in referenced:
         if record_id is not None and (
             type(record_id) is not str or record_id not in by_id
@@ -1151,6 +1191,21 @@ def _seal_diagnostics(
         approval.get(field) != value for field, value in approval_identity.items()
     )
     identity_invalid = identity_invalid or approval.get("approval_scope") != expected_scope
+
+    approval_body = dict(approval)
+    approval_body.pop("approval_id", None)
+    expected_approval_id = (
+        "approval-" + sha256_bytes(canonical_json_bytes(approval_body))[:20]
+    )
+    session = _mapping(documents.get("session.json")) or {}
+    identity_invalid = identity_invalid or (
+        approval.get("approval_id") != expected_approval_id
+        or approval.get("approval_status") not in {"approved", "rejected"}
+        or approval.get("review_record_id")
+        in _capture_record_ids(documents, files)
+        or approval.get("reviewer_role")
+        in {session.get("builder_role"), session.get("standard_user_role")}
+    )
 
     bundle_files = {
         path: data

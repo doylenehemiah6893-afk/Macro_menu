@@ -825,51 +825,73 @@ git commit -m "feat: initialize target evidence sessions"
 - Create: `catvba_refactor/macro_build/target_evidence/packer.py`
 - Create: `catvba_refactor/tests/test_target_approval.py`
 - Create: `catvba_refactor/tests/test_target_evidence_packer.py`
+- Modify: `catvba_refactor/macro_build/target_evidence/container.py`
+- Modify: `catvba_refactor/macro_build/target_evidence/session.py`
 - Modify: `catvba_refactor/macro_build/target_evidence/validator.py`
+- Modify: `catvba_refactor/tests/test_target_evidence_container.py`
+- Modify: `catvba_refactor/tests/test_target_evidence_validator.py`
+- Modify: `catvba_refactor/tests/test_target_gate.py`
 
 **Interfaces:**
 - Produces: `record_target_approval(capture, kit, gate_receipt, output_root, *, scope, status, reviewer_role, review_record_id, approved_at, schema_dir) -> Path`.
 - Produces: `pack_target_evidence(capture, kit, gate_receipt, approval, output_root, *, schema_dir) -> TargetEvidenceBundleReceipt`.
 - Completes: final sealed directory/ZIP validation and deterministic SHA/completion closure.
 
-- [ ] **Step 1: Write failing detached approval tests**
+- [x] **Step 1: Write failing detached approval tests**
 
-Assert approval binds exact payload digest, gate receipt SHA-256, scope, status, reviewer role/record ID and UTC. Discovery permits only `scope=observation`; G2/G3-C use `scope=gate`. Recording an approved `fail|blocked` decision is allowed and means “approved record of this outcome,” not PASS. Reject payload/receipt drift, unknown scope/status, self-review record reuse and current capture mutation.
+Assert approval binds exact payload digest, gate receipt SHA-256, scope, status, reviewer role/record ID and UTC. Discovery permits only `scope=observation`; G2/G3-C use `scope=gate`. Recording an approved `fail|blocked` decision is allowed and means “approved record of this outcome,” not PASS. The normalization API accepts only final `approved|rejected`; schema-only `pending` remains historical compatibility and cannot be packed. The detached review ID must be fresh relative to capture, handoff and Reference approval provenance. Reject payload/receipt drift, unknown scope/status, self-review record reuse and current capture mutation.
 
-- [ ] **Step 2: Write failing pack/seal tests**
+- [x] **Step 2: Write failing pack/seal tests**
 
 Assert packer accepts structurally valid eligible/fail/blocked captures, but only after receipt and approval validate. It copies the capture, adds receipt/approval, builds ASCII LF `SHA256SUMS` over every regular file except sums/completion, and writes canonical `SESSION_COMPLETE` binding session ID, payload digest, bundle content digest, sums hash, receipt hash, approval hash and `sealed_at=approval UTC`.
 
 Two independent output roots with identical explicit inputs must have equal directory files, ZIP bytes and ZIP SHA-256. Negative tests cover seal input mutation, output collision, sums self-reference, extra file, bad completion, current-clock injection, symlink/hardlink, partial write cleanup and sealed ZIP/directory parity.
 
-- [ ] **Step 3: Verify RED**
+- [x] **Step 3: Verify RED**
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q \
+UV_NO_SYNC=1 \
+UV_PYTHON=/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+UV_CACHE_DIR=/tmp/uv-cache \
+.venv/bin/python -m pytest -q \
   catvba_refactor/tests/test_target_approval.py \
   catvba_refactor/tests/test_target_evidence_packer.py
 ```
 
 Expected: FAIL during import.
 
-- [ ] **Step 4: Implement approval normalization**
+- [x] **Step 4: Implement approval normalization**
 
 Revalidate capture and Gate receipt from authenticated bytes immediately before writing. `record_target_approval` never chooses scope/status or fabricates a reviewer; it only canonicalizes the explicit independent review record.
 
-- [ ] **Step 5: Implement packer and final validator**
+- [x] **Step 5: Implement packer and final validator**
 
-Validate all inputs before output, build the sealed file map in memory, generate deterministic sums/completion/ZIP, publish atomically, then call full sealed validator on both directory and ZIP with the same Kit. If either final validation fails, do not publish a completed bundle.
+Validate all inputs before output, build the sealed file map in memory, generate deterministic sums/completion/ZIP, publish staged directory/ZIP siblings with no-replace semantics, then call the full sealed validator on both with the same Kit. If either final validation fails, roll back only this invocation's inode identities and do not return a completed bundle.
 
-- [ ] **Step 6: Verify GREEN and commit**
+- [x] **Step 6: Verify GREEN and commit**
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q \
+UV_NO_SYNC=1 \
+UV_PYTHON=/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+UV_CACHE_DIR=/tmp/uv-cache \
+.venv/bin/python -m pytest -q \
   catvba_refactor/tests/test_target_approval.py \
   catvba_refactor/tests/test_target_evidence_packer.py \
   catvba_refactor/tests/test_target_evidence_validator.py \
   catvba_refactor/tests/test_target_gate.py
 git diff --check
-git add catvba_refactor/macro_build/target_evidence/approval.py catvba_refactor/macro_build/target_evidence/packer.py catvba_refactor/macro_build/target_evidence/validator.py catvba_refactor/tests/test_target_approval.py catvba_refactor/tests/test_target_evidence_packer.py
+git add Docs/superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md \
+  Docs/superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md \
+  catvba_refactor/macro_build/target_evidence/approval.py \
+  catvba_refactor/macro_build/target_evidence/packer.py \
+  catvba_refactor/macro_build/target_evidence/container.py \
+  catvba_refactor/macro_build/target_evidence/session.py \
+  catvba_refactor/macro_build/target_evidence/validator.py \
+  catvba_refactor/tests/test_target_approval.py \
+  catvba_refactor/tests/test_target_evidence_packer.py \
+  catvba_refactor/tests/test_target_evidence_container.py \
+  catvba_refactor/tests/test_target_evidence_validator.py \
+  catvba_refactor/tests/test_target_gate.py
 git commit -m "feat: approve and seal target evidence"
 ```
 

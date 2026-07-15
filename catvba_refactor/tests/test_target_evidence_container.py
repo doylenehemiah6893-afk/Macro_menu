@@ -682,6 +682,62 @@ def test_publish_rolls_back_zip_when_directory_no_replace_loses_race(
     assert list(tmp_path.iterdir()) == []
 
 
+def test_publish_removes_its_zip_when_a_foreign_directory_wins_the_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def lose_to_foreign_directory(
+        root_fd: int, _source: str, destination: str
+    ) -> None:
+        os.mkdir(destination, dir_fd=root_fd)
+        raise FileExistsError("foreign directory won publication race")
+
+    monkeypatch.setattr(
+        container, "_rename_directory_noreplace", lose_to_foreign_directory
+    )
+
+    with pytest.raises(EvidenceError, match="EVIDENCE_OUTPUT_CONFLICT"):
+        publish_evidence_artifacts(
+            FILES, bundle_name="bundle", output_root=tmp_path
+        )
+
+    assert [path.name for path in tmp_path.iterdir()] == ["bundle"]
+    assert list((tmp_path / "bundle").iterdir()) == []
+    assert not (tmp_path / "bundle.zip").exists()
+
+
+@pytest.mark.parametrize("completed_operation", ["link", "rename"])
+def test_publish_rolls_back_when_a_completed_publish_operation_reports_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    completed_operation: str,
+) -> None:
+    if completed_operation == "link":
+        original = container.os.link
+
+        def complete_then_fail(*args: object, **kwargs: object) -> None:
+            original(*args, **kwargs)
+            raise OSError(errno.EIO, "injected post-link failure")
+
+        monkeypatch.setattr(container.os, "link", complete_then_fail)
+    else:
+        original = container._rename_directory_noreplace
+
+        def complete_then_fail(*args: object, **kwargs: object) -> None:
+            original(*args, **kwargs)
+            raise OSError(errno.EIO, "injected post-rename failure")
+
+        monkeypatch.setattr(
+            container, "_rename_directory_noreplace", complete_then_fail
+        )
+
+    with pytest.raises(InfrastructureError):
+        publish_evidence_artifacts(
+            FILES, bundle_name="bundle", output_root=tmp_path
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_publish_rejects_existing_hardlinked_zip(tmp_path: Path) -> None:
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
@@ -744,6 +800,23 @@ def test_publish_rechecks_root_after_final_path_validation(
         )
 
     assert list(attacker.iterdir()) == []
+
+
+def test_publish_rolls_back_both_outputs_when_final_revalidation_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        container, "_existing_outputs_match", lambda *_args, **_kwargs: False
+    )
+
+    with pytest.raises(
+        InfrastructureError, match="EVIDENCE_OUTPUT_REVALIDATION_FAILED"
+    ):
+        publish_evidence_artifacts(
+            FILES, bundle_name="bundle", output_root=tmp_path
+        )
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_publish_rejects_invalid_nested_zip_before_writing(

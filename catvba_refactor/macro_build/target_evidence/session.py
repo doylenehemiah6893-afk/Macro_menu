@@ -240,6 +240,7 @@ def _g3_prerequisite(
     dict[str, Any],
     dict[str, Any],
     tuple[str, ...] | None,
+    tuple[tuple[int, int], ...] | None,
 ]:
     snapshot = read_evidence_container(
         prerequisite,
@@ -297,6 +298,7 @@ def _g3_prerequisite(
         nested_session,
         nested_environment,
         snapshot.directories if snapshot.container_sha256 is None else None,
+        snapshot.directory_identities if snapshot.container_sha256 is None else None,
     )
 
 
@@ -333,43 +335,48 @@ def _reject_prerequisite_output_overlap(
     prerequisite_directories: tuple[str, ...],
     output_root: os.PathLike[str] | str,
     directory_name: str,
+    *,
+    prerequisite_identities: tuple[tuple[int, int], ...] | None = None,
+    invalid_code: str = "TARGET_SESSION_PREREQUISITE_INVALID",
+    overlap_code: str = "TARGET_SESSION_PREREQUISITE_OUTPUT_OVERLAP",
 ) -> None:
     try:
         absolute_prerequisite = _container._absolute_path(prerequisite)
         absolute_output = _container._absolute_path(output_root)
     except _container._ContainerFault as fault:
-        raise _error("TARGET_SESSION_PREREQUISITE_INVALID", fault.code) from fault
+        raise _error(invalid_code, fault.code) from fault
     final_output = os.path.join(absolute_output, directory_name)
     if _same_or_descendant(
         absolute_output, absolute_prerequisite
     ) or _same_or_descendant(absolute_prerequisite, final_output):
-        raise _error("TARGET_SESSION_PREREQUISITE_OUTPUT_OVERLAP")
+        raise _error(overlap_code)
 
-    source_identities: set[tuple[int, int]] = set()
-    source_paths = (
-        absolute_prerequisite,
-        *(
-            os.path.join(absolute_prerequisite, *relative.split("/"))
-            for relative in prerequisite_directories
-        ),
-    )
-    for source_path in source_paths:
-        try:
-            descriptor, _absolute, signature = _container._open_directory_path(
-                source_path
-            )
-        except _container._ContainerFault as fault:
-            raise _error("TARGET_SESSION_PREREQUISITE_INVALID", fault.code) from fault
-        try:
-            source_identities.add((signature[0], signature[1]))
-        finally:
-            os.close(descriptor)
+    source_identities = set(prerequisite_identities or ())
+    if not source_identities:
+        source_paths = (
+            absolute_prerequisite,
+            *(
+                os.path.join(absolute_prerequisite, *relative.split("/"))
+                for relative in prerequisite_directories
+            ),
+        )
+        for source_path in source_paths:
+            try:
+                descriptor, _absolute, signature = _container._open_directory_path(
+                    source_path
+                )
+            except _container._ContainerFault as fault:
+                raise _error(invalid_code, fault.code) from fault
+            try:
+                source_identities.add((signature[0], signature[1]))
+            finally:
+                os.close(descriptor)
 
     for candidate in (absolute_output, final_output):
         if source_identities.intersection(
             _existing_directory_identities(candidate)
         ):
-            raise _error("TARGET_SESSION_PREREQUISITE_OUTPUT_OVERLAP")
+            raise _error(overlap_code)
 
 
 def _publish_directory(
@@ -503,12 +510,14 @@ def init_target_session(
     inherited_environment: dict[str, Any] | None = None
     prerequisite_bytes: bytes | None = None
     prerequisite_directories: tuple[str, ...] | None = None
+    prerequisite_identities: tuple[tuple[int, int], ...] | None = None
     if prerequisite_evidence is not None:
         (
             prerequisite_bytes,
             inherited_session,
             inherited_environment,
             prerequisite_directories,
+            prerequisite_identities,
         ) = _g3_prerequisite(
             prerequisite_evidence,
             kit,
@@ -663,6 +672,7 @@ def init_target_session(
             prerequisite_directories,
             output_root,
             directory_name,
+            prerequisite_identities=prerequisite_identities,
         )
     session_directory = _publish_directory(
         files,

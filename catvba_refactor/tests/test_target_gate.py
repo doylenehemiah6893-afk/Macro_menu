@@ -209,9 +209,8 @@ def _seal_with_receipt(
 ) -> dict[str, bytes]:
     receipt = json.loads(receipt_bytes)
     files = dict(capture)
-    approval = {
+    approval_body = {
         "schema_version": 1,
-        "approval_id": f"approval-{receipt['session_id']}",
         "session_id": receipt["session_id"],
         "session_mode": receipt["session_mode"],
         "gate_id": receipt["gate_id"],
@@ -222,8 +221,15 @@ def _seal_with_receipt(
         ),
         "approval_status": approval_status,
         "reviewer_role": "independent-reviewer",
-        "review_record_id": "record-handoff-reviewed",
+        "review_record_id": "record-independent-evidence-review",
         "approved_at": evidence.APPROVED,
+    }
+    approval = {
+        "approval_id": (
+            "approval-"
+            + sha256_bytes(canonical_json_bytes(approval_body))[:20]
+        ),
+        **approval_body,
     }
     files["gate-receipt.json"] = receipt_bytes
     files["approval.json"] = canonical_json_bytes(approval)
@@ -772,15 +778,26 @@ def test_g3_blocks_a_nonapproved_g2_prerequisite(
         lambda *_args, **_kwargs: _clean_audit(files),
     )
 
-    evaluation = evaluate_target_gate(
-        evidence._snapshot(files),
-        evidence._kit(formal=True),
-        tmp_path / "g3-receipt",
-        gate_id=GateId.G3_C,
-        schema_dir=evidence.SCHEMA_DIR,
-    )
-
-    assert evaluation.computed_outcome is ComputedOutcome.BLOCKED
+    output = tmp_path / "g3-receipt"
+    if approval_status == "pending":
+        with pytest.raises(EvidenceError, match="TARGET_EVIDENCE_INVALID"):
+            evaluate_target_gate(
+                evidence._snapshot(files),
+                evidence._kit(formal=True),
+                output,
+                gate_id=GateId.G3_C,
+                schema_dir=evidence.SCHEMA_DIR,
+            )
+        assert not output.exists()
+    else:
+        evaluation = evaluate_target_gate(
+            evidence._snapshot(files),
+            evidence._kit(formal=True),
+            output,
+            gate_id=GateId.G3_C,
+            schema_dir=evidence.SCHEMA_DIR,
+        )
+        assert evaluation.computed_outcome is ComputedOutcome.BLOCKED
 
 
 def test_sealed_validator_recomputes_and_rejects_a_lying_gate_receipt() -> None:

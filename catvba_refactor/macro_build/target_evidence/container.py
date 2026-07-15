@@ -9,7 +9,7 @@ import zipfile
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 
 from ..canonical import canonical_json_bytes, sha256_bytes
 from ..errors import EvidenceError, InfrastructureError
@@ -56,6 +56,7 @@ class EvidenceContainerSnapshot:
     directories: tuple[str, ...]
     container_sha256: str | None
     diagnostics: tuple[Diagnostic, ...]
+    directory_identities: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -721,6 +722,10 @@ def _read_directory(
             directories=expected_directories,
             container_sha256=None,
             diagnostics=(),
+            directory_identities=tuple(
+                (record.signature[0], record.signature[1])
+                for record in directory_records
+            ),
         )
     except OSError as error:
         return _snapshot_failure(
@@ -1436,6 +1441,7 @@ def publish_evidence_artifacts(
     *,
     bundle_name: str,
     output_root: os.PathLike[str] | str,
+    _post_publish: Callable[[Path, Path], None] | None = None,
 ) -> tuple[Path, Path, str]:
     _require_publication_capabilities()
     _validate_bundle_name(bundle_name)
@@ -1466,6 +1472,8 @@ def publish_evidence_artifacts(
     staged_zip = False
     published_directory = False
     published_zip = False
+    published_directory_identity: tuple[int, int] | None = None
+    published_zip_identity: tuple[int, int] | None = None
     primary: BaseException | None = None
     try:
         directory_kind = _entry_kind(root_fd, directory_name)
@@ -1479,9 +1487,21 @@ def publish_evidence_artifacts(
                 )
                 and _rewalk_identity_matches(absolute_root, root_signature)
             ):
+                existing_directory = Path(absolute_root) / directory_name
+                existing_zip = Path(absolute_root) / zip_name
+                if _post_publish is not None:
+                    _post_publish(existing_directory, existing_zip)
+                    if not _existing_outputs_match(
+                        absolute_root, bundle_name, items, zip_bytes
+                    ) or not _rewalk_identity_matches(
+                        absolute_root, root_signature
+                    ):
+                        raise InfrastructureError(
+                            "EVIDENCE_OUTPUT_REVALIDATION_FAILED"
+                        )
                 return (
-                    Path(absolute_root) / directory_name,
-                    Path(absolute_root) / zip_name,
+                    existing_directory,
+                    existing_zip,
                     zip_digest,
                 )
             raise EvidenceError("EVIDENCE_OUTPUT_CONFLICT")
@@ -1490,6 +1510,17 @@ def publish_evidence_artifacts(
         staged_directory = True
         _stage_file(root_fd, temp_zip, zip_bytes)
         staged_zip = True
+        staged_directory_stat = os.stat(
+            temp_directory, dir_fd=root_fd, follow_symlinks=False
+        )
+        staged_zip_stat = os.stat(
+            temp_zip, dir_fd=root_fd, follow_symlinks=False
+        )
+        published_directory_identity = (
+            staged_directory_stat.st_dev,
+            staged_directory_stat.st_ino,
+        )
+        published_zip_identity = (staged_zip_stat.st_dev, staged_zip_stat.st_ino)
         if not _rewalk_identity_matches(absolute_root, root_signature):
             raise InfrastructureError("EVIDENCE_OUTPUT_ROOT_RACE")
 
@@ -1517,9 +1548,19 @@ def publish_evidence_artifacts(
             raise InfrastructureError("EVIDENCE_OUTPUT_REVALIDATION_FAILED")
         if not _rewalk_identity_matches(absolute_root, root_signature):
             raise InfrastructureError("EVIDENCE_OUTPUT_ROOT_RACE")
+        published_directory_path = Path(absolute_root) / directory_name
+        published_zip_path = Path(absolute_root) / zip_name
+        if _post_publish is not None:
+            _post_publish(published_directory_path, published_zip_path)
+            if not _existing_outputs_match(
+                absolute_root, bundle_name, items, zip_bytes
+            ) or not _rewalk_identity_matches(
+                absolute_root, root_signature
+            ):
+                raise InfrastructureError("EVIDENCE_OUTPUT_REVALIDATION_FAILED")
         return (
-            Path(absolute_root) / directory_name,
-            Path(absolute_root) / zip_name,
+            published_directory_path,
+            published_zip_path,
             zip_digest,
         )
     except BaseException as error:
@@ -1532,22 +1573,65 @@ def publish_evidence_artifacts(
         else:
             failure = error
         primary = failure
-        if published_zip and not published_directory:
+        if (
+            published_directory_identity is not None
+            or published_zip_identity is not None
+        ):
+            rollback_error: OSError | None = None
             try:
-                temporary_stat = os.stat(
-                    temp_zip, dir_fd=root_fd, follow_symlinks=False
+                destination_directory = os.stat(
+                    directory_name,
+                    dir_fd=root_fd,
+                    follow_symlinks=False,
                 )
+            except FileNotFoundError:
+                destination_directory = None
+            except OSError as error:
+                rollback_error = error
+                destination_directory = None
+            if destination_directory is not None:
+                if (
+                    destination_directory.st_dev,
+                    destination_directory.st_ino,
+                ) == published_directory_identity:
+                    try:
+                        _remove_tree_at(root_fd, directory_name)
+                        published_directory = False
+                    except OSError as error:
+                        rollback_error = rollback_error or error
+                elif published_directory:
+                    rollback_error = rollback_error or OSError(
+                        errno.ESTALE,
+                        "published directory identity changed",
+                    )
+            try:
                 destination_stat = os.stat(
                     zip_name, dir_fd=root_fd, follow_symlinks=False
                 )
-                if (temporary_stat.st_dev, temporary_stat.st_ino) != (
+            except FileNotFoundError:
+                destination_stat = None
+            except OSError as error:
+                rollback_error = rollback_error or error
+                destination_stat = None
+            if destination_stat is not None:
+                if (
                     destination_stat.st_dev,
                     destination_stat.st_ino,
-                ):
-                    raise OSError(errno.ESTALE, "published ZIP identity changed")
-                os.unlink(zip_name, dir_fd=root_fd)
-                published_zip = False
-            except OSError as rollback_error:
+                ) == published_zip_identity:
+                    try:
+                        os.unlink(zip_name, dir_fd=root_fd)
+                        published_zip = False
+                    except OSError as error:
+                        rollback_error = rollback_error or error
+                elif published_zip:
+                    rollback_error = rollback_error or OSError(
+                        errno.ESTALE, "published ZIP identity changed"
+                    )
+            try:
+                os.fsync(root_fd)
+            except OSError as error:
+                rollback_error = rollback_error or error
+            if rollback_error is not None:
                 failure = InfrastructureError("EVIDENCE_TEMP_CLEANUP_FAILED")
                 primary = failure
                 raise failure from rollback_error
