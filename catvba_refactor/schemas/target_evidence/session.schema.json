@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/session.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "binding",
+    "capture_status",
+    "anonymous_host_id",
+    "vm_lineage_id",
+    "snapshot_id",
+    "builder_role",
+    "standard_user_role",
+    "started_at",
+    "ended_at",
+    "production_macro_library_touched",
+    "supersedes_session_id",
+    "notes_record_id"
+  ],
+  "properties": {
+    "binding": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"
+    },
+    "capture_status": {"enum": ["in-progress", "complete"]},
+    "anonymous_host_id": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"
+    },
+    "vm_lineage_id": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"
+    },
+    "snapshot_id": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"
+    },
+    "builder_role": {"enum": ["isolated-builder"]},
+    "standard_user_role": {"enum": ["isolated-standard-user"]},
+    "started_at": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"
+    },
+    "ended_at": {
+      "oneOf": [
+        {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
+        {"type": "null"}
+      ]
+    },
+    "production_macro_library_touched": {"const": false},
+    "supersedes_session_id": {
+      "oneOf": [
+        {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/session_id"},
+        {"type": "null"}
+      ]
+    },
+    "notes_record_id": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"
+    }
+  }
+}

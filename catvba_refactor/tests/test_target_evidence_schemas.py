@@ -1,0 +1,671 @@
+import copy
+import json
+from dataclasses import FrozenInstanceError, fields
+from pathlib import Path
+
+import pytest
+
+from catvba_refactor.macro_build.model import Diagnostic
+from catvba_refactor.macro_build.target_evidence.model import (
+    ComputedOutcome,
+    EvidencePhase,
+    GateEvaluation,
+    GateId,
+    PayloadMember,
+    SessionMode,
+    TargetEvidenceBundleReceipt,
+    TargetEvidenceReport,
+    TargetSessionReceipt,
+)
+from catvba_refactor.macro_build.target_evidence.schemas import (
+    load_target_evidence_schemas,
+    validate_target_document,
+)
+
+
+SCHEMA_DIR = Path(__file__).parents[1] / "schemas" / "target_evidence"
+SHA = "a" * 64
+SHA_B = "b" * 64
+GIT = "c" * 40
+UTC = "2026-07-14T12:00:00Z"
+UTC_LATER = "2026-07-14T12:01:00Z"
+
+
+def _binding(mode: str = "discovery", profile: str = "DISCOVERY") -> dict:
+    return {
+        "schema_version": 1,
+        "session_id": "session-20260714-001",
+        "session_mode": mode,
+        "package_id": "core",
+        "profile_id": profile,
+        "kit_id": "kit-0123456789abcdef0123",
+        "catalog_sha256": SHA,
+        "manifest_sha256": SHA_B,
+        "manifest_digest": SHA,
+        "work_commit": GIT,
+        "work_tree": SHA_B,
+        "handoff_id": "handoff-20260714-001",
+        "target": "CATIA R2018/VBA7 64",
+    }
+
+
+def _not_run_test(case_id: str) -> dict:
+    return {
+        "case_id": case_id,
+        "case_definition_sha256": SHA,
+        "profile_id": "DISCOVERY",
+        "package_id": "core",
+        "tool_id": "core.healthcheck",
+        "execution_point": "not-run",
+        "compile_record_id": None,
+        "status": "not-run",
+        "expected_result_code": 0,
+        "expected_state": None,
+        "observed_result_code": None,
+        "observed_state": None,
+        "started_at": None,
+        "ended_at": None,
+        "operator_record_id": None,
+        "state_diff_record_id": None,
+        "failure_classification": None,
+    }
+
+
+def _reference_point(point: str) -> dict:
+    return {
+        "point": point,
+        "status": "not-run",
+        "observations": [],
+        "operator_record_id": None,
+    }
+
+
+def _compile_record(point: str) -> dict:
+    return {
+        "point": point,
+        "status": "not-run",
+        "started_at": None,
+        "ended_at": None,
+        "catia_operator_record_id": None,
+        "vbe_operator_record_id": None,
+        "error_stage": None,
+        "error_module": None,
+        "redacted_error_summary": None,
+    }
+
+
+def _reference_contract(status: str = "discovery-required") -> dict:
+    contract = {
+        "status": status,
+        "contract_id": "reference-contract-core",
+        "contract_version": 1,
+        "contract_body_digest": SHA,
+        "reference_definitions": [],
+        "observations": None,
+        "transitions": None,
+        "path_policy": {
+            "allowed_root_kinds": ["catia-install"],
+            "allow_user_paths": False,
+        },
+        "approval": None,
+    }
+    if status == "approved":
+        contract["observations"] = {
+            point: []
+            for point in (
+                "blank-project",
+                "post-form-import",
+                "post-all-import",
+                "post-save",
+                "post-restart",
+            )
+        }
+        contract["transitions"] = [
+            {
+                "from": source,
+                "to": target,
+                "added": [],
+                "removed": [],
+            }
+            for source, target in zip(
+                (
+                    "blank-project",
+                    "post-form-import",
+                    "post-all-import",
+                    "post-save",
+                ),
+                (
+                    "post-form-import",
+                    "post-all-import",
+                    "post-save",
+                    "post-restart",
+                ),
+                strict=True,
+            )
+        ]
+        contract["approval"] = {
+            "reference_approval_record_id": "record-reference-approval",
+            "reviewer_role": "independent-reviewer",
+            "approved_at": UTC,
+            "discovery_session_id": "session-20260714-000",
+            "discovery_bundle_sha256": SHA,
+            "discovery_gate_receipt_sha256": SHA_B,
+            "observation_approval_sha256": SHA,
+            "approved_contract_body_digest": SHA,
+        }
+    return contract
+
+
+def _documents() -> dict[str, dict]:
+    binding = _binding()
+    test_cases = [
+        _not_run_test("context.core.healthcheck.none")
+    ] + [_not_run_test(f"reserved.case.{index:02d}") for index in range(1, 30)]
+    return {
+        "common.schema.json": binding,
+        "session.json": {
+            "binding": binding,
+            "capture_status": "complete",
+            "anonymous_host_id": "host-ab12cd34",
+            "vm_lineage_id": "vm-lineage-ab12cd34",
+            "snapshot_id": "snapshot-clean-b28",
+            "builder_role": "isolated-builder",
+            "standard_user_role": "isolated-standard-user",
+            "started_at": UTC,
+            "ended_at": UTC_LATER,
+            "production_macro_library_touched": False,
+            "supersedes_session_id": None,
+            "notes_record_id": None,
+        },
+        "environment.json": {
+            "binding": binding,
+            "windows": {
+                "edition": "Enterprise",
+                "build": "17763",
+                "patch": "KB5039217",
+            },
+            "catia": {
+                "release": "V5-6R2018",
+                "revision": "R28",
+                "build": "B28",
+                "ga": True,
+                "service_pack": "SP6",
+                "hotfix": "HF12",
+            },
+            "catia_environment": {
+                "anonymous_id": "catia-env-ab12cd34",
+                "install_root": {
+                    "root_kind": "catia-install",
+                    "basename": "B28",
+                    "relative_path": None,
+                    "redacted_display": "<CATIA_INSTALL>/B28",
+                    "normalized_path_sha256": SHA,
+                },
+            },
+            "vba": {
+                "ds_vba_version": "7.1",
+                "vbe_version": "7.1",
+                "vba7": True,
+                "win64": True,
+            },
+            "dsls": {
+                "client_anonymous_id": "dsls-client-ab12cd34",
+                "server_anonymous_id": "dsls-server-ab12cd34",
+                "connection_mode": "network",
+            },
+            "security": {
+                "office_state": "not-installed",
+                "network_state": "isolated",
+                "powershell_state": "disabled",
+                "wsh_state": "disabled",
+            },
+            "accounts_isolated": True,
+            "pollution_scan": {
+                "b30": "absent",
+                "x86": "absent",
+                "vba6": "absent",
+                "syswow64": "absent",
+                "temp_com": "absent",
+                "user_com": "absent",
+            },
+            "reference_contract_body_digest": SHA,
+            "environment_fingerprint": SHA_B,
+            "operator_record_id": "record-environment-001",
+        },
+        "entitlements.json": {
+            "binding": binding,
+            "configuration_product": {
+                "status": "observed",
+                "operator_record_id": "record-entitlement-product",
+            },
+            "reference_visibility": {
+                "status": "observed",
+                "operator_record_id": "record-entitlement-reference",
+            },
+            "api_workbench": {
+                "status": "observed",
+                "operator_record_id": "record-entitlement-api",
+            },
+            "session_checkout": {
+                "status": "observed",
+                "operator_record_id": "record-entitlement-checkout",
+            },
+            "tool_result": {
+                "status": "observed",
+                "operator_record_id": "record-entitlement-tool",
+            },
+            "baseline_any_of": ["AB3"],
+            "additional_required": ["SPA", "FTA"],
+            "set_license_used": False,
+            "scripted_reference_selection_used": False,
+            "licensing_repository_modified": False,
+        },
+        "references.json": {
+            "binding": binding,
+            "reference_contract_body_digest": SHA,
+            "points": [
+                _reference_point(point)
+                for point in (
+                    "blank-project",
+                    "post-form-import",
+                    "post-all-import",
+                    "post-save",
+                    "post-restart",
+                )
+            ],
+        },
+        "compile-result.json": {
+            "binding": binding,
+            "records": [
+                _compile_record(point)
+                for point in (
+                    "blank-project",
+                    "post-import",
+                    "post-save",
+                    "post-restart",
+                )
+            ],
+        },
+        "test-results.json": {
+            "binding": binding,
+            "target_plan_sha256": SHA,
+            "records": test_cases,
+        },
+        "state-diff.json": {
+            "binding": binding,
+            "overall_status": "not-run",
+            "records": [],
+        },
+        "artifact-manifest.json": {
+            "binding": binding,
+            "artifact_status": "not-produced",
+            "artifact": None,
+            "release_eligible": False,
+        },
+        "operator-records/index.json": {
+            "binding": binding,
+            "records": [
+                {
+                    "record_id": "record-environment-001",
+                    "category": "environment",
+                    "relative_path": "operator-records/environment-001.txt",
+                    "sha256": SHA,
+                    "captured_at": UTC,
+                    "collector_role": "isolated-builder",
+                    "redaction_status": "two-person-text",
+                }
+            ],
+        },
+        "handoff.json": {
+            "schema_version": 1,
+            "handoff_id": "handoff-20260714-001",
+            "purpose": "discovery",
+            "created_at": UTC,
+            "expires_at": "2026-07-21T12:00:00Z",
+            "revocation_status": "active",
+            "kit_id": "kit-0123456789abcdef0123",
+            "catalog_sha256": SHA,
+            "manifest_sha256": SHA_B,
+            "manifest_digest": SHA,
+            "zip_sha256": SHA_B,
+            "zip_sidecar_sha256": SHA,
+            "work_commit": GIT,
+            "work_tree": SHA_B,
+            "work_branch": "codex/dev-review-report",
+            "upstream_cutoff": GIT,
+            "fork_dev_cutoff": GIT,
+            "package_id": "core",
+            "target": "CATIA R2018/VBA7 64",
+            "compile_status": "not-run",
+            "release_eligible": False,
+            "generation_command": "macro-menu-build create-target-handoff",
+            "verifier_results": {"directory": "passed", "zip": "passed"},
+            "prepared_record_id": "record-handoff-prepared",
+            "review_record_id": "record-handoff-reviewed",
+            "reference_contract": _reference_contract(),
+        },
+        "payload-manifest.json": {
+            "schema_version": 1,
+            "session_id": "session-20260714-001",
+            "members": [
+                {"path": "session.json", "sha256": SHA, "size": 1024},
+                {"path": "environment.json", "sha256": SHA_B, "size": 2048},
+            ],
+            "evidence_payload_digest": SHA,
+        },
+        "gate-receipt.json": {
+            "schema_version": 1,
+            "receipt_id": "gate-receipt-20260714-001",
+            "session_id": "session-20260714-001",
+            "session_mode": "discovery",
+            "gate_id": "DISCOVERY",
+            "kit_id": "kit-0123456789abcdef0123",
+            "kit_zip_sha256": SHA,
+            "kit_verifier_report_digest": SHA_B,
+            "evidence_payload_digest": SHA,
+            "rule_version": 1,
+            "computed_outcome": "blocked",
+            "reason": "discovery-only",
+            "audit_rule_version": 1,
+            "audit_status": "not-run",
+            "audit_report_digest": None,
+            "diagnostics": [],
+            "release_eligible": False,
+        },
+        "approval.json": {
+            "schema_version": 1,
+            "approval_id": "approval-20260714-001",
+            "session_id": "session-20260714-001",
+            "session_mode": "discovery",
+            "gate_id": "DISCOVERY",
+            "evidence_payload_digest": SHA,
+            "gate_receipt_sha256": SHA_B,
+            "approval_scope": "observation",
+            "approval_status": "approved",
+            "reviewer_role": "independent-reviewer",
+            "review_record_id": "record-independent-review",
+            "approved_at": UTC_LATER,
+        },
+        "SESSION_COMPLETE": {
+            "schema_version": 1,
+            "session_id": "session-20260714-001",
+            "sealed_at": UTC_LATER,
+            "bundle_content_digest": SHA,
+            "evidence_payload_digest": SHA_B,
+            "sha256sums_sha256": SHA,
+            "gate_receipt_sha256": SHA_B,
+            "approval_sha256": SHA,
+        },
+    }
+
+
+@pytest.fixture(scope="module")
+def schemas():
+    return load_target_evidence_schemas(SCHEMA_DIR)
+
+
+@pytest.mark.parametrize("filename", sorted(_documents()))
+def test_every_schema_accepts_a_canonical_document(schemas, filename: str) -> None:
+    assert validate_target_document(filename, _documents()[filename], schemas).ok
+
+
+def test_public_model_enums_and_reports_are_frozen_and_dictionary_free() -> None:
+    assert tuple(EvidencePhase) == (EvidencePhase.CAPTURE, EvidencePhase.SEALED)
+    assert [item.value for item in SessionMode] == ["discovery", "g2", "g3-c"]
+    assert [item.value for item in GateId] == ["DISCOVERY", "G2", "G3-C"]
+    assert [item.value for item in ComputedOutcome] == ["eligible", "fail", "blocked"]
+
+    diagnostic = Diagnostic("CODE", "file.json#/field", "message")
+    reports = (
+        PayloadMember("session.json", SHA, 1),
+        TargetEvidenceReport(EvidencePhase.CAPTURE, None, None, (), (diagnostic,)),
+        TargetSessionReceipt(
+            "session-20260714-001", "capture", SessionMode.G2, "kit-id", SHA
+        ),
+        GateEvaluation(
+            GateId.G2,
+            ComputedOutcome.BLOCKED,
+            "not-run",
+            SHA,
+            "gate-receipt.json",
+            SHA_B,
+            (diagnostic,),
+        ),
+        TargetEvidenceBundleReceipt(
+            "session-20260714-001", "sealed", "sealed.zip", SHA, SHA_B, SHA
+        ),
+    )
+    assert not TargetEvidenceReport(EvidencePhase.CAPTURE, None, None, (), ()).diagnostics
+    for report in reports:
+        assert all(not isinstance(getattr(report, item.name), dict) for item in fields(report))
+        with pytest.raises(FrozenInstanceError):
+            report.__setattr__(fields(report)[0].name, None)
+
+
+@pytest.mark.parametrize("filename", sorted(_documents()))
+def test_every_schema_rejects_extra_and_missing_root_fields(schemas, filename: str) -> None:
+    document = copy.deepcopy(_documents()[filename])
+    document["unexpected"] = True
+    assert not validate_target_document(filename, document, schemas).ok
+
+    document = copy.deepcopy(_documents()[filename])
+    document.pop(next(iter(document)))
+    assert not validate_target_document(filename, document, schemas).ok
+
+
+def test_session_binding_rejects_wrong_mode_profile_and_non_utc_time(schemas) -> None:
+    wrong_profile = copy.deepcopy(_documents()["session.json"])
+    wrong_profile["binding"]["profile_id"] = "P-AB3"
+    assert not validate_target_document("session.json", wrong_profile, schemas).ok
+
+    local_time = copy.deepcopy(_documents()["session.json"])
+    local_time["started_at"] = "2026-07-14T05:00:00-07:00"
+    assert not validate_target_document("session.json", local_time, schemas).ok
+
+
+@pytest.mark.parametrize(
+    ("filename", "path", "bad_value"),
+    [
+        ("environment.json", ("environment_fingerprint",), "A" * 64),
+        ("session.json", ("binding", "session_id"), "../../session"),
+        ("handoff.json", ("kit_id",), "kit with spaces"),
+    ],
+)
+def test_digest_and_id_grammars_fail_closed(schemas, filename, path, bad_value) -> None:
+    document = copy.deepcopy(_documents()[filename])
+    target = document
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = bad_value
+    assert not validate_target_document(filename, document, schemas).ok
+
+
+@pytest.mark.parametrize("filename", ["artifact-manifest.json", "handoff.json", "gate-receipt.json"])
+def test_release_eligibility_cannot_be_predeclared(schemas, filename: str) -> None:
+    document = copy.deepcopy(_documents()[filename])
+    document["release_eligible"] = True
+    assert not validate_target_document(filename, document, schemas).ok
+
+
+def test_discovery_cannot_receive_gate_approval_or_formal_gate_receipt(schemas) -> None:
+    approval = copy.deepcopy(_documents()["approval.json"])
+    approval["approval_scope"] = "gate"
+    assert not validate_target_document("approval.json", approval, schemas).ok
+
+    receipt = copy.deepcopy(_documents()["gate-receipt.json"])
+    receipt["gate_id"] = "G2"
+    assert not validate_target_document("gate-receipt.json", receipt, schemas).ok
+
+
+def test_artifact_status_and_file_metadata_must_match(schemas) -> None:
+    document = copy.deepcopy(_documents()["artifact-manifest.json"])
+    document["artifact_status"] = "returned"
+    assert not validate_target_document("artifact-manifest.json", document, schemas).ok
+
+    document["artifact"] = {
+        "relative_path": "returned-catvba/not-core.catvba",
+        "filename": "not-core.catvba",
+        "package_id": "core",
+        "sha256": SHA,
+        "size": 12,
+        "post_import_compile_record_id": "compile-post-import",
+        "post_restart_compile_record_id": "compile-post-restart",
+        "modules_sha256": SHA,
+        "form_frx_sha256": SHA_B,
+        "reference_observation_sha256": SHA,
+        "signature_stream_status": "absent",
+        "kit_source_receipt_sha256": SHA_B,
+        "readonly": True,
+    }
+    assert not validate_target_document("artifact-manifest.json", document, schemas).ok
+
+
+def test_reference_evidence_requires_all_five_ordered_points(schemas) -> None:
+    document = copy.deepcopy(_documents()["references.json"])
+    document["points"].pop()
+    assert not validate_target_document("references.json", document, schemas).ok
+
+    document = copy.deepcopy(_documents()["references.json"])
+    document["points"][0], document["points"][1] = (
+        document["points"][1],
+        document["points"][0],
+    )
+    assert not validate_target_document("references.json", document, schemas).ok
+
+
+@pytest.mark.parametrize("case_count", [29, 31])
+def test_results_require_exactly_thirty_cases(schemas, case_count: int) -> None:
+    document = copy.deepcopy(_documents()["test-results.json"])
+    document["records"] = document["records"][:case_count]
+    if case_count == 31:
+        document["records"].append(_not_run_test("reserved.case.30"))
+    assert len(document["records"]) == case_count
+    assert not validate_target_document("test-results.json", document, schemas).ok
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("observed_result_code", 0),
+        ("observed_state", "clean"),
+        ("compile_record_id", "compile-post-restart"),
+        ("operator_record_id", "record-test-smoke"),
+        ("state_diff_record_id", "state-diff-smoke"),
+        ("started_at", UTC),
+    ],
+)
+def test_not_run_test_records_cannot_retain_observations(schemas, field, value) -> None:
+    document = copy.deepcopy(_documents()["test-results.json"])
+    document["records"][0][field] = value
+    assert not validate_target_document("test-results.json", document, schemas).ok
+
+
+def test_not_run_compile_records_cannot_retain_error_observations(schemas) -> None:
+    document = copy.deepcopy(_documents()["compile-result.json"])
+    document["records"][0]["redacted_error_summary"] = "stale error"
+    assert not validate_target_document("compile-result.json", document, schemas).ok
+
+
+def test_g2_compile_records_are_all_not_run(schemas) -> None:
+    document = copy.deepcopy(_documents()["compile-result.json"])
+    document["binding"] = _binding("g2", "P-AB3")
+    document["records"][0].update(
+        {
+            "status": "passed",
+            "started_at": UTC,
+            "ended_at": UTC_LATER,
+            "catia_operator_record_id": "record-compile-catia",
+            "vbe_operator_record_id": "record-compile-vbe",
+        }
+    )
+    assert not validate_target_document("compile-result.json", document, schemas).ok
+
+
+def test_formal_handoff_requires_complete_reference_approval_provenance(schemas) -> None:
+    document = copy.deepcopy(_documents()["handoff.json"])
+    document["purpose"] = "formal"
+    document["reference_contract"] = _reference_contract("approved")
+    assert validate_target_document("handoff.json", document, schemas).ok
+
+    del document["reference_contract"]["approval"]["discovery_bundle_sha256"]
+    assert not validate_target_document("handoff.json", document, schemas).ok
+
+
+@pytest.mark.parametrize(
+    ("filename", "mutation"),
+    [
+        (
+            "payload-manifest.json",
+            lambda doc: doc["members"].append(
+                {"path": "payload-manifest.json", "sha256": SHA, "size": 1}
+            ),
+        ),
+        (
+            "payload-manifest.json",
+            lambda doc: doc["members"].append(
+                {"path": "SESSION_COMPLETE", "sha256": SHA, "size": 1}
+            ),
+        ),
+        (
+            "SESSION_COMPLETE",
+            lambda doc: doc.update({"session_complete_sha256": SHA}),
+        ),
+    ],
+)
+def test_digest_documents_reject_self_reference(schemas, filename, mutation) -> None:
+    document = copy.deepcopy(_documents()[filename])
+    mutation(document)
+    assert not validate_target_document(filename, document, schemas).ok
+
+
+@pytest.mark.parametrize(
+    ("filename", "mutation"),
+    [
+        ("session.json", lambda doc: doc.update({"username": "alice"})),
+        ("session.json", lambda doc: doc.update({"customer_name": "Acme"})),
+        ("session.json", lambda doc: doc.update({"machine_full_name": "WS-ACME-01"})),
+        (
+            "environment.json",
+            lambda doc: doc["catia_environment"]["install_root"].update(
+                {"redacted_display": "C:\\Users\\alice\\Acme\\B28"}
+            ),
+        ),
+        ("state-diff.json", lambda doc: doc.update({"part_number": "PN-SECRET"})),
+        ("state-diff.json", lambda doc: doc.update({"object_name": "CustomerPart"})),
+        ("state-diff.json", lambda doc: doc.update({"model_name": "SecretModel"})),
+        ("state-diff.json", lambda doc: doc.update({"parameter_name": "SecretParam"})),
+        (
+            "operator-records/index.json",
+            lambda doc: doc["records"][0].update({"redaction_status": "unredacted"}),
+        ),
+    ],
+)
+def test_privacy_and_redaction_fields_are_fail_closed(schemas, filename, mutation) -> None:
+    document = copy.deepcopy(_documents()[filename])
+    mutation(document)
+    assert not validate_target_document(filename, document, schemas).ok
+
+
+def test_validation_diagnostics_use_stable_json_pointers(schemas) -> None:
+    document = copy.deepcopy(_documents()["session.json"])
+    document["binding"]["session_mode"] = "G2"
+    report = validate_target_document("session.json", document, schemas)
+    assert [diagnostic.path for diagnostic in report.diagnostics] == [
+        "session.json#/binding/session_mode"
+    ]
+    assert [diagnostic.code for diagnostic in report.diagnostics] == [
+        "TARGET_EVIDENCE_SCHEMA_INVALID"
+    ]
+
+
+def test_loader_checks_every_draft_2020_12_schema(tmp_path: Path) -> None:
+    copied = tmp_path / "schemas"
+    copied.mkdir()
+    for source in SCHEMA_DIR.glob("*.schema.json"):
+        (copied / source.name).write_bytes(source.read_bytes())
+    bad = json.loads((copied / "common.schema.json").read_text(encoding="utf-8"))
+    bad["type"] = "not-a-json-schema-type"
+    (copied / "common.schema.json").write_text(json.dumps(bad), encoding="utf-8")
+
+    with pytest.raises(Exception, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*common"):
+        load_target_evidence_schemas(copied)

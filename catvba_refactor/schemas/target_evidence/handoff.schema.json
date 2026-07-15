@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/handoff.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "handoff_id", "purpose", "created_at", "expires_at",
+    "revocation_status", "kit_id", "catalog_sha256", "manifest_sha256",
+    "manifest_digest", "zip_sha256", "zip_sidecar_sha256", "work_commit",
+    "work_tree", "work_branch", "upstream_cutoff", "fork_dev_cutoff",
+    "package_id", "target", "compile_status", "release_eligible",
+    "generation_command", "verifier_results", "prepared_record_id",
+    "review_record_id", "reference_contract"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "handoff_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/handoff_id"},
+    "purpose": {"enum": ["discovery", "formal"]},
+    "created_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
+    "expires_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
+    "revocation_status": {"enum": ["active", "revoked"]},
+    "kit_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/kit_id"},
+    "catalog_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "manifest_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "manifest_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "zip_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "zip_sidecar_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "work_commit": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/git_oid"},
+    "work_tree": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/git_oid"},
+    "work_branch": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,126}$"},
+    "upstream_cutoff": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/git_oid"},
+    "fork_dev_cutoff": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/git_oid"},
+    "package_id": {"const": "core"},
+    "target": {"const": "CATIA R2018/VBA7 64"},
+    "compile_status": {"const": "not-run"},
+    "release_eligible": {"const": false},
+    "generation_command": {"type": "string", "minLength": 1, "maxLength": 500},
+    "verifier_results": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory", "zip"],
+      "properties": {
+        "directory": {"const": "passed"},
+        "zip": {"const": "passed"}
+      }
+    },
+    "prepared_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+    "review_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+    "reference_contract": {"$ref": "#/$defs/reference_contract"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"purpose": {"const": "discovery"}}},
+      "then": {
+        "properties": {
+          "reference_contract": {
+            "properties": {"status": {"const": "discovery-required"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"purpose": {"const": "formal"}}},
+      "then": {
+        "properties": {
+          "reference_contract": {"properties": {"status": {"const": "approved"}}}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "path_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_root_kinds", "allow_user_paths"],
+      "properties": {
+        "allowed_root_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["catia-install", "windows-install", "system"]}
+        },
+        "allow_user_paths": {"const": false}
+      }
+    },
+    "reference_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stable_reference_id", "guid", "major", "minor", "allowed_names",
+        "allowed_descriptions", "source_classification", "architecture",
+        "release_provenance", "path_policy"
+      ],
+      "properties": {
+        "stable_reference_id": {"type": "string", "pattern": "^ref\\.[0-9a-f]{32}\\.[0-9]+\\.[0-9]+$"},
+        "guid": {"type": "string", "pattern": "^\\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\\}$"},
+        "major": {"type": "integer", "minimum": 0},
+        "minor": {"type": "integer", "minimum": 0},
+        "allowed_names": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 160}},
+        "allowed_descriptions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 320}},
+        "source_classification": {"enum": ["builtin", "host-default", "package-added", "import-introduced"]},
+        "architecture": {"const": "x64"},
+        "release_provenance": {"const": "B28"},
+        "path_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["root_kind", "allowed_basenames", "allowed_relative_paths", "canonical_path_sha256"],
+          "properties": {
+            "root_kind": {"enum": ["catia-install", "windows-install", "system"]},
+            "allowed_basenames": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9._ -]{1,100}$"}},
+            "allowed_relative_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/portable_path"}},
+            "canonical_path_sha256": {"oneOf": [{"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"}, {"type": "null"}]}
+          }
+        }
+      }
+    },
+    "observation_points": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blank-project", "post-form-import", "post-all-import", "post-save", "post-restart"],
+      "properties": {
+        "blank-project": {"$ref": "#/$defs/stable_id_list"},
+        "post-form-import": {"$ref": "#/$defs/stable_id_list"},
+        "post-all-import": {"$ref": "#/$defs/stable_id_list"},
+        "post-save": {"$ref": "#/$defs/stable_id_list"},
+        "post-restart": {"$ref": "#/$defs/stable_id_list"}
+      }
+    },
+    "stable_id_list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^ref\\.[0-9a-f]{32}\\.[0-9]+\\.[0-9]+$"}
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "added", "removed"],
+      "properties": {
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "added": {"$ref": "#/$defs/stable_id_list"},
+        "removed": {"$ref": "#/$defs/stable_id_list"}
+      }
+    },
+    "transitions": {
+      "type": "array",
+      "prefixItems": [
+        {"$ref": "#/$defs/transition", "properties": {"from": {"const": "blank-project"}, "to": {"const": "post-form-import"}}},
+        {"$ref": "#/$defs/transition", "properties": {"from": {"const": "post-form-import"}, "to": {"const": "post-all-import"}}},
+        {"$ref": "#/$defs/transition", "properties": {"from": {"const": "post-all-import"}, "to": {"const": "post-save"}}},
+        {"$ref": "#/$defs/transition", "properties": {"from": {"const": "post-save"}, "to": {"const": "post-restart"}}}
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "approval_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_approval_record_id", "reviewer_role", "approved_at",
+        "discovery_session_id", "discovery_bundle_sha256",
+        "discovery_gate_receipt_sha256", "observation_approval_sha256",
+        "approved_contract_body_digest"
+      ],
+      "properties": {
+        "reference_approval_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+        "reviewer_role": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+        "approved_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
+        "discovery_session_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/session_id"},
+        "discovery_bundle_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "discovery_gate_receipt_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "observation_approval_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "approved_contract_body_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"}
+      }
+    },
+    "reference_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "contract_id", "contract_version", "contract_body_digest", "reference_definitions", "observations", "transitions", "path_policy", "approval"],
+      "properties": {
+        "status": {"enum": ["discovery-required", "approved"]},
+        "contract_id": {"const": "reference-contract-core"},
+        "contract_version": {"const": 1},
+        "contract_body_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "reference_definitions": {"type": "array", "items": {"$ref": "#/$defs/reference_definition"}},
+        "observations": {"oneOf": [{"$ref": "#/$defs/observation_points"}, {"type": "null"}]},
+        "transitions": {"oneOf": [{"$ref": "#/$defs/transitions"}, {"type": "null"}]},
+        "path_policy": {"$ref": "#/$defs/path_policy"},
+        "approval": {"oneOf": [{"$ref": "#/$defs/approval_provenance"}, {"type": "null"}]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "discovery-required"}}},
+          "then": {"properties": {"observations": {"type": "null"}, "transitions": {"type": "null"}, "approval": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "approved"}}},
+          "then": {"properties": {"observations": {"$ref": "#/$defs/observation_points"}, "transitions": {"$ref": "#/$defs/transitions"}, "approval": {"$ref": "#/$defs/approval_provenance"}}}
+        }
+      ]
+    }
+  }
+}

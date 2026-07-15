@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/entitlements.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "binding",
+    "configuration_product",
+    "reference_visibility",
+    "api_workbench",
+    "session_checkout",
+    "tool_result",
+    "baseline_any_of",
+    "additional_required",
+    "set_license_used",
+    "scripted_reference_selection_used",
+    "licensing_repository_modified"
+  ],
+  "properties": {
+    "binding": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"},
+    "configuration_product": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
+    "reference_visibility": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
+    "api_workbench": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
+    "session_checkout": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
+    "tool_result": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
+    "baseline_any_of": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["AB3", "HD2", "MD2"]}
+    },
+    "additional_required": {
+      "type": "array",
+      "prefixItems": [{"const": "SPA"}, {"const": "FTA"}],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "set_license_used": {"const": false},
+    "scripted_reference_selection_used": {"const": false},
+    "licensing_repository_modified": {"const": false}
+  }
+}
