@@ -37,6 +37,9 @@ from catvba_refactor.macro_build.model import (
     SourceMember,
     ValidationReport,
 )
+from catvba_refactor.macro_build.reference_contract import (
+    reference_contract_body_digest,
+)
 
 
 def _git_blob_oid(data: bytes) -> str:
@@ -163,6 +166,63 @@ def _reference_contract(package_id: str) -> dict[str, Any]:
         "status": "discovery-required",
         "transitions": None,
     }
+
+
+def _approved_reference_contract(relative_path: str) -> dict[str, Any]:
+    stable_id = "ref.000204ef00000000c000000000000046.4.2"
+    points = (
+        "blank-project",
+        "post-form-import",
+        "post-all-import",
+        "post-save",
+        "post-restart",
+    )
+    contract = {
+        "contract_id": "references.core.b28",
+        "contract_version": 1,
+        "status": "approved",
+        "reference_definitions": [
+            {
+                "stable_reference_id": stable_id,
+                "guid": "{000204EF-0000-0000-C000-000000000046}",
+                "major": 4,
+                "minor": 2,
+                "allowed_names": ["VBA"],
+                "allowed_descriptions": ["VBA Object Library"],
+                "source_classification": "host-default",
+                "architecture": "x64",
+                "release_provenance": "B28",
+                "path_policy": {
+                    "root_kind": "system",
+                    "allowed_basenames": ["VBE7.DLL"],
+                    "allowed_relative_paths": [relative_path],
+                    "canonical_path_sha256": None,
+                },
+            }
+        ],
+        "observation_points": {point: [stable_id] for point in points},
+        "transitions": [
+            {"from": source, "to": target, "added": [], "removed": []}
+            for source, target in zip(points[:-1], points[1:], strict=True)
+        ],
+        "path_policy": {
+            "allowed_root_kinds": ["system"],
+            "allow_user_paths": False,
+        },
+    }
+    digest = reference_contract_body_digest(contract)
+    contract["contract_body_digest"] = digest
+    contract["approval"] = {
+        "reference_approval_record_id": "record-reference-approval",
+        "reviewer_role": "independent-reviewer",
+        "approved_at": "2026-07-14T12:00:00Z",
+        "discovery_session_id": "session-20260714-000",
+        "discovery_bundle_sha256": "a" * 64,
+        "discovery_gate_receipt_sha256": "b" * 64,
+        "observation_approval_sha256": "c" * 64,
+        "approved_contract_body_digest": digest,
+    }
+    return contract
 
 
 def _package(
@@ -1404,6 +1464,33 @@ def test_manual_catalog_rejects_noncanonical_or_secret_package_fields(
     catalog, _ = _catalog()
     package = dict(catalog.packages[0])
     package["secret_path"] = invalid
+    bypass = replace(
+        catalog,
+        packages=(package, *catalog.packages[1:]),
+        report=ValidationReport(),
+    )
+
+    with pytest.raises(SourceError, match="CATALOG_RECORD_INVALID"):
+        stage_build_kit(bypass, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "System/VBE@7.DLL",
+        "System/VBE#7.DLL",
+        "System/VBE(7.DLL",
+        "System/VBE7).DLL",
+        "System/VBE+7.DLL",
+    ],
+)
+def test_catalog_boundary_rejects_schema_invalid_approved_reference_paths(
+    tmp_path: Path, relative_path: str
+) -> None:
+    catalog, _ = _catalog()
+    package = dict(catalog.packages[0])
+    package["reference_contract"] = _approved_reference_contract(relative_path)
     bypass = replace(
         catalog,
         packages=(package, *catalog.packages[1:]),

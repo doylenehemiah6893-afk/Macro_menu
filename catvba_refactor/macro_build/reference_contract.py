@@ -30,6 +30,9 @@ _UTC = re.compile(
     r"T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
 )
 _BASENAME = re.compile(r"^[A-Za-z0-9._ -]{1,100}$")
+_RELATIVE_PATH = re.compile(
+    r"^[A-Za-z0-9._ -]+(?:/[A-Za-z0-9._ -]+)*$"
+)
 _ROOT_KINDS = frozenset({"catia-install", "windows-install", "system"})
 _SOURCE_CLASSIFICATIONS = frozenset(
     {"builtin", "host-default", "package-added", "import-introduced"}
@@ -375,7 +378,9 @@ def reference_contract_diagnostics(
                 pattern=_BASENAME,
             )
             and validate_portable_ascii_paths(allowed_basenames).ok
-            and _unique_string_array(allowed_relative_paths)
+            and _unique_string_array(
+                allowed_relative_paths, pattern=_RELATIVE_PATH
+            )
             and all(len(value) <= 240 for value in allowed_relative_paths)
             and validate_portable_ascii_paths(allowed_relative_paths).ok
             and (

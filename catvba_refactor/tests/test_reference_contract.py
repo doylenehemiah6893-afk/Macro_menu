@@ -261,6 +261,11 @@ def test_definition_path_policy_rejects_nonportable_basenames_in_schema_and_sema
         "Libraries/VBE7.DLL.",
         "Libraries/VBE7.DLL ",
         "A" * 241,
+        "Libraries/VBE@7.DLL",
+        "Libraries/VBE#7.DLL",
+        "Libraries/VBE(7.DLL",
+        "Libraries/VBE7).DLL",
+        "Libraries/VBE+7.DLL",
     ],
 )
 def test_definition_path_policy_rejects_nonportable_relative_segments_in_schema_and_semantics(
