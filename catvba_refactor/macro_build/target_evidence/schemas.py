@@ -10,7 +10,8 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from referencing import Registry, Resource
-from referencing.exceptions import Unresolvable
+from referencing.exceptions import CannotDetermineSpecification, Unresolvable
+from referencing.jsonschema import UnknownDialect
 
 from ..errors import ConfigError
 from ..model import Diagnostic, ValidationReport
@@ -101,7 +102,12 @@ def load_target_evidence_schemas(schema_dir: str | Path) -> TargetEvidenceSchema
             Draft202012Validator.check_schema(value)
             _schema_references(value)
             resource = Resource.from_contents(value)
-        except (SchemaError, ValueError) as exc:
+        except (
+            CannotDetermineSpecification,
+            SchemaError,
+            UnknownDialect,
+            ValueError,
+        ) as exc:
             raise ConfigError(
                 f"INVALID_TARGET_EVIDENCE_SCHEMA: {filename}"
             ) from exc

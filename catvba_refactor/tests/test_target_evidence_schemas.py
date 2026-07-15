@@ -1033,3 +1033,24 @@ def test_review_contract_loader_eagerly_rejects_unresolvable_refs(
 
     with pytest.raises(ConfigError, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*session"):
         load_target_evidence_schemas(copied)
+
+
+@pytest.mark.parametrize(
+    "dialect",
+    [None, "https://schemas.catvba.invalid/unknown-dialect"],
+    ids=["missing", "unknown"],
+)
+def test_review_contract_loader_contains_schema_dialect_errors(
+    tmp_path: Path, dialect: str | None
+) -> None:
+    copied = _copy_schema_family(tmp_path)
+    filename = "session.schema.json"
+    schema = json.loads((copied / filename).read_text(encoding="utf-8"))
+    if dialect is None:
+        del schema["$schema"]
+    else:
+        schema["$schema"] = dialect
+    _replace_schema(copied, filename, schema)
+
+    with pytest.raises(ConfigError, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*session"):
+        load_target_evidence_schemas(copied)
