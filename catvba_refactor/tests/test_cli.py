@@ -659,7 +659,14 @@ def test_audit_forwards_package_and_binds_selected_package_in_output(
     assert calls == [
         (Path("returned.catvba"), Path("kit/kit-manifest.json"), "fleet-spa")
     ]
-    assert json.loads(capsys.readouterr().out)["package_id"] == "core"
+    document = json.loads(capsys.readouterr().out)
+    assert document["package_id"] == "core"
+    assert document["reference_verification"] == {
+        "status": "unavailable",
+        "contract_body_digest": None,
+        "observation_sha256": None,
+        "matched_stable_ids": [],
+    }
 
 
 def test_audit_package_without_expected_manifest_is_usage_error() -> None:

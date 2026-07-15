@@ -25,11 +25,21 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
 from oletools.olevba import VBA_Parser, decompress_stream
 
+from .canonical import canonical_json_bytes
 from .encoding import decode_vba
 from .errors import SourceError, VerificationError
 from .kit import _verify_file_map
-from .model import Diagnostic
-from .reference_contract import reference_companion
+from .model import BuildKitInspection, Diagnostic
+from .reference_contract import (
+    approved_reference_set,
+    reference_companion,
+    reference_contract_body_digest,
+    resolved_reference_id,
+)
+from .target_evidence.schemas import (
+    load_target_evidence_schemas,
+    validate_target_document,
+)
 
 
 _MAX_PCODE_CAPTURE = 1024 * 1024
@@ -90,6 +100,14 @@ class PCodeSignal:
 
 
 @dataclass(frozen=True)
+class ReferenceVerification:
+    status: str
+    contract_body_digest: str | None
+    observation_sha256: str | None
+    matched_stable_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class AuditReport:
     file_sha256: str
     streams: tuple[dict[str, str | int], ...]
@@ -98,6 +116,11 @@ class AuditReport:
     pcode: PCodeSignal
     diagnostics: tuple[Diagnostic, ...]
     package_id: str | None = None
+    reference_verification: ReferenceVerification = field(
+        default_factory=lambda: ReferenceVerification(
+            "unavailable", None, None, ()
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -122,6 +145,31 @@ class _Expected:
     hashes: tuple[tuple[str, str], ...] = ()
     source_semantic_hashes: tuple[tuple[str, tuple[str, ...]], ...] = ()
     frx_semantic_hashes: tuple[tuple[str, str], ...] = ()
+    reference_contract: _ExpectedReferenceContract | None = None
+
+
+@dataclass(frozen=True)
+class _ExpectedReferenceDefinition:
+    stable_id: str
+    guid: str
+    major: int
+    minor: int
+    allowed_names: tuple[str, ...]
+    allowed_descriptions: tuple[str, ...]
+    source_classification: str
+    architecture: str
+    release_provenance: str
+    root_kind: str
+    allowed_basenames: tuple[str, ...]
+    allowed_relative_paths: tuple[str, ...]
+    canonical_path_sha256: str | None
+
+
+@dataclass(frozen=True)
+class _ExpectedReferenceContract:
+    body_digest: str
+    definitions: tuple[_ExpectedReferenceDefinition, ...]
+    allowed_root_kinds: tuple[str, ...]
 
 
 class _ExpectedPackageSelectionError(ValueError):
@@ -2136,6 +2184,76 @@ class _ExpectedKitReader:
             raise ValueError("expected Kit root changed during audit")
 
 
+class _ExpectedInspectionReader:
+    """Expose one already-captured BuildKitInspection without reopening it."""
+
+    def __init__(self, inspection: BuildKitInspection) -> None:
+        if type(inspection.files) is not tuple:
+            raise ValueError("expected Kit inspection files are invalid")
+        files: dict[str, bytes] = {}
+        directories: set[str] = set()
+        total = 0
+        for item in inspection.files:
+            if (
+                type(item) is not tuple
+                or len(item) != 2
+                or type(item[0]) is not str
+                or type(item[1]) is not bytes
+                or item[0] in files
+            ):
+                raise ValueError("expected Kit inspection files are invalid")
+            path = PurePosixPath(item[0])
+            if (
+                path.is_absolute()
+                or not path.parts
+                or path.as_posix() != item[0]
+                or "\\" in item[0]
+                or any(part in {"", ".", ".."} for part in path.parts)
+                or len(path.parts) > _MAX_EXPECTED_DEPTH
+            ):
+                raise ValueError("expected Kit inspection path is invalid")
+            files[item[0]] = item[1]
+            total += len(item[1])
+            if (
+                len(files) > _MAX_EXPECTED_ENTRIES
+                or total > _MAX_EXPECTED_TOTAL
+            ):
+                raise ValueError("expected Kit inspection exceeds audit limits")
+            for depth in range(1, len(path.parts)):
+                directories.add(PurePosixPath(*path.parts[:depth]).as_posix())
+        self._files = files
+        self._directories = directories
+        self._root = Path(inspection.kit_id or "invalid-inspection")
+
+    def read_file(self, path: PurePosixPath) -> bytes:
+        try:
+            return self._files[path.as_posix()]
+        except KeyError as error:
+            raise ValueError("expected Kit inspection file is missing") from error
+
+    def read_directory(
+        self, path: PurePosixPath
+    ) -> tuple[tuple[str, bytes], ...]:
+        prefix = path.as_posix() + "/"
+        children: list[tuple[str, bytes]] = []
+        for name, data in self._files.items():
+            if not name.startswith(prefix):
+                continue
+            relative = name[len(prefix) :]
+            if "/" in relative:
+                continue
+            children.append((relative, data))
+        if path.as_posix() not in self._directories:
+            raise ValueError("expected Kit inspection directory is missing")
+        return tuple(sorted(children))
+
+    def snapshot_tree(self) -> tuple[dict[str, bytes], set[str]]:
+        return dict(self._files), set(self._directories)
+
+    def validate(self) -> None:
+        return
+
+
 def _strict_strings(value: Any, field_name: str) -> tuple[str, ...]:
     if type(value) is not list or any(type(item) is not str or not item for item in value):
         raise ValueError(f"{field_name} must be an array of non-empty strings")
@@ -2184,8 +2302,89 @@ def _mapping_expected(value: Mapping[str, Any]) -> _Expected:
     )
 
 
+def _structured_reference_contract(
+    contract: Mapping[str, Any],
+) -> _ExpectedReferenceContract:
+    body_digest = reference_contract_body_digest(contract)
+    if (
+        type(body_digest) is not str
+        or contract.get("contract_body_digest") != body_digest
+    ):
+        raise ValueError("approved Reference contract digest is invalid")
+    approved = approved_reference_set(contract, "post-restart")
+    raw_definitions = contract.get("reference_definitions")
+    raw_global_policy = contract.get("path_policy")
+    if type(raw_definitions) is not list or not isinstance(
+        raw_global_policy, Mapping
+    ):
+        raise ValueError("approved Reference contract is invalid")
+    definitions: dict[str, _ExpectedReferenceDefinition] = {}
+    for value in raw_definitions:
+        if not isinstance(value, Mapping):
+            raise ValueError("approved Reference definition is invalid")
+        stable_id = value.get("stable_reference_id")
+        path_policy = value.get("path_policy")
+        if type(stable_id) is not str or not isinstance(path_policy, Mapping):
+            raise ValueError("approved Reference definition is invalid")
+        if stable_id in definitions:
+            raise ValueError("approved Reference definition is duplicated")
+        guid = value.get("guid")
+        major = value.get("major")
+        minor = value.get("minor")
+        if (
+            type(guid) is not str
+            or type(major) is not int
+            or type(minor) is not int
+            or resolved_reference_id(guid, major, minor) != stable_id
+        ):
+            raise ValueError("approved Reference identity is invalid")
+        canonical_path_sha256 = path_policy.get("canonical_path_sha256")
+        if canonical_path_sha256 is not None and (
+            type(canonical_path_sha256) is not str
+            or _DIGEST.fullmatch(canonical_path_sha256) is None
+        ):
+            raise ValueError("approved Reference path digest is invalid")
+        definitions[stable_id] = _ExpectedReferenceDefinition(
+            stable_id=stable_id,
+            guid=guid,
+            major=major,
+            minor=minor,
+            allowed_names=_strict_strings(
+                value.get("allowed_names"), "allowed_names"
+            ),
+            allowed_descriptions=_strict_strings(
+                value.get("allowed_descriptions"), "allowed_descriptions"
+            ),
+            source_classification=str(value.get("source_classification")),
+            architecture=str(value.get("architecture")),
+            release_provenance=str(value.get("release_provenance")),
+            root_kind=str(path_policy.get("root_kind")),
+            allowed_basenames=_strict_strings(
+                path_policy.get("allowed_basenames"), "allowed_basenames"
+            ),
+            allowed_relative_paths=_strict_strings(
+                path_policy.get("allowed_relative_paths"),
+                "allowed_relative_paths",
+            ),
+            canonical_path_sha256=canonical_path_sha256,
+        )
+    if not approved <= definitions.keys():
+        raise ValueError("approved Reference point names an unknown definition")
+    allowed_root_kinds = _strict_strings(
+        raw_global_policy.get("allowed_root_kinds"), "allowed_root_kinds"
+    )
+    if raw_global_policy.get("allow_user_paths") is not False:
+        raise ValueError("approved Reference global path policy is invalid")
+    return _ExpectedReferenceContract(
+        body_digest=body_digest,
+        definitions=tuple(definitions[value] for value in sorted(approved)),
+        allowed_root_kinds=allowed_root_kinds,
+    )
+
+
 def _kit_expected_snapshot(
-    reader: _ExpectedKitReader, package_id: str | None
+    reader: _ExpectedKitReader | _ExpectedInspectionReader,
+    package_id: str | None,
 ) -> _Expected:
     files, directories = reader.snapshot_tree()
     kit_findings = _verify_file_map(
@@ -2418,6 +2617,9 @@ def _kit_expected_snapshot(
 
     reference_entries = reader.read_directory(PurePosixPath("references"))
     references_by_package: dict[str, tuple[str, ...]] = {}
+    reference_contracts_by_package: dict[
+        str, _ExpectedReferenceContract
+    ] = {}
     reference_packages: set[str] = set()
     for filename, raw in reference_entries:
         entry = PurePosixPath(filename)
@@ -2438,9 +2640,16 @@ def _kit_expected_snapshot(
             or record.get("compile_status") != "not-run"
         ):
             raise ValueError("reference companion header is invalid")
-        references_by_package[entry.stem] = _strict_strings(
+        allowlist = _strict_strings(
             record["reference_allowlist"], "reference_allowlist"
         )
+        if contract.get("status") == "approved":
+            reference_contracts_by_package[entry.stem] = (
+                _structured_reference_contract(contract)
+            )
+            references_by_package[entry.stem] = ()
+        else:
+            references_by_package[entry.stem] = allowlist
     if reference_packages != set(expected_by_package):
         raise ValueError("reference package set is incomplete")
     selected_hashes = {
@@ -2462,10 +2671,15 @@ def _kit_expected_snapshot(
         package_id=selected_package,
         modules=modules_by_package[selected_package],
         frx=tuple(sorted(frx_by_package[selected_package])),
-        references=tuple(sorted(references_by_package[selected_package])),
+        references=(
+            None
+            if selected_package in reference_contracts_by_package
+            else tuple(sorted(references_by_package[selected_package]))
+        ),
         hashes=tuple(sorted(selected_hashes.items())),
         source_semantic_hashes=tuple(sorted(selected_source_hashes.items())),
         frx_semantic_hashes=tuple(sorted(selected_frx_hashes.items())),
+        reference_contract=reference_contracts_by_package.get(selected_package),
     )
 
 
@@ -2480,12 +2694,53 @@ def _kit_expected(
         return expected
 
 
+def _inspection_expected(
+    inspection: BuildKitInspection, *, package_id: str | None
+) -> _Expected:
+    if (
+        type(inspection) is not BuildKitInspection
+        or inspection.report.ok is not True
+        or inspection.report.diagnostics
+    ):
+        raise ValueError("expected Kit inspection is not verified")
+    reader = _ExpectedInspectionReader(inspection)
+    expected = _kit_expected_snapshot(reader, package_id)
+    catalog_bytes = reader.read_file(PurePosixPath("catalog.json"))
+    manifest_bytes = reader.read_file(PurePosixPath("kit-manifest.json"))
+    catalog = _load_json_object(catalog_bytes)
+    manifest = _load_json_object(manifest_bytes)
+    snapshot = catalog.get("snapshot")
+    if not isinstance(snapshot, Mapping):
+        raise ValueError("expected Kit snapshot is invalid")
+    bindings = {
+        "kit_id": manifest.get("kit_id"),
+        "catalog_sha256": hashlib.sha256(catalog_bytes).hexdigest(),
+        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "manifest_digest": manifest.get("manifest_digest"),
+        "upstream_commit": snapshot.get("upstream_commit"),
+        "fork_dev_commit": snapshot.get("fork_dev_commit"),
+        "work_commit": snapshot.get("work_commit"),
+        "work_tree": snapshot.get("work_tree"),
+        "work_branch": snapshot.get("work_branch"),
+    }
+    if any(getattr(inspection, field) != value for field, value in bindings.items()):
+        raise ValueError("expected Kit inspection metadata does not match its files")
+    if (
+        type(inspection.canonical_zip_sha256) is not str
+        or _DIGEST.fullmatch(inspection.canonical_zip_sha256) is None
+    ):
+        raise ValueError("expected Kit inspection ZIP identity is invalid")
+    reader.validate()
+    return expected
+
+
 def _load_expected(
     expected_manifest: Mapping[str, Any] | str | os.PathLike[str] | None,
+    expected_kit: BuildKitInspection | None,
     diagnostics: list[Diagnostic],
     package_id: str | None,
 ) -> _Expected | None:
-    if expected_manifest is None:
+    if expected_manifest is None and expected_kit is None:
         if package_id is not None:
             diagnostics.append(
                 _diag(
@@ -2496,6 +2751,8 @@ def _load_expected(
             )
         return None
     try:
+        if expected_kit is not None:
+            return _inspection_expected(expected_kit, package_id=package_id)
         if isinstance(expected_manifest, Mapping):
             if package_id is not None:
                 raise _ExpectedPackageSelectionError(
@@ -2529,6 +2786,185 @@ def _load_expected(
         return None
 
 
+_REFERENCE_VERSION = re.compile(
+    r"^(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)$"
+)
+_REFERENCE_POINTS = (
+    "blank-project",
+    "post-form-import",
+    "post-all-import",
+    "post-save",
+    "post-restart",
+)
+
+
+def _alias_matches(value: object, allowed: tuple[str, ...]) -> bool:
+    return type(value) is str and unicodedata.normalize(
+        "NFC", value
+    ).casefold() in {
+        unicodedata.normalize("NFC", candidate).casefold()
+        for candidate in allowed
+    }
+
+
+def _match_structured_references(
+    contract: _ExpectedReferenceContract,
+    references: tuple[dict[str, str], ...],
+) -> tuple[bool, tuple[str, ...]]:
+    expected = {item.stable_id: item for item in contract.definitions}
+    matched: list[str] = []
+    valid = len(references) == len(contract.definitions)
+    for reference in references:
+        version = reference.get("version")
+        match = (
+            _REFERENCE_VERSION.fullmatch(version)
+            if type(version) is str
+            else None
+        )
+        guid = reference.get("guid")
+        if match is None or type(guid) is not str:
+            valid = False
+            continue
+        major = int(match.group("major"))
+        minor = int(match.group("minor"))
+        try:
+            stable_id = resolved_reference_id(guid, major, minor)
+        except ValueError:
+            valid = False
+            continue
+        definition = expected.get(stable_id)
+        if (
+            definition is None
+            or definition.guid != guid
+            or definition.major != major
+            or definition.minor != minor
+            or not _alias_matches(
+                reference.get("name"), definition.allowed_names
+            )
+            or not _alias_matches(
+                reference.get("description"),
+                definition.allowed_descriptions,
+            )
+        ):
+            valid = False
+            continue
+        matched.append(stable_id)
+    if len(matched) != len(set(matched)) or set(matched) != set(expected):
+        valid = False
+    return valid, tuple(sorted(set(matched)))
+
+
+def _reference_observation_document(
+    value: Mapping[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        encoded = canonical_json_bytes(dict(value))
+        document = _load_json_object(encoded)
+    except (RecursionError, TypeError, UnicodeError, ValueError):
+        return None, None
+    return document, hashlib.sha256(encoded).hexdigest()
+
+
+def _observation_matches_reference_contract(
+    document: dict[str, Any],
+    contract: _ExpectedReferenceContract,
+    inspection: BuildKitInspection,
+    package_id: str,
+) -> bool:
+    try:
+        schema_root = (
+            Path(__file__).resolve().parents[1]
+            / "schemas"
+            / "target_evidence"
+        )
+        schemas = load_target_evidence_schemas(schema_root)
+        if not validate_target_document(
+            "references.json", document, schemas
+        ).ok:
+            return False
+    except Exception:
+        return False
+    binding = document.get("binding")
+    points = document.get("points")
+    if (
+        not isinstance(binding, Mapping)
+        or type(points) is not list
+        or document.get("reference_contract_body_digest")
+        != contract.body_digest
+        or binding.get("session_mode") != "g3-c"
+        or binding.get("package_id") != package_id
+        or binding.get("target") != "CATIA R2018/VBA7 64"
+        or tuple(point.get("point") for point in points if isinstance(point, Mapping))
+        != _REFERENCE_POINTS
+    ):
+        return False
+    for field in (
+        "kit_id",
+        "catalog_sha256",
+        "manifest_sha256",
+        "manifest_digest",
+        "work_commit",
+        "work_tree",
+    ):
+        if binding.get(field) != getattr(inspection, field):
+            return False
+    post_restart = points[-1]
+    if (
+        not isinstance(post_restart, Mapping)
+        or post_restart.get("status") != "observed"
+        or type(post_restart.get("observations")) is not list
+    ):
+        return False
+    expected = {item.stable_id: item for item in contract.definitions}
+    observations = post_restart["observations"]
+    if len(observations) != len(expected):
+        return False
+    observed_ids: set[str] = set()
+    for observation in observations:
+        if not isinstance(observation, Mapping):
+            return False
+        stable_id = observation.get("stable_reference_id")
+        definition = expected.get(stable_id) if type(stable_id) is str else None
+        if definition is None or stable_id in observed_ids:
+            return False
+        observed_ids.add(stable_id)
+        if (
+            observation.get("guid") != definition.guid
+            or observation.get("major") != definition.major
+            or observation.get("minor") != definition.minor
+            or not _alias_matches(
+                observation.get("name"), definition.allowed_names
+            )
+            or not _alias_matches(
+                observation.get("description"),
+                definition.allowed_descriptions,
+            )
+            or observation.get("source_classification")
+            != definition.source_classification
+            or observation.get("missing") is not False
+            or observation.get("architecture") != definition.architecture
+            or observation.get("release_provenance")
+            != definition.release_provenance
+            or observation.get("path_kind") != definition.root_kind
+            or observation.get("path_kind")
+            not in contract.allowed_root_kinds
+            or observation.get("path_basename")
+            not in definition.allowed_basenames
+            or (
+                definition.allowed_relative_paths
+                and observation.get("relative_path")
+                not in definition.allowed_relative_paths
+            )
+            or (
+                definition.canonical_path_sha256 is not None
+                and observation.get("path_sha256")
+                != definition.canonical_path_sha256
+            )
+        ):
+            return False
+    return observed_ids == set(expected)
+
+
 def _compare_expected(
     expected: _Expected | None,
     file_sha256: str,
@@ -2538,9 +2974,12 @@ def _compare_expected(
     actual_forms: dict[str, str],
     references: tuple[dict[str, str], ...],
     diagnostics: list[Diagnostic],
-) -> None:
+    *,
+    expected_kit: BuildKitInspection | None = None,
+    reference_observation: Mapping[str, Any] | None = None,
+) -> ReferenceVerification:
     if expected is None:
-        return
+        return ReferenceVerification("unavailable", None, None, ())
     if expected.file_sha256 is not None and expected.file_sha256 != file_sha256:
         diagnostics.append(
             _diag(
@@ -2568,7 +3007,67 @@ def _compare_expected(
                 "returned VBA Form identities do not match the expected FRX sidecars",
             )
         )
-    if expected.references is not None:
+    reference_verification = ReferenceVerification(
+        "unavailable",
+        (
+            expected.reference_contract.body_digest
+            if expected.reference_contract is not None
+            else None
+        ),
+        None,
+        (),
+    )
+    if expected.reference_contract is not None:
+        container_matches, matched_ids = _match_structured_references(
+            expected.reference_contract, references
+        )
+        if not container_matches:
+            diagnostics.append(
+                _diag(
+                    "EXPECTED_REFERENCE_MISMATCH",
+                    "references",
+                    "returned VBA references do not match the approved post-restart set",
+                )
+            )
+        observation_document: dict[str, Any] | None = None
+        observation_sha256: str | None = None
+        if reference_observation is not None:
+            observation_document, observation_sha256 = (
+                _reference_observation_document(reference_observation)
+            )
+        observation_matches = (
+            observation_document is not None
+            and expected_kit is not None
+            and expected.package_id is not None
+            and _observation_matches_reference_contract(
+                observation_document,
+                expected.reference_contract,
+                expected_kit,
+                expected.package_id,
+            )
+        )
+        if reference_observation is not None and not observation_matches:
+            diagnostics.append(
+                _diag(
+                    "REFERENCE_OBSERVATION_MISMATCH",
+                    "references.json",
+                    "external post-restart Reference evidence is invalid or cross-bound",
+                )
+            )
+        status = (
+            "verified"
+            if container_matches and observation_matches
+            else "partial"
+            if container_matches
+            else "unavailable"
+        )
+        reference_verification = ReferenceVerification(
+            status,
+            expected.reference_contract.body_digest,
+            observation_sha256,
+            matched_ids,
+        )
+    elif expected.references is not None:
         expected_tokens = tuple(value.casefold() for value in expected.references)
         actual_choices = tuple(
             frozenset(
@@ -2630,7 +3129,6 @@ def _compare_expected(
                     "returned VBA source does not reproduce the canonical expected source",
                 )
             )
-
     frx_expected = dict(expected.frx_semantic_hashes)
     for name, expected_digest in frx_expected.items():
         if actual_forms.get(name) != expected_digest:
@@ -2669,12 +3167,15 @@ def _compare_expected(
                     "returned VBA source does not reproduce the expected source hash",
                 )
             )
+    return reference_verification
 
 
 def _audit_copy(
     readonly_copy: Path,
     initial: _InputSnapshot,
     expected_manifest: Mapping[str, Any] | str | os.PathLike[str] | None,
+    expected_kit: BuildKitInspection | None,
+    reference_observation: Mapping[str, Any] | None,
     package_id: str | None,
 ) -> AuditReport:
     diagnostics: list[Diagnostic] = []
@@ -2701,8 +3202,10 @@ def _audit_copy(
             {},
         )
     pcode = _run_pcode(readonly_copy, diagnostics)
-    expected = _load_expected(expected_manifest, diagnostics, package_id)
-    _compare_expected(
+    expected = _load_expected(
+        expected_manifest, expected_kit, diagnostics, package_id
+    )
+    reference_verification = _compare_expected(
         expected,
         initial.sha256,
         modules,
@@ -2711,6 +3214,8 @@ def _audit_copy(
         actual_forms,
         references,
         diagnostics,
+        expected_kit=expected_kit,
+        reference_observation=reference_observation,
     )
     return AuditReport(
         file_sha256=initial.sha256,
@@ -2720,6 +3225,7 @@ def _audit_copy(
         pcode=pcode,
         diagnostics=_stable_diagnostics(diagnostics),
         package_id=expected.package_id if expected is not None else None,
+        reference_verification=reference_verification,
     )
 
 
@@ -2728,6 +3234,8 @@ def audit_catvba(
     expected_manifest: Mapping[str, Any] | str | os.PathLike[str] | None = None,
     *,
     package_id: str | None = None,
+    expected_kit: BuildKitInspection | None = None,
+    reference_observation: Mapping[str, Any] | None = None,
 ) -> AuditReport:
     """Audit a CATVBA through an immutable local copy.
 
@@ -2735,6 +3243,8 @@ def audit_catvba(
     always diagnostic-only and is never treated as a CATIA compile or runtime
     signal.
     """
+    if expected_manifest is not None and expected_kit is not None:
+        raise ValueError("expected_manifest and expected_kit are mutually exclusive")
     original = Path(path)
     initial = _read_input_snapshot(original)
     result: AuditReport | None = None
@@ -2744,7 +3254,12 @@ def audit_catvba(
             readonly_copy = Path(temporary) / "returned.catvba"
             _write_readonly_copy(readonly_copy, initial.data)
             result = _audit_copy(
-                readonly_copy, initial, expected_manifest, package_id
+                readonly_copy,
+                initial,
+                expected_manifest,
+                expected_kit,
+                reference_observation,
+                package_id,
             )
     except Exception as error:
         failure = error

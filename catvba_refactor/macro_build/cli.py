@@ -446,6 +446,18 @@ def _audit_document(report: AuditReport) -> dict[str, Any]:
         "streams": list(report.streams),
         "modules": list(report.modules),
         "references": list(report.references),
+        "reference_verification": {
+            "status": report.reference_verification.status,
+            "contract_body_digest": (
+                report.reference_verification.contract_body_digest
+            ),
+            "observation_sha256": (
+                report.reference_verification.observation_sha256
+            ),
+            "matched_stable_ids": list(
+                report.reference_verification.matched_stable_ids
+            ),
+        },
         "pcode": {
             "status": report.pcode.status,
             "returncode": report.pcode.returncode,

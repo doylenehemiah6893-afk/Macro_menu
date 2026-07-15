@@ -16,13 +16,22 @@ import pytest
 import olefile
 
 from catvba_refactor.macro_build import audit as audit_module
-from catvba_refactor.macro_build.audit import audit_catvba
+from catvba_refactor.macro_build.audit import (
+    PCodeSignal,
+    ReferenceVerification,
+    audit_catvba,
+)
 from catvba_refactor.macro_build.canonical import canonical_json_bytes
 from catvba_refactor.macro_build.errors import VerificationError
 from catvba_refactor.macro_build.generator import generate_sources
-from catvba_refactor.macro_build.kit import assemble_catalog, stage_build_kit
+from catvba_refactor.macro_build.kit import (
+    assemble_catalog,
+    inspect_build_kit,
+    stage_build_kit,
+)
 from catvba_refactor.macro_build.manifests import ManifestSet
 from catvba_refactor.macro_build.model import (
+    BuildKitInspection,
     Component,
     InputSnapshot,
     Origin,
@@ -31,6 +40,10 @@ from catvba_refactor.macro_build.model import (
     SnapshotMode,
     SourceMember,
     ValidationReport,
+    VerificationReport,
+)
+from catvba_refactor.macro_build.reference_contract import (
+    reference_contract_body_digest,
 )
 
 
@@ -66,9 +79,11 @@ def _stage_audit_kit(
     package_sources: dict[str, list[tuple[str, bytes]]],
     *,
     references: dict[str, list[str]] | None = None,
+    reference_contracts: dict[str, dict[str, Any]] | None = None,
     decisions: dict[tuple[str, str], str | None] | None = None,
 ) -> Path:
     references = references or {}
+    reference_contracts = reference_contracts or {}
     decisions = decisions or {}
     components: list[Component] = []
     for package_id, sources in sorted(package_sources.items()):
@@ -105,14 +120,17 @@ def _stage_audit_kit(
             "reference_allowlist": [
                 _reference_id(value) for value in references.get(package_id, [])
             ],
-            "reference_contract": {
-                "contract_id": f"references.{package_id}.b28",
-                "contract_version": 1,
-                "observation_points": None,
-                "reference_definitions": None,
-                "status": "discovery-required",
-                "transitions": None,
-            },
+            "reference_contract": reference_contracts.get(
+                package_id,
+                {
+                    "contract_id": f"references.{package_id}.b28",
+                    "contract_version": 1,
+                    "observation_points": None,
+                    "reference_definitions": None,
+                    "status": "discovery-required",
+                    "transitions": None,
+                },
+            ),
         }
         for package_id in sorted(package_sources)
     )
@@ -155,6 +173,225 @@ def _stage_audit_kit(
     assert catalog.report.ok
     receipt = stage_build_kit(catalog, tmp_path / "kit-output")
     return Path(receipt.kit_dir) / "kit-manifest.json"
+
+
+def _approved_vba_contract() -> dict[str, Any]:
+    vba_id = "ref.000204ef00000000c000000000000046.4.2"
+    forms_id = "ref.0d452ee1e08f101a852e02608c4d0bb4.2.0"
+    points = (
+        "blank-project",
+        "post-form-import",
+        "post-all-import",
+        "post-save",
+        "post-restart",
+    )
+    contract: dict[str, Any] = {
+        "contract_id": "references.core.b28",
+        "contract_version": 1,
+        "status": "approved",
+        "reference_definitions": [
+            {
+                "stable_reference_id": vba_id,
+                "guid": "{000204EF-0000-0000-C000-000000000046}",
+                "major": 4,
+                "minor": 2,
+                "allowed_names": ["VBA"],
+                "allowed_descriptions": ["VBA Object Library"],
+                "source_classification": "host-default",
+                "architecture": "x64",
+                "release_provenance": "B28",
+                "path_policy": {
+                    "root_kind": "system",
+                    "allowed_basenames": ["VBE7.DLL"],
+                    "allowed_relative_paths": ["VBA/VBE7.DLL"],
+                    "canonical_path_sha256": "e" * 64,
+                },
+            },
+            {
+                "stable_reference_id": forms_id,
+                "guid": "{0D452EE1-E08F-101A-852E-02608C4D0BB4}",
+                "major": 2,
+                "minor": 0,
+                "allowed_names": ["MSForms"],
+                "allowed_descriptions": ["MSForms Object Library"],
+                "source_classification": "import-introduced",
+                "architecture": "x64",
+                "release_provenance": "B28",
+                "path_policy": {
+                    "root_kind": "windows-install",
+                    "allowed_basenames": ["FM20.DLL"],
+                    "allowed_relative_paths": [
+                        "Microsoft Shared/FORMS/FM20.DLL"
+                    ],
+                    "canonical_path_sha256": "f" * 64,
+                },
+            },
+        ],
+        "observation_points": {
+            "blank-project": [vba_id],
+            **{point: [vba_id, forms_id] for point in points[1:]},
+        },
+        "transitions": [
+            {
+                "from": source,
+                "to": target,
+                "added": [forms_id] if source == "blank-project" else [],
+                "removed": [],
+            }
+            for source, target in zip(points[:-1], points[1:], strict=True)
+        ],
+        "path_policy": {
+            "allowed_root_kinds": ["system", "windows-install"],
+            "allow_user_paths": False,
+        },
+    }
+    digest = reference_contract_body_digest(contract)
+    assert digest is not None
+    contract["contract_body_digest"] = digest
+    contract["approval"] = {
+        "reference_approval_record_id": "record-reference-approval",
+        "reviewer_role": "independent-reviewer",
+        "approved_at": "2026-07-14T12:00:00Z",
+        "discovery_session_id": "session-discovery-001",
+        "discovery_bundle_sha256": "a" * 64,
+        "discovery_gate_receipt_sha256": "b" * 64,
+        "observation_approval_sha256": "c" * 64,
+        "approved_contract_body_digest": digest,
+    }
+    return contract
+
+
+def _vba_reference() -> dict[str, str]:
+    return {
+        "name": "VBA",
+        "guid": "{000204EF-0000-0000-C000-000000000046}",
+        "version": "4.2",
+        "description": "VBA Object Library",
+        "libid_sha256": "d" * 64,
+    }
+
+
+def _msforms_reference() -> dict[str, str]:
+    return {
+        "name": "MSForms",
+        "guid": "{0D452EE1-E08F-101A-852E-02608C4D0BB4}",
+        "version": "2.0",
+        "description": "MSForms Object Library",
+        "libid_sha256": "c" * 64,
+    }
+
+
+def _approved_references() -> tuple[dict[str, str], ...]:
+    return (_vba_reference(), _msforms_reference())
+
+
+def _observed_reference(stable_id: str) -> dict[str, Any]:
+    if stable_id.startswith("ref.000204ef"):
+        return {
+            "observation_record_id": "record-reference-vba",
+            "stable_reference_id": stable_id,
+            "name": "VBA",
+            "description": "VBA Object Library",
+            "guid": "{000204EF-0000-0000-C000-000000000046}",
+            "major": 4,
+            "minor": 2,
+            "source_classification": "host-default",
+            "missing": False,
+            "path_kind": "system",
+            "path_basename": "VBE7.DLL",
+            "relative_path": "VBA/VBE7.DLL",
+            "redacted_path": None,
+            "path_sha256": "e" * 64,
+            "architecture": "x64",
+            "release_provenance": "B28",
+            "operator_record_id": "record-reference-vba",
+        }
+    return {
+        "observation_record_id": "record-reference-msforms",
+        "stable_reference_id": stable_id,
+        "name": "MSForms",
+        "description": "MSForms Object Library",
+        "guid": "{0D452EE1-E08F-101A-852E-02608C4D0BB4}",
+        "major": 2,
+        "minor": 0,
+        "source_classification": "import-introduced",
+        "missing": False,
+        "path_kind": "windows-install",
+        "path_basename": "FM20.DLL",
+        "relative_path": "Microsoft Shared/FORMS/FM20.DLL",
+        "redacted_path": None,
+        "path_sha256": "f" * 64,
+        "architecture": "x64",
+        "release_provenance": "B28",
+        "operator_record_id": "record-reference-msforms",
+    }
+
+
+def _reference_observation(inspection: Any, contract: dict[str, Any]) -> dict:
+    binding = {
+        "schema_version": 1,
+        "session_id": "session-g3c-001",
+        "session_mode": "g3-c",
+        "package_id": "core",
+        "profile_id": "P-ALL",
+        "kit_id": inspection.kit_id,
+        "catalog_sha256": inspection.catalog_sha256,
+        "manifest_sha256": inspection.manifest_sha256,
+        "manifest_digest": inspection.manifest_digest,
+        "work_commit": inspection.work_commit,
+        "work_tree": inspection.work_tree,
+        "handoff_id": "handoff-formal-001",
+        "target": "CATIA R2018/VBA7 64",
+    }
+    point_sets = contract["observation_points"]
+    points = [
+        {
+            "point": point,
+            "status": "observed",
+            "observations": [
+                _observed_reference(stable_id)
+                for stable_id in point_sets[point]
+            ],
+            "operator_record_id": f"record-{point}",
+        }
+        for point in (
+            "blank-project",
+            "post-form-import",
+            "post-all-import",
+            "post-save",
+            "post-restart",
+        )
+    ]
+    return {
+        "binding": binding,
+        "reference_contract_body_digest": contract["contract_body_digest"],
+        "points": points,
+    }
+
+
+def _stub_reference_audit(
+    monkeypatch: pytest.MonkeyPatch,
+    references: tuple[dict[str, str], ...],
+) -> None:
+    monkeypatch.setattr(
+        audit_module,
+        "_audit_ole",
+        lambda path, diagnostics: (
+            ({"path": "stub", "size": 1, "sha256": "f" * 64},),
+            references,
+            (),
+        ),
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "_audit_vba",
+        lambda path, forms, diagnostics: ((), {}, {}, {}),
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "_run_pcode",
+        lambda path, diagnostics: PCodeSignal("ok", 0, "a" * 64, "b" * 64),
+    )
 
 
 def _mutated_frx_stream(
@@ -487,6 +724,263 @@ def test_expected_reference_comparison_is_one_to_one() -> None:
     assert "EXPECTED_REFERENCE_MISMATCH" in {
         item.code for item in diagnostics
     }
+
+
+def test_expected_kit_uses_approved_post_restart_not_empty_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract = _approved_vba_contract()
+    manifest = _stage_audit_kit(
+        tmp_path,
+        {
+            "core": [
+                (
+                    "Safe.bas",
+                    b'Attribute VB_Name = "Safe"\r\nOption Explicit\r\n',
+                )
+            ]
+        },
+        references={"core": []},
+        reference_contracts={"core": contract},
+    )
+    inspection = inspect_build_kit(manifest.parent)
+    assert inspection.report.ok
+    returned = tmp_path / "returned.catvba"
+    returned.write_bytes(b"offline stub")
+    _stub_reference_audit(monkeypatch, _approved_references())
+
+    report = audit_catvba(
+        returned,
+        expected_kit=inspection,
+        package_id="core",
+    )
+
+    assert isinstance(report.reference_verification, ReferenceVerification)
+    assert report.reference_verification.status == "partial"
+    assert report.reference_verification.contract_body_digest == (
+        contract["contract_body_digest"]
+    )
+    assert report.reference_verification.observation_sha256 is None
+    assert report.reference_verification.matched_stable_ids == (
+        "ref.000204ef00000000c000000000000046.4.2",
+        "ref.0d452ee1e08f101a852e02608c4d0bb4.2.0",
+    )
+    assert "EXPECTED_REFERENCE_MISMATCH" not in _codes(report)
+
+
+def test_external_reference_observation_upgrades_only_matching_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract = _approved_vba_contract()
+    manifest = _stage_audit_kit(
+        tmp_path,
+        {
+            "core": [
+                (
+                    "Safe.bas",
+                    b'Attribute VB_Name = "Safe"\r\nOption Explicit\r\n',
+                )
+            ]
+        },
+        reference_contracts={"core": contract},
+    )
+    inspection = inspect_build_kit(manifest.parent)
+    observation = _reference_observation(inspection, contract)
+    returned = tmp_path / "returned.catvba"
+    returned.write_bytes(b"offline stub")
+    _stub_reference_audit(monkeypatch, _approved_references())
+
+    report = audit_catvba(
+        returned,
+        expected_kit=inspection,
+        reference_observation=observation,
+        package_id="core",
+    )
+
+    assert report.reference_verification.status == "verified"
+    assert report.reference_verification.observation_sha256 == hashlib.sha256(
+        canonical_json_bytes(observation)
+    ).hexdigest()
+    assert "REFERENCE_OBSERVATION_MISMATCH" not in _codes(report)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("missing", True),
+        ("architecture", "x86"),
+        ("release_provenance", "B30"),
+        ("path_kind", "temp"),
+        ("path_sha256", "f" * 64),
+        ("stable_reference_id", None),
+    ],
+)
+def test_external_reference_pollution_never_verifies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+) -> None:
+    contract = _approved_vba_contract()
+    manifest = _stage_audit_kit(
+        tmp_path,
+        {
+            "core": [
+                (
+                    "Safe.bas",
+                    b'Attribute VB_Name = "Safe"\r\nOption Explicit\r\n',
+                )
+            ]
+        },
+        reference_contracts={"core": contract},
+    )
+    inspection = inspect_build_kit(manifest.parent)
+    observation = _reference_observation(inspection, contract)
+    observation["points"][-1]["observations"][0][field] = value
+    returned = tmp_path / "returned.catvba"
+    returned.write_bytes(b"offline stub")
+    _stub_reference_audit(monkeypatch, _approved_references())
+
+    report = audit_catvba(
+        returned,
+        expected_kit=inspection,
+        reference_observation=observation,
+        package_id="core",
+    )
+
+    assert report.reference_verification.status != "verified"
+    assert "REFERENCE_OBSERVATION_MISMATCH" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    ("location", "field", "value"),
+    [
+        ("document", "reference_contract_body_digest", "f" * 64),
+        ("binding", "kit_id", "kit-" + "f" * 20),
+        ("binding", "work_tree", "f" * 40),
+        ("binding", "session_mode", "g2"),
+        ("post-restart", "status", "failed"),
+    ],
+)
+def test_external_reference_cross_binding_never_verifies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    location: str,
+    field: str,
+    value: object,
+) -> None:
+    contract = _approved_vba_contract()
+    manifest = _stage_audit_kit(
+        tmp_path,
+        {
+            "core": [
+                (
+                    "Safe.bas",
+                    b'Attribute VB_Name = "Safe"\r\nOption Explicit\r\n',
+                )
+            ]
+        },
+        reference_contracts={"core": contract},
+    )
+    inspection = inspect_build_kit(manifest.parent)
+    observation = _reference_observation(inspection, contract)
+    if location == "document":
+        observation[field] = value
+    elif location == "binding":
+        observation["binding"][field] = value
+    else:
+        observation["points"][-1][field] = value
+    returned = tmp_path / "returned.catvba"
+    returned.write_bytes(b"offline stub")
+    _stub_reference_audit(monkeypatch, _approved_references())
+
+    report = audit_catvba(
+        returned,
+        expected_kit=inspection,
+        reference_observation=observation,
+        package_id="core",
+    )
+
+    assert report.reference_verification.status == "partial"
+    assert "REFERENCE_OBSERVATION_MISMATCH" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "references",
+    [
+        (
+            _vba_reference(),
+            _msforms_reference(),
+            {
+                **_vba_reference(),
+                "guid": "{00000000-0000-0000-0000-000000000001}",
+            },
+        ),
+        (
+            {**_vba_reference(), "version": "4.3"},
+            _msforms_reference(),
+        ),
+        (
+            {**_vba_reference(), "name": "Unapproved VBA Alias"},
+            _msforms_reference(),
+        ),
+    ],
+)
+def test_structured_container_references_preserve_pollution_and_versions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    references: tuple[dict[str, str], ...],
+) -> None:
+    contract = _approved_vba_contract()
+    manifest = _stage_audit_kit(
+        tmp_path,
+        {
+            "core": [
+                (
+                    "Safe.bas",
+                    b'Attribute VB_Name = "Safe"\r\nOption Explicit\r\n',
+                )
+            ]
+        },
+        reference_contracts={"core": contract},
+    )
+    inspection = inspect_build_kit(manifest.parent)
+    returned = tmp_path / "returned.catvba"
+    returned.write_bytes(b"offline stub")
+    _stub_reference_audit(monkeypatch, references)
+
+    report = audit_catvba(returned, expected_kit=inspection, package_id="core")
+
+    assert report.reference_verification.status != "verified"
+    assert "EXPECTED_REFERENCE_MISMATCH" in _codes(report)
+
+
+def test_audit_rejects_simultaneous_expected_manifest_and_inspection(
+    tmp_path: Path,
+) -> None:
+    returned = tmp_path / "returned.catvba"
+    returned.write_bytes(b"offline stub")
+    inspection = BuildKitInspection(
+        files=(),
+        kit_id=None,
+        catalog_sha256=None,
+        manifest_sha256=None,
+        manifest_digest=None,
+        upstream_commit=None,
+        fork_dev_commit=None,
+        work_commit=None,
+        work_tree=None,
+        work_branch=None,
+        canonical_zip_sha256=None,
+        report=VerificationReport(False, ()),
+    )
+
+    with pytest.raises(ValueError, match="expected_manifest.*expected_kit"):
+        audit_catvba(
+            returned,
+            expected_manifest={},
+            expected_kit=inspection,
+        )
 
 
 def test_expected_kit_requires_selector_for_multiple_nonempty_packages(
