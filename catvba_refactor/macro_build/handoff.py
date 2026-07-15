@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import stat
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,6 +47,17 @@ _GIT_OID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _WORK_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,126}$")
 _RECORD_ID = re.compile(r"^[a-z][a-z0-9._-]{2,127}$")
 _SOURCE = re.compile(r"^[a-z][a-z0-9._-]{2,127}$")
+
+_DIRFD_PUBLICATION_SUPPORTED = (
+    hasattr(os, "O_DIRECTORY")
+    and hasattr(os, "O_NOFOLLOW")
+    and all(
+        function in os.supports_dir_fd
+        for function in (os.open, os.mkdir, os.stat, os.link, os.unlink)
+    )
+    and os.stat in os.supports_follow_symlinks
+    and os.link in os.supports_follow_symlinks
+)
 
 _VERIFIER_FIELDS = (
     "primary_directory_verifier_report_digest",
@@ -540,6 +551,16 @@ def validate_handoff(
                     "handoff does not bind the authenticated Kit",
                 )
             )
+    verifier_digest = _verifier_digest(inspection.report)
+    for field in _VERIFIER_FIELDS:
+        if document.get(field) != verifier_digest:
+            diagnostics.append(
+                _diagnostic(
+                    "HANDOFF_VERIFIER_REPORT_MISMATCH",
+                    f"handoff.json#/{field}",
+                    "handoff verifier digest does not bind the authenticated report",
+                )
+            )
     if inspection.kit_id is not None and inspection.canonical_zip_sha256 is not None:
         sidecar = (
             f"{inspection.canonical_zip_sha256}  {inspection.kit_id}.zip\n".encode(
@@ -614,12 +635,14 @@ def _parse_superseded(
     diagnostics = _basic_document_diagnostics(value, effective_at=created_at)
     if type(value) is not dict or diagnostics:
         raise _evidence_error("HANDOFF_SUPERSEDED_INVALID")
+    clean_verifier_digest = _verifier_digest(VerificationReport(True, ()))
     if (
         value.get("purpose") != "discovery"
         or value.get("revocation_status") != "active"
         or value.get("package_id") != "core"
         or value.get("target") != "CATIA R2018/VBA7 64"
         or value.get("handoff_id") not in snapshot["withdrawn_handoff_ids"]
+        or any(value.get(field) != clean_verifier_digest for field in _VERIFIER_FIELDS)
     ):
         raise _evidence_error("HANDOFF_SUPERSEDED_INVALID")
     if value.get("kit_id") == current.kit_id:
@@ -634,72 +657,177 @@ def _parse_superseded(
     return value
 
 
-def _reject_symlink_ancestors(path: Path) -> None:
-    absolute = path.absolute()
-    current = Path(absolute.anchor)
-    for part in absolute.parts[1:]:
-        current /= part
-        try:
-            status = current.lstat()
-        except FileNotFoundError:
-            continue
-        except OSError as error:
-            raise _infrastructure_error(
-                "HANDOFF_OUTPUT_INSPECTION_FAILED", os.fspath(current), cause=error
-            )
-        if stat.S_ISLNK(status.st_mode):
-            raise _infrastructure_error("HANDOFF_OUTPUT_SYMLINK_FORBIDDEN")
+def _require_dirfd_publication() -> None:
+    if not _DIRFD_PUBLICATION_SUPPORTED:
+        raise _infrastructure_error("HANDOFF_ATOMIC_NOREPLACE_UNAVAILABLE")
 
 
-def _read_regular_nofollow(path: Path) -> bytes:
-    flags = os.O_RDONLY
+def _directory_open_flags() -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    return flags
+
+
+def _walk_output_root(root: Path, *, create: bool) -> tuple[int, os.stat_result]:
+    _require_dirfd_publication()
+    absolute = Path(os.path.abspath(os.fspath(root)))
+    if absolute.anchor != os.sep:
+        raise _infrastructure_error("HANDOFF_ATOMIC_NOREPLACE_UNAVAILABLE")
+    flags = _directory_open_flags()
     try:
-        descriptor = os.open(path, flags)
+        descriptor = os.open(absolute.anchor, flags)
     except OSError as error:
-        raise _infrastructure_error(
-            "HANDOFF_ID_CONTENT_MISMATCH", path.name, cause=error
-        )
+        raise _infrastructure_error("HANDOFF_OUTPUT_OPEN_FAILED", cause=error)
     try:
+        for component in absolute.parts[1:]:
+            try:
+                child = os.open(component, flags, dir_fd=descriptor)
+            except FileNotFoundError:
+                if not create:
+                    raise
+                try:
+                    os.mkdir(component, 0o755, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+                child = os.open(component, flags, dir_fd=descriptor)
+            try:
+                opened = os.fstat(child)
+            except OSError:
+                os.close(child)
+                raise
+            if not stat.S_ISDIR(opened.st_mode):
+                os.close(child)
+                raise _infrastructure_error("HANDOFF_OUTPUT_NOT_DIRECTORY")
+            os.close(descriptor)
+            descriptor = child
         status = os.fstat(descriptor)
-        if not stat.S_ISREG(status.st_mode):
-            raise _infrastructure_error("HANDOFF_ID_CONTENT_MISMATCH", path.name)
-        chunks: list[bytes] = []
-        while True:
-            chunk = os.read(descriptor, 1024 * 1024)
-            if not chunk:
-                return b"".join(chunks)
-            chunks.append(chunk)
+        if not stat.S_ISDIR(status.st_mode):
+            raise _infrastructure_error("HANDOFF_OUTPUT_NOT_DIRECTORY")
+        return descriptor, status
+    except InfrastructureError:
+        os.close(descriptor)
+        raise
+    except OSError as error:
+        os.close(descriptor)
+        raise _infrastructure_error("HANDOFF_OUTPUT_OPEN_FAILED", cause=error)
+
+
+def _assert_pinned_root(root: Path, pinned: os.stat_result) -> None:
+    try:
+        descriptor, current = _walk_output_root(root, create=False)
+    except InfrastructureError as error:
+        raise _infrastructure_error(
+            "HANDOFF_OUTPUT_IDENTITY_CHANGED", cause=error
+        ) from error
+    try:
+        if (current.st_dev, current.st_ino) != (pinned.st_dev, pinned.st_ino):
+            raise _infrastructure_error("HANDOFF_OUTPUT_IDENTITY_CHANGED")
     finally:
         os.close(descriptor)
 
 
-def _publish(root_value: str | os.PathLike[str], handoff_id: str, data: bytes) -> Path:
-    root = Path(os.path.abspath(os.fspath(root_value)))
-    _reject_symlink_ancestors(root)
-    try:
-        root.mkdir(parents=True, exist_ok=True)
-    except OSError as error:
-        raise _infrastructure_error("HANDOFF_OUTPUT_CREATE_FAILED", cause=error)
-    _reject_symlink_ancestors(root)
-    try:
-        status = root.lstat()
-    except OSError as error:
-        raise _infrastructure_error("HANDOFF_OUTPUT_CREATE_FAILED", cause=error)
-    if not stat.S_ISDIR(status.st_mode):
-        raise _infrastructure_error("HANDOFF_OUTPUT_NOT_DIRECTORY")
+def _create_temp_at(root_descriptor: int, handoff_id: str) -> tuple[int, str]:
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    for _attempt in range(64):
+        name = f".{handoff_id}.tmp-{secrets.token_hex(16)}"
+        try:
+            descriptor = os.open(
+                name,
+                flags,
+                0o644,
+                dir_fd=root_descriptor,
+            )
+        except FileExistsError:
+            continue
+        except OSError as error:
+            raise _infrastructure_error(
+                "HANDOFF_TEMP_CREATE_FAILED", handoff_id, cause=error
+            )
+        return descriptor, name
+    raise _infrastructure_error("HANDOFF_TEMP_CREATE_FAILED", handoff_id)
 
-    destination = root / f"{handoff_id}.json"
-    descriptor: int | None = None
-    temporary: Path | None = None
+
+def _status_signature(status: os.stat_result) -> tuple[int, ...]:
+    return (
+        status.st_dev,
+        status.st_ino,
+        status.st_mode,
+        status.st_nlink,
+        status.st_size,
+        status.st_mtime_ns,
+        status.st_ctime_ns,
+    )
+
+
+def _read_idempotent_at(
+    root_descriptor: int, name: str
+) -> tuple[bytes, tuple[int, ...]]:
     try:
-        descriptor, name = tempfile.mkstemp(
-            prefix=f".{handoff_id}.tmp-", dir=root
+        before = os.stat(
+            name,
+            dir_fd=root_descriptor,
+            follow_symlinks=False,
         )
-        temporary = Path(name)
+    except OSError as error:
+        raise _infrastructure_error(
+            "HANDOFF_ID_CONTENT_MISMATCH", name, cause=error
+        )
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        raise _infrastructure_error("HANDOFF_ID_CONTENT_MISMATCH", name)
+
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
+    try:
+        descriptor = os.open(name, flags, dir_fd=root_descriptor)
+    except OSError as error:
+        raise _infrastructure_error(
+            "HANDOFF_ID_CONTENT_MISMATCH", name, cause=error
+        )
+    try:
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_nlink != 1
+            or _status_signature(opened) != _status_signature(before)
+        ):
+            raise _infrastructure_error("HANDOFF_ID_CONTENT_MISMATCH", name)
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        opened_after = os.fstat(descriptor)
+        after = os.stat(
+            name,
+            dir_fd=root_descriptor,
+            follow_symlinks=False,
+        )
+        signature = _status_signature(before)
+        if (
+            _status_signature(opened_after) != signature
+            or _status_signature(after) != signature
+        ):
+            raise _infrastructure_error("HANDOFF_ID_CONTENT_MISMATCH", name)
+        return b"".join(chunks), signature
+    except InfrastructureError:
+        raise
+    except OSError as error:
+        raise _infrastructure_error(
+            "HANDOFF_ID_CONTENT_MISMATCH", name, cause=error
+        )
+    finally:
+        os.close(descriptor)
+
+
+def _write_temp(descriptor: int, data: bytes) -> None:
+    try:
         os.fchmod(descriptor, 0o644)
         view = memoryview(data)
         while view:
@@ -708,41 +836,110 @@ def _publish(root_value: str | os.PathLike[str], handoff_id: str, data: bytes) -
                 raise OSError("short write")
             view = view[written:]
         os.fsync(descriptor)
-        os.close(descriptor)
-        descriptor = None
+    except OSError as error:
+        raise _infrastructure_error("HANDOFF_TEMP_WRITE_FAILED", cause=error)
+
+
+def _cleanup_temp(
+    root_descriptor: int,
+    temporary_name: str,
+    *,
+    primary_error: InfrastructureError | None,
+) -> None:
+    try:
+        os.unlink(temporary_name, dir_fd=root_descriptor)
+    except OSError as error:
+        cleanup = _infrastructure_error(
+            "HANDOFF_TEMP_CLEANUP_FAILED", temporary_name, cause=error
+        )
+        if primary_error is not None:
+            raise cleanup from primary_error
+        raise cleanup
+
+
+def _publish(root_value: str | os.PathLike[str], handoff_id: str, data: bytes) -> Path:
+    root = Path(os.path.abspath(os.fspath(root_value)))
+    root_descriptor, root_status = _walk_output_root(root, create=True)
+    temporary_descriptor: int | None = None
+    temporary_name: str | None = None
+    primary_error: InfrastructureError | None = None
+    existing_signature: tuple[int, ...] | None = None
+    destination_name = f"{handoff_id}.json"
+    try:
+        _assert_pinned_root(root, root_status)
         try:
-            os.link(temporary, destination, follow_symlinks=False)
-        except FileExistsError:
-            existing = _read_regular_nofollow(destination)
-            if existing != data:
+            temporary_descriptor, temporary_name = _create_temp_at(
+                root_descriptor, handoff_id
+            )
+            _write_temp(temporary_descriptor, data)
+            try:
+                os.close(temporary_descriptor)
+            except OSError as error:
                 raise _infrastructure_error(
-                    "HANDOFF_ID_CONTENT_MISMATCH", handoff_id
+                    "HANDOFF_TEMP_WRITE_FAILED", cause=error
                 )
+            temporary_descriptor = None
+            try:
+                os.link(
+                    temporary_name,
+                    destination_name,
+                    src_dir_fd=root_descriptor,
+                    dst_dir_fd=root_descriptor,
+                    follow_symlinks=False,
+                )
+            except FileExistsError:
+                existing, existing_signature = _read_idempotent_at(
+                    root_descriptor, destination_name
+                )
+                if existing != data:
+                    raise _infrastructure_error(
+                        "HANDOFF_ID_CONTENT_MISMATCH", handoff_id
+                    )
+            except OSError as error:
+                raise _infrastructure_error(
+                    "HANDOFF_PUBLISH_FAILED", handoff_id, cause=error
+                )
+        except InfrastructureError as error:
+            primary_error = error
+        finally:
+            if temporary_descriptor is not None:
+                try:
+                    os.close(temporary_descriptor)
+                except OSError as error:
+                    if primary_error is None:
+                        primary_error = _infrastructure_error(
+                            "HANDOFF_TEMP_WRITE_FAILED", cause=error
+                        )
+                temporary_descriptor = None
+            if temporary_name is not None:
+                _cleanup_temp(
+                    root_descriptor,
+                    temporary_name,
+                    primary_error=primary_error,
+                )
+        if primary_error is not None:
+            raise primary_error
+
+        final, final_signature = _read_idempotent_at(
+            root_descriptor, destination_name
+        )
+        if final != data or (
+            existing_signature is not None
+            and final_signature != existing_signature
+        ):
+            raise _infrastructure_error(
+                "HANDOFF_ID_CONTENT_MISMATCH", handoff_id
+            )
+        try:
+            os.fsync(root_descriptor)
         except OSError as error:
             raise _infrastructure_error(
                 "HANDOFF_PUBLISH_FAILED", handoff_id, cause=error
             )
-        else:
-            directory = os.open(root, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-        return destination
-    except InfrastructureError:
-        raise
-    except OSError as error:
-        raise _infrastructure_error("HANDOFF_PUBLISH_FAILED", handoff_id, cause=error)
+        _assert_pinned_root(root, root_status)
+        return root / destination_name
     finally:
-        if descriptor is not None:
-            os.close(descriptor)
-        if temporary is not None:
-            try:
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
-            except OSError:
-                pass
+        os.close(root_descriptor)
 
 
 def _path_is_within(path: Path, directory: Path) -> bool:

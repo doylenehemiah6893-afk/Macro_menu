@@ -206,6 +206,35 @@ def test_handoff_validation_uses_explicit_effective_time_not_wall_clock(
     assert validate_handoff(inspection, document, effective_at=CREATED).ok
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "primary_directory_verifier_report_digest",
+        "comparison_directory_verifier_report_digest",
+        "primary_zip_verifier_report_digest",
+        "comparison_zip_verifier_report_digest",
+    ],
+)
+def test_validation_rejects_reidentified_forged_verifier_report_digest(
+    tmp_path: Path, field: str
+) -> None:
+    primary_root, comparison_root, primary, _comparison = _stage_pair(tmp_path)
+    receipt = issue_target_handoff(
+        primary_root, comparison_root, _request(), tmp_path / "handoffs"
+    )
+    forged = json.loads(
+        _reidentify(_document(receipt.handoff_path), **{field: "f" * 64})
+    )
+
+    report = validate_handoff(
+        inspect_build_kit(primary.kit_dir), forged, effective_at=CREATED
+    )
+    assert not report.ok
+    assert "HANDOFF_VERIFIER_REPORT_MISMATCH" in {
+        item.code for item in report.diagnostics
+    }
+
+
 def test_issuance_rejects_expiry_at_or_before_creation(tmp_path: Path) -> None:
     primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
 
@@ -581,3 +610,176 @@ def test_identical_existing_handoff_is_idempotent_and_conflict_fails_closed(
         issue_target_handoff(primary_root, comparison_root, _request(), output)
     assert path.read_bytes() == conflict
     assert not list(output.glob(".*.tmp-*"))
+
+
+def test_idempotence_rejects_identical_multiply_linked_destination(
+    tmp_path: Path,
+) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+    reference = issue_target_handoff(
+        primary_root, comparison_root, _request(), tmp_path / "reference"
+    )
+    unsafe = tmp_path / "unsafe hardlink output"
+    unsafe.mkdir()
+    external = tmp_path / "externally mutable handoff.json"
+    external.write_bytes(Path(reference.handoff_path).read_bytes())
+    destination = unsafe / Path(reference.handoff_path).name
+    os.link(external, destination)
+    assert destination.stat().st_nlink == 2
+
+    with pytest.raises(InfrastructureError, match="HANDOFF_ID_CONTENT_MISMATCH"):
+        issue_target_handoff(primary_root, comparison_root, _request(), unsafe)
+
+
+@pytest.mark.parametrize("kind", ["symlink", "fifo"])
+def test_idempotence_rejects_unsafe_nonregular_destination(
+    tmp_path: Path, kind: str
+) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+    reference = issue_target_handoff(
+        primary_root, comparison_root, _request(), tmp_path / "reference"
+    )
+    unsafe = tmp_path / f"unsafe {kind} output"
+    unsafe.mkdir()
+    external = tmp_path / f"external-{kind}.json"
+    external.write_bytes(Path(reference.handoff_path).read_bytes())
+    destination = unsafe / Path(reference.handoff_path).name
+    if kind == "symlink":
+        destination.symlink_to(external)
+    else:
+        os.mkfifo(destination)
+
+    with pytest.raises(InfrastructureError, match="HANDOFF_ID_CONTENT_MISMATCH"):
+        issue_target_handoff(primary_root, comparison_root, _request(), unsafe)
+
+
+def test_idempotence_rejects_content_race_even_when_read_bytes_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+    reference = issue_target_handoff(
+        primary_root, comparison_root, _request(), tmp_path / "reference"
+    )
+    output = tmp_path / "raced content output"
+    output.mkdir()
+    destination = output / Path(reference.handoff_path).name
+    expected = Path(reference.handoff_path).read_bytes()
+    destination.write_bytes(expected)
+    target = destination.stat()
+    real_read = os.read
+    raced = False
+
+    def racing_read(descriptor: int, size: int) -> bytes:
+        nonlocal raced
+        data = real_read(descriptor, size)
+        opened = os.fstat(descriptor)
+        if not raced and data and (opened.st_dev, opened.st_ino) == (
+            target.st_dev,
+            target.st_ino,
+        ):
+            raced = True
+            destination.write_bytes(b"X" * len(expected))
+        return data
+
+    monkeypatch.setattr(handoff_module.os, "read", racing_read)
+    with pytest.raises(InfrastructureError, match="HANDOFF_ID_CONTENT_MISMATCH"):
+        issue_target_handoff(primary_root, comparison_root, _request(), output)
+    assert raced
+
+
+def test_publication_pins_root_against_rename_and_symlink_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+    output = tmp_path / "pinned output"
+    moved = tmp_path / "moved pinned output"
+    attacker = tmp_path / "attacker output"
+    real_open = os.open
+    raced = False
+
+    def racing_open(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        nonlocal raced
+        if (
+            not raced
+            and isinstance(path, str)
+            and path.startswith(".handoff-")
+            and flags & os.O_CREAT
+        ):
+            raced = True
+            output.rename(moved)
+            attacker.mkdir()
+            output.symlink_to(attacker, target_is_directory=True)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(handoff_module.os, "open", racing_open)
+    with pytest.raises(
+        InfrastructureError, match="HANDOFF_OUTPUT_IDENTITY_CHANGED"
+    ):
+        issue_target_handoff(primary_root, comparison_root, _request(), output)
+    assert raced
+    assert list(attacker.iterdir()) == []
+    assert not list(moved.glob(".*.tmp-*"))
+
+
+def test_publication_fails_closed_without_required_dirfd_capabilities(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+    output = tmp_path / "unsupported publication output"
+    monkeypatch.setattr(handoff_module, "_DIRFD_PUBLICATION_SUPPORTED", False)
+
+    with pytest.raises(
+        InfrastructureError, match="HANDOFF_ATOMIC_NOREPLACE_UNAVAILABLE"
+    ):
+        issue_target_handoff(primary_root, comparison_root, _request(), output)
+    assert not output.exists()
+
+
+def test_temp_cleanup_failure_surfaces_after_successful_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+    output = tmp_path / "cleanup failure output"
+    real_unlink = os.unlink
+
+    def failing_unlink(path: Any, *args: Any, **kwargs: Any) -> None:
+        if isinstance(path, str) and path.startswith(".handoff-"):
+            raise PermissionError("injected temp cleanup failure")
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(handoff_module.os, "unlink", failing_unlink)
+    with pytest.raises(InfrastructureError, match="HANDOFF_TEMP_CLEANUP_FAILED"):
+        issue_target_handoff(primary_root, comparison_root, _request(), output)
+
+    entries = list(output.iterdir())
+    assert len(entries) == 2
+    assert len({(entry.stat().st_dev, entry.stat().st_ino) for entry in entries}) == 1
+    assert entries[0].stat().st_nlink == 2
+
+
+def test_temp_cleanup_failure_chains_primary_publication_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+    reference = issue_target_handoff(
+        primary_root, comparison_root, _request(), tmp_path / "reference"
+    )
+    output = tmp_path / "primary and cleanup failure output"
+    output.mkdir()
+    destination = output / Path(reference.handoff_path).name
+    destination.write_bytes(b"conflicting bytes\n")
+    real_unlink = os.unlink
+
+    def failing_unlink(path: Any, *args: Any, **kwargs: Any) -> None:
+        if isinstance(path, str) and path.startswith(".handoff-"):
+            raise PermissionError("injected temp cleanup failure")
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(handoff_module.os, "unlink", failing_unlink)
+    with pytest.raises(
+        InfrastructureError, match="HANDOFF_TEMP_CLEANUP_FAILED"
+    ) as raised:
+        issue_target_handoff(primary_root, comparison_root, _request(), output)
+
+    assert isinstance(raised.value.__cause__, InfrastructureError)
+    assert "HANDOFF_ID_CONTENT_MISMATCH" in str(raised.value.__cause__)
