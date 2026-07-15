@@ -253,6 +253,98 @@ def test_directory_entry_limit_stops_before_pinning_excess_files(
     assert _codes(snapshot) == {"EVIDENCE_ENTRY_LIMIT"}
 
 
+def test_directory_and_zip_entry_budgets_have_logical_file_parity(
+    tmp_path: Path,
+) -> None:
+    files = {
+        f"shared/member-{number:03}.txt": b"x"
+        for number in range(container.MAX_EVIDENCE_ENTRIES)
+    }
+    directory = tmp_path / "capture"
+    directory.mkdir()
+    _write_tree(directory, files)
+    archive = tmp_path / "capture.zip"
+    archive.write_bytes(canonical_evidence_zip_bytes(files))
+
+    from_directory = read_evidence_container(
+        directory, phase=EvidencePhase.CAPTURE
+    )
+    from_zip = read_evidence_container(archive, phase=EvidencePhase.CAPTURE)
+
+    assert from_directory.diagnostics == ()
+    assert from_zip.diagnostics == ()
+    assert from_directory.files == from_zip.files
+
+
+def test_directory_closes_file_fd_when_post_open_fstat_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "capture"
+    root.mkdir()
+    _write_tree(root, {"member.txt": b"x"})
+    original_open = container.os.open
+    original_fstat = container.os.fstat
+    member_fd: int | None = None
+
+    def track_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        nonlocal member_fd
+        fd = original_open(path, flags, *args, **kwargs)
+        if path == "member.txt":
+            member_fd = fd
+        return fd
+
+    def fail_member_fstat(fd: int) -> os.stat_result:
+        if fd == member_fd:
+            raise OSError(errno.EIO, "injected fstat failure")
+        return original_fstat(fd)
+
+    monkeypatch.setattr(container.os, "open", track_open)
+    monkeypatch.setattr(container.os, "fstat", fail_member_fstat)
+
+    snapshot = read_evidence_container(root, phase=EvidencePhase.CAPTURE)
+    monkeypatch.setattr(container.os, "fstat", original_fstat)
+
+    assert "EVIDENCE_MEMBER_RACE" in _codes(snapshot)
+    assert member_fd is not None
+    with pytest.raises(OSError):
+        original_fstat(member_fd)
+
+
+def test_directory_closes_child_fd_when_post_open_fstat_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "capture"
+    child = root / "child"
+    child.mkdir(parents=True)
+    _write_tree(root, {"child/member.txt": b"x"})
+    original_open = container.os.open
+    original_fstat = container.os.fstat
+    child_fd: int | None = None
+
+    def track_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        nonlocal child_fd
+        fd = original_open(path, flags, *args, **kwargs)
+        if path == "child":
+            child_fd = fd
+        return fd
+
+    def fail_child_fstat(fd: int) -> os.stat_result:
+        if fd == child_fd:
+            raise OSError(errno.EIO, "injected child fstat failure")
+        return original_fstat(fd)
+
+    monkeypatch.setattr(container.os, "open", track_open)
+    monkeypatch.setattr(container.os, "fstat", fail_child_fstat)
+
+    snapshot = read_evidence_container(root, phase=EvidencePhase.CAPTURE)
+    monkeypatch.setattr(container.os, "fstat", original_fstat)
+
+    assert "EVIDENCE_MEMBER_RACE" in _codes(snapshot)
+    assert child_fd is not None
+    with pytest.raises(OSError):
+        original_fstat(child_fd)
+
+
 @pytest.mark.parametrize(
     ("archive_bytes", "code"),
     [
@@ -402,6 +494,32 @@ def test_zip_container_hardlink_is_rejected(tmp_path: Path) -> None:
 
     assert snapshot.files == ()
     assert "EVIDENCE_HARDLINK_FORBIDDEN" in _codes(snapshot)
+
+
+def test_zip_final_path_stat_error_becomes_stable_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive = tmp_path / "capture.zip"
+    archive.write_bytes(canonical_evidence_zip_bytes(FILES))
+    original = container.os.stat
+    leaf_stats = 0
+
+    def fail_final_stat(
+        path: object, *args: object, **kwargs: object
+    ) -> os.stat_result:
+        nonlocal leaf_stats
+        if path == "capture.zip":
+            leaf_stats += 1
+            if leaf_stats == 2:
+                raise OSError(errno.EIO, "injected final stat failure")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(container.os, "stat", fail_final_stat)
+
+    snapshot = read_evidence_container(archive, phase=EvidencePhase.CAPTURE)
+
+    assert snapshot.files == ()
+    assert "EVIDENCE_CONTAINER_RACE" in _codes(snapshot)
 
 
 def test_directory_detects_file_identity_change(
@@ -573,6 +691,52 @@ def test_publish_root_rename_cannot_redirect_bytes(
 
     assert list(attacker.iterdir()) == []
     assert list(displaced.iterdir()) == []
+
+
+def test_publish_rechecks_root_after_final_path_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "output"
+    output.mkdir()
+    displaced = tmp_path / "displaced"
+    attacker = tmp_path / "attacker"
+    attacker.mkdir()
+    original = container._existing_outputs_match
+
+    def replace_after_validation(*args: object, **kwargs: object) -> bool:
+        matched = original(*args, **kwargs)
+        output.rename(displaced)
+        output.symlink_to(attacker, target_is_directory=True)
+        return matched
+
+    monkeypatch.setattr(
+        container, "_existing_outputs_match", replace_after_validation
+    )
+
+    with pytest.raises(InfrastructureError, match="EVIDENCE_OUTPUT_ROOT_RACE"):
+        publish_evidence_artifacts(
+            FILES, bundle_name="bundle", output_root=output
+        )
+
+    assert list(attacker.iterdir()) == []
+
+
+def test_publish_rejects_invalid_nested_zip_before_writing(
+    tmp_path: Path,
+) -> None:
+    leaf = canonical_evidence_zip_bytes({"leaf.txt": b"leaf"})
+    invalid_nested = canonical_evidence_zip_bytes(
+        {"prerequisites/g2-evidence.zip": leaf}
+    )
+
+    with pytest.raises(EvidenceError):
+        publish_evidence_artifacts(
+            {"prerequisites/g2-evidence.zip": invalid_nested},
+            bundle_name="bundle",
+            output_root=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_publish_surfaces_temp_cleanup_failure(

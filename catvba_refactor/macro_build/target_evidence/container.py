@@ -20,6 +20,7 @@ from .model import EvidencePhase, PayloadMember
 
 CONTAINER_POLICY_VERSION = 1
 MAX_EVIDENCE_ENTRIES = 512
+MAX_EVIDENCE_DIRECTORIES = 512
 MAX_EVIDENCE_FILE_BYTES = 64 * 1024 * 1024
 MAX_EVIDENCE_TOTAL_BYTES = 256 * 1024 * 1024
 MAX_EVIDENCE_CONTAINER_BYTES = 256 * 1024 * 1024
@@ -307,17 +308,21 @@ def _scan_directory(
     files: list[_FileRecord] = []
     diagnostics: list[Diagnostic] = []
     entry_count = 0
+    file_count = 0
+    directory_count = 0
     limit_reached = False
 
     def visit(record: _DirectoryRecord) -> None:
-        nonlocal entry_count, limit_reached
+        nonlocal entry_count, file_count, directory_count, limit_reached
         if limit_reached:
             return
         try:
             names: list[str] = []
             with os.scandir(record.fd) as entries:
                 for entry in entries:
-                    if entry_count + len(names) >= MAX_EVIDENCE_ENTRIES:
+                    if entry_count + len(names) >= (
+                        MAX_EVIDENCE_ENTRIES + MAX_EVIDENCE_DIRECTORIES
+                    ):
                         diagnostics.append(
                             _diagnostic(
                                 "EVIDENCE_ENTRY_LIMIT",
@@ -365,10 +370,24 @@ def _scan_directory(
                 )
                 continue
             if stat.S_ISDIR(mode):
+                if directory_count >= MAX_EVIDENCE_DIRECTORIES:
+                    diagnostics.append(
+                        _diagnostic(
+                            "EVIDENCE_DIRECTORY_LIMIT",
+                            relative,
+                            "evidence directory count exceeds policy",
+                        )
+                    )
+                    limit_reached = True
+                    return
+                directory_count += 1
+                child_fd: int | None = None
                 try:
                     child_fd = os.open(name, _DIRECTORY_FLAGS, dir_fd=record.fd)
                     child_stat = os.fstat(child_fd)
                 except OSError:
+                    if child_fd is not None:
+                        os.close(child_fd)
                     diagnostics.append(
                         _diagnostic(
                             "EVIDENCE_MEMBER_RACE",
@@ -406,6 +425,17 @@ def _scan_directory(
                     )
                 )
                 continue
+            if file_count >= MAX_EVIDENCE_ENTRIES:
+                diagnostics.append(
+                    _diagnostic(
+                        "EVIDENCE_ENTRY_LIMIT",
+                        relative,
+                        "evidence file count exceeds policy",
+                    )
+                )
+                limit_reached = True
+                return
+            file_count += 1
             if observed.st_nlink != 1:
                 diagnostics.append(
                     _diagnostic(
@@ -415,10 +445,13 @@ def _scan_directory(
                     )
                 )
                 continue
+            file_fd: int | None = None
             try:
                 file_fd = os.open(name, _FILE_READ_FLAGS, dir_fd=record.fd)
                 opened = os.fstat(file_fd)
             except OSError:
+                if file_fd is not None:
+                    os.close(file_fd)
                 diagnostics.append(
                     _diagnostic(
                         "EVIDENCE_MEMBER_RACE",
@@ -729,6 +762,14 @@ def _zip_metadata_diagnostics(
             )
         seen.add(name)
     diagnostics.extend(_portable_diagnostics(names))
+    if len(_derived_directories(names)) > MAX_EVIDENCE_DIRECTORIES:
+        diagnostics.append(
+            _diagnostic(
+                "EVIDENCE_DIRECTORY_LIMIT",
+                "",
+                "derived ZIP directory count exceeds policy",
+            )
+        )
 
     total = 0
     for info in infos:
@@ -1088,6 +1129,16 @@ def read_evidence_container(
         return _snapshot_failure(
             [_diagnostic(fault.code, fault.path, fault.message)]
         )
+    except OSError as error:
+        return _snapshot_failure(
+            [
+                _diagnostic(
+                    "EVIDENCE_CONTAINER_RACE",
+                    "",
+                    f"container read changed: {error.__class__.__name__}",
+                )
+            ]
+        )
     return _read_zip_bytes(
         data,
         phase=stable_phase,
@@ -1115,6 +1166,14 @@ def _validated_file_items(
                 "EVIDENCE_ENTRY_LIMIT",
                 "",
                 "evidence entry count exceeds policy",
+            )
+        )
+    if len(_derived_directories(paths)) > MAX_EVIDENCE_DIRECTORIES:
+        diagnostics.append(
+            _diagnostic(
+                "EVIDENCE_DIRECTORY_LIMIT",
+                "",
+                "derived evidence directory count exceeds policy",
             )
         )
     total = 0
@@ -1377,6 +1436,14 @@ def publish_evidence_artifacts(
     _require_publication_capabilities()
     _validate_bundle_name(bundle_name)
     items = _validated_file_items(files)
+    nested_diagnostics = _nested_diagnostics(
+        items, phase=EvidencePhase.SEALED, nesting_depth=0
+    )
+    if nested_diagnostics:
+        codes = ",".join(
+            item.code for item in sorted(nested_diagnostics)
+        )
+        raise EvidenceError(f"EVIDENCE_FILE_MAP_INVALID:{codes}")
     zip_bytes = canonical_evidence_zip_bytes(dict(items))
     zip_digest = sha256_bytes(zip_bytes)
     try:
@@ -1444,6 +1511,8 @@ def publish_evidence_artifacts(
             raise InfrastructureError("EVIDENCE_OUTPUT_ROOT_RACE")
         if not _existing_outputs_match(absolute_root, bundle_name, items, zip_bytes):
             raise InfrastructureError("EVIDENCE_OUTPUT_REVALIDATION_FAILED")
+        if not _rewalk_identity_matches(absolute_root, root_signature):
+            raise InfrastructureError("EVIDENCE_OUTPUT_ROOT_RACE")
         return (
             Path(absolute_root) / directory_name,
             Path(absolute_root) / zip_name,
@@ -1505,6 +1574,7 @@ __all__ = [
     "EvidenceContainerSnapshot",
     "MAX_EVIDENCE_COMPRESSION_RATIO",
     "MAX_EVIDENCE_CONTAINER_BYTES",
+    "MAX_EVIDENCE_DIRECTORIES",
     "MAX_EVIDENCE_ENTRIES",
     "MAX_EVIDENCE_FILE_BYTES",
     "MAX_EVIDENCE_NESTING_DEPTH",
