@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -10,12 +11,22 @@ from typing import Any
 
 from .audit import AuditReport, audit_catvba
 from .canonical import canonical_json_bytes
-from .errors import BuildKitError, ExitCode, InfrastructureError
+from .errors import (
+    BuildKitError,
+    ExitCode,
+    InfrastructureError,
+    VerificationError,
+)
 from .generator import generate_sources
 from .git_objects import GitRepository, freeze_snapshot
 from .handoff import HandoffReceipt, HandoffRequest, issue_target_handoff
 from .inventory import scan_inputs
-from .kit import assemble_catalog, stage_build_kit, verify_build_kit
+from .kit import (
+    assemble_catalog,
+    inspect_build_kit,
+    stage_build_kit,
+    verify_build_kit,
+)
 from .manifests import ManifestSet, load_and_validate_config
 from .model import (
     BuildKitReceipt,
@@ -27,6 +38,17 @@ from .model import (
 )
 from .policy import validate_catalog
 from .resolver import resolve_sources
+from .target_evidence.approval import record_target_approval
+from .target_evidence.gate import evaluate_target_gate
+from .target_evidence.model import (
+    ComputedOutcome,
+    EvidencePhase,
+    GateId,
+    SessionMode,
+)
+from .target_evidence.packer import pack_target_evidence
+from .target_evidence.session import init_target_session
+from .target_evidence.validator import validate_target_evidence
 
 
 try:
@@ -39,8 +61,11 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _GLOBAL_OPTIONS = frozenset(
     {"--repo-root", "--config-dir", "--schema-dir", "--output-root", "--format"}
 )
-_HANDOFF_SCALAR_OPTIONS = frozenset(
+_SCALAR_OPTIONS = frozenset(
     {
+        *_GLOBAL_OPTIONS,
+        "--expect",
+        "--package",
         "--compare-build-root",
         "--purpose",
         "--supersedes-handoff",
@@ -49,8 +74,24 @@ _HANDOFF_SCALAR_OPTIONS = frozenset(
         "--review-record-id",
         "--created-at",
         "--expires-at",
+        "--mode",
+        "--profile",
+        "--handoff",
+        "--prerequisite-evidence",
+        "--session-id",
+        "--kit",
+        "--phase",
+        "--gate",
+        "--gate-receipt",
+        "--scope",
+        "--status",
+        "--reviewer-role",
+        "--approved-at",
+        "--approval",
     }
 )
+
+_FORMAL_PROFILES = ("P-AB3", "P-HD2", "P-MD2", "P-ALL", "P-PROD")
 
 
 def _global_parent() -> argparse.ArgumentParser:
@@ -138,31 +179,92 @@ def build_parser() -> argparse.ArgumentParser:
     handoff.add_argument("--review-record-id", required=True)
     handoff.add_argument("--created-at")
     handoff.add_argument("--expires-at", required=True)
+
+    session = commands.add_parser(
+        "init-target-session",
+        parents=[common],
+        allow_abbrev=False,
+        help="initialize a target evidence capture session",
+    )
+    session.add_argument("kit", type=Path)
+    session.add_argument(
+        "--mode", required=True, choices=tuple(item.value for item in SessionMode)
+    )
+    session.add_argument("--package", dest="package_id", required=True, choices=("core",))
+    session.add_argument(
+        "--profile",
+        dest="profile_id",
+        required=True,
+        choices=("DISCOVERY", *_FORMAL_PROFILES),
+    )
+    session.add_argument("--handoff", required=True, type=Path)
+    session.add_argument("--prerequisite-evidence", type=Path)
+    session.add_argument("--session-id")
+    session.add_argument("--created-at")
+
+    validate = commands.add_parser(
+        "validate-target-evidence",
+        parents=[common],
+        allow_abbrev=False,
+        help="validate a target evidence capture or sealed bundle",
+    )
+    validate.add_argument("evidence", type=Path)
+    validate.add_argument("--kit", required=True, type=Path)
+    validate.add_argument(
+        "--phase", required=True, choices=tuple(item.value for item in EvidencePhase)
+    )
+
+    gate = commands.add_parser(
+        "evaluate-target-gate",
+        parents=[common],
+        allow_abbrev=False,
+        help="evaluate one target evidence Gate",
+    )
+    gate.add_argument("capture", type=Path)
+    gate.add_argument(
+        "--gate", required=True, choices=tuple(item.value for item in GateId)
+    )
+    gate.add_argument("--kit", required=True, type=Path)
+
+    approval = commands.add_parser(
+        "record-target-approval",
+        parents=[common],
+        allow_abbrev=False,
+        help="record one detached independent target review",
+    )
+    approval.add_argument("capture", type=Path)
+    approval.add_argument("--kit", required=True, type=Path)
+    approval.add_argument("--gate-receipt", required=True, type=Path)
+    approval.add_argument(
+        "--scope", required=True, choices=("observation", "gate")
+    )
+    approval.add_argument(
+        "--status", required=True, choices=("approved", "rejected")
+    )
+    approval.add_argument("--reviewer-role", required=True)
+    approval.add_argument("--review-record-id", required=True)
+    approval.add_argument("--approved-at", required=True)
+
+    pack = commands.add_parser(
+        "pack-target-evidence",
+        parents=[common],
+        allow_abbrev=False,
+        help="seal target evidence as deterministic directory and ZIP siblings",
+    )
+    pack.add_argument("capture", type=Path)
+    pack.add_argument("--kit", required=True, type=Path)
+    pack.add_argument("--gate-receipt", required=True, type=Path)
+    pack.add_argument("--approval", required=True, type=Path)
     return parser
 
 
-def _reject_duplicate_global_options(
+def _reject_duplicate_options(
     parser: argparse.ArgumentParser, argv: list[str]
 ) -> None:
     seen: set[str] = set()
     for token in argv:
         option = token.split("=", 1)[0]
-        if option not in _GLOBAL_OPTIONS:
-            continue
-        if option in seen:
-            parser.error(f"{option} may be specified at most once")
-        seen.add(option)
-
-
-def _reject_duplicate_handoff_options(
-    parser: argparse.ArgumentParser, argv: list[str]
-) -> None:
-    if "create-target-handoff" not in argv:
-        return
-    seen: set[str] = set()
-    for token in argv:
-        option = token.split("=", 1)[0]
-        if option not in _HANDOFF_SCALAR_OPTIONS:
+        if option not in _SCALAR_OPTIONS:
             continue
         if option in seen:
             parser.error(f"{option} may be specified at most once")
@@ -185,6 +287,18 @@ def _locations(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
         args, "output_root", repo_root / "catvba_refactor" / "dist"
     )
     return repo_root, config_dir, schema_dir, output_root
+
+
+def _target_schema_dir(args: argparse.Namespace) -> Path:
+    return _locations(args)[2] / "target_evidence"
+
+
+def _authenticated_kit(path: Path):
+    inspection = inspect_build_kit(path)
+    if not inspection.report.ok or inspection.report.diagnostics:
+        codes = ",".join(item.code for item in inspection.report.diagnostics)
+        raise VerificationError(f"KIT_VERIFICATION_FAILED:{codes}")
+    return inspection
 
 
 def _diagnostic_key(diagnostic: Diagnostic) -> tuple[str, str, str, bytes]:
@@ -531,6 +645,145 @@ def _create_target_handoff_command(args: argparse.Namespace) -> int:
     return int(ExitCode.SUCCESS)
 
 
+def _init_target_session_command(args: argparse.Namespace) -> int:
+    kit = _authenticated_kit(args.kit)
+    receipt = init_target_session(
+        kit,
+        args.handoff,
+        args.output_root,
+        mode=SessionMode(args.mode),
+        package_id=args.package_id,
+        profile_id=args.profile_id,
+        schema_dir=_target_schema_dir(args),
+        prerequisite_evidence=getattr(args, "prerequisite_evidence", None),
+        session_id=getattr(args, "session_id", None),
+        created_at=getattr(args, "created_at", None),
+    )
+    _emit(
+        {
+            "command": args.command,
+            "ok": True,
+            "session_id": receipt.session_id,
+            "session_dir": receipt.session_dir,
+            "mode": receipt.mode.value,
+            "kit_id": receipt.kit_id,
+            "evidence_payload_digest": receipt.evidence_payload_digest,
+            "diagnostics": [],
+        },
+        _format(args),
+    )
+    return int(ExitCode.SUCCESS)
+
+
+def _target_evidence_document(args: argparse.Namespace, report: Any) -> dict[str, Any]:
+    return {
+        "command": args.command,
+        "ok": report.ok,
+        "phase": report.phase.value,
+        "session_id": report.session_id,
+        "evidence_payload_digest": report.evidence_payload_digest,
+        "payload_members": [
+            {"path": item.path, "sha256": item.sha256, "size": item.size}
+            for item in report.payload_members
+        ],
+        "diagnostics": _diagnostics(report.diagnostics),
+    }
+
+
+def _validate_target_evidence_command(args: argparse.Namespace) -> int:
+    kit = _authenticated_kit(args.kit)
+    report = validate_target_evidence(
+        args.evidence,
+        kit,
+        phase=EvidencePhase(args.phase),
+        schema_dir=_target_schema_dir(args),
+    )
+    _emit(_target_evidence_document(args, report), _format(args))
+    return int(ExitCode.SUCCESS if report.ok else ExitCode.EVIDENCE)
+
+
+def _evaluate_target_gate_command(args: argparse.Namespace) -> int:
+    kit = _authenticated_kit(args.kit)
+    evaluation = evaluate_target_gate(
+        args.capture,
+        kit,
+        args.output_root,
+        gate_id=GateId(args.gate),
+        schema_dir=_target_schema_dir(args),
+    )
+    eligible = evaluation.computed_outcome is ComputedOutcome.ELIGIBLE
+    _emit(
+        {
+            "command": args.command,
+            "ok": eligible,
+            "gate_id": evaluation.gate_id.value,
+            "computed_outcome": evaluation.computed_outcome.value,
+            "reason": evaluation.reason,
+            "evidence_payload_digest": evaluation.evidence_payload_digest,
+            "receipt_path": evaluation.receipt_path,
+            "receipt_sha256": evaluation.receipt_sha256,
+            "diagnostics": _diagnostics(evaluation.diagnostics),
+        },
+        _format(args),
+    )
+    return int(ExitCode.SUCCESS if eligible else ExitCode.GATE)
+
+
+def _record_target_approval_command(args: argparse.Namespace) -> int:
+    kit = _authenticated_kit(args.kit)
+    path = record_target_approval(
+        args.capture,
+        kit,
+        args.gate_receipt,
+        args.output_root,
+        scope=args.scope,
+        status=args.status,
+        reviewer_role=args.reviewer_role,
+        review_record_id=args.review_record_id,
+        approved_at=args.approved_at,
+        schema_dir=_target_schema_dir(args),
+    )
+    _emit(
+        {
+            "command": args.command,
+            "ok": True,
+            "approval_id": path.stem,
+            "approval_path": os.fspath(path),
+            "approval_status": args.status,
+            "diagnostics": [],
+        },
+        _format(args),
+    )
+    return int(ExitCode.SUCCESS)
+
+
+def _pack_target_evidence_command(args: argparse.Namespace) -> int:
+    kit = _authenticated_kit(args.kit)
+    receipt = pack_target_evidence(
+        args.capture,
+        kit,
+        args.gate_receipt,
+        args.approval,
+        args.output_root,
+        schema_dir=_target_schema_dir(args),
+    )
+    _emit(
+        {
+            "command": args.command,
+            "ok": True,
+            "session_id": receipt.session_id,
+            "bundle_dir": receipt.bundle_dir,
+            "zip_path": receipt.zip_path,
+            "zip_sha256": receipt.zip_sha256,
+            "evidence_payload_digest": receipt.evidence_payload_digest,
+            "bundle_content_digest": receipt.bundle_content_digest,
+            "diagnostics": [],
+        },
+        _format(args),
+    )
+    return int(ExitCode.SUCCESS)
+
+
 def dispatch(args: argparse.Namespace) -> int:
     if args.command == "inventory":
         return _inventory_command(args)
@@ -544,6 +797,16 @@ def dispatch(args: argparse.Namespace) -> int:
         return _audit_command(args)
     if args.command == "create-target-handoff":
         return _create_target_handoff_command(args)
+    if args.command == "init-target-session":
+        return _init_target_session_command(args)
+    if args.command == "validate-target-evidence":
+        return _validate_target_evidence_command(args)
+    if args.command == "evaluate-target-gate":
+        return _evaluate_target_gate_command(args)
+    if args.command == "record-target-approval":
+        return _record_target_approval_command(args)
+    if args.command == "pack-target-evidence":
+        return _pack_target_evidence_command(args)
     raise AssertionError(f"unknown command: {args.command}")
 
 
@@ -569,11 +832,17 @@ def emit_error(
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = list(sys.argv[1:] if argv is None else argv)
-    _reject_duplicate_global_options(parser, arguments)
-    _reject_duplicate_handoff_options(parser, arguments)
+    _reject_duplicate_options(parser, arguments)
     args = parser.parse_args(arguments)
-    if args.command == "create-target-handoff" and not hasattr(args, "output_root"):
-        parser.error("create-target-handoff requires --output-root")
+    output_commands = {
+        "create-target-handoff",
+        "init-target-session",
+        "evaluate-target-gate",
+        "record-target-approval",
+        "pack-target-evidence",
+    }
+    if args.command in output_commands and not hasattr(args, "output_root"):
+        parser.error(f"{args.command} requires --output-root")
     try:
         return dispatch(args)
     except BuildKitError as error:

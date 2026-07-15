@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -10,6 +11,14 @@ from typing import Any
 import pytest
 
 from catvba_refactor.macro_build import cli
+from catvba_refactor.macro_build.canonical import canonical_json_bytes, sha256_bytes
+from catvba_refactor.macro_build.reference_contract import (
+    reference_contract_body_digest,
+)
+from catvba_refactor.macro_build.target_evidence.validator import (
+    environment_fingerprint,
+)
+from catvba_refactor.tests import test_target_evidence_validator as evidence_fixtures
 
 
 _SCHEMA_NAMES = (
@@ -76,6 +85,20 @@ _CORE_TOOLS = (
     ),
 )
 
+_SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "schemas"
+_REFERENCE_POINTS = (
+    "blank-project",
+    "post-form-import",
+    "post-all-import",
+    "post-save",
+    "post-restart",
+)
+_STABLE_REFERENCE_ID = "ref.000204ef00000000c000000000000046.4.2"
+_DISCOVERY_REVIEW_ID = "record-synthetic-discovery-decision-review"
+_REFERENCE_REVIEW_ID = "record-synthetic-reference-contract-review"
+_G2_REVIEW_ID = "record-synthetic-g2-decision-review"
+_G3_REVIEW_ID = "record-synthetic-g3-decision-review"
+
 
 def _git(repo: Path, *arguments: str) -> str:
     completed = subprocess.run(
@@ -126,6 +149,262 @@ def _invoke_json(
     captured = capsys.readouterr()
     serialized = captured.out or captured.err
     return return_code, json.loads(serialized), captured.out, captured.err
+
+
+def _invoke_success(
+    capsys: pytest.CaptureFixture[str], arguments: list[str]
+) -> dict[str, Any]:
+    return_code, document, stdout, stderr = _invoke_json(
+        capsys, [*arguments, "--format", "json"]
+    )
+    assert return_code == 0, document
+    assert stdout and not stderr
+    return document
+
+
+def _build_pair(
+    capsys: pytest.CaptureFixture[str],
+    repo: Path,
+    first_root: Path,
+    second_root: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    receipts = tuple(
+        _invoke_success(
+            capsys,
+            [
+                "build-kit",
+                "--repo-root",
+                os.fspath(repo),
+                "--schema-dir",
+                os.fspath(_SCHEMA_ROOT),
+                "--output-root",
+                os.fspath(output_root),
+            ],
+        )
+        for output_root in (first_root, second_root)
+    )
+    assert receipts[0]["kit_id"] == receipts[1]["kit_id"]
+    assert receipts[0]["zip_sha256"] == receipts[1]["zip_sha256"]
+    assert Path(receipts[0]["zip_path"]).read_bytes() == Path(
+        receipts[1]["zip_path"]
+    ).read_bytes()
+    return receipts
+
+
+def _write_revocations(
+    path: Path,
+    *,
+    captured_at: str,
+    active: list[str] | None = None,
+    withdrawn: list[str] | None = None,
+) -> Path:
+    path.write_bytes(
+        canonical_json_bytes(
+            {
+                "schema_version": 1,
+                "captured_at": captured_at,
+                "source": "synthetic-e2e-active-handoff-ledger",
+                "active_handoff_ids": active or [],
+                "withdrawn_handoff_ids": withdrawn or [],
+            }
+        )
+    )
+    return path
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _operator_record(
+    record_id: str, category: str, captured_at: str
+) -> tuple[dict[str, Any], bytes]:
+    payload = f"synthetic redacted E2E witness for {record_id}\n".encode("ascii")
+    relative_path = f"operator-records/{record_id}.txt"
+    return (
+        {
+            "record_id": record_id,
+            "category": category,
+            "relative_path": relative_path,
+            "sha256": sha256_bytes(payload),
+            "captured_at": captured_at,
+            "collector_role": "isolated-builder",
+            "redaction_status": "two-person-text",
+        },
+        payload,
+    )
+
+
+def _synthetic_observation(ordinal: int) -> dict[str, Any]:
+    return {
+        "observation_record_id": f"record-synthetic-reference-vba-{ordinal:02d}",
+        "stable_reference_id": _STABLE_REFERENCE_ID,
+        "name": "VBA",
+        "description": "Visual Basic For Applications",
+        "guid": "{000204EF-0000-0000-C000-000000000046}",
+        "major": 4,
+        "minor": 2,
+        "source_classification": "host-default",
+        "missing": False,
+        "path_kind": "catia-install",
+        "path_basename": "VBE7.DLL",
+        "relative_path": "win_b64/code/bin/VBE7.DLL",
+        "redacted_path": "<CATIA_INSTALL>/VBE7.DLL",
+        "path_sha256": "f" * 64,
+        "architecture": "x64",
+        "release_provenance": "B28",
+        "operator_record_id": f"record-synthetic-reference-point-{ordinal:02d}",
+    }
+
+
+def _complete_synthetic_capture(
+    capture: Path,
+    *,
+    mode: str,
+    ended_at: str,
+) -> None:
+    documents = {
+        name: json.loads((capture / name).read_bytes())
+        for name in evidence_fixtures.ROOT_DOCUMENTS
+    }
+    session = documents["session.json"]
+    session.update(
+        capture_status="complete",
+        anonymous_host_id="host-synthetic-e2e",
+        vm_lineage_id="vm-lineage-synthetic-e2e",
+        snapshot_id="snapshot-synthetic-clean-b28",
+        ended_at=ended_at,
+    )
+    started_at = session["started_at"]
+    index = documents["operator-records/index.json"]
+    members: dict[str, bytes] = {}
+
+    def add_record(record_id: str, category: str) -> None:
+        record, payload = _operator_record(record_id, category, started_at)
+        index["records"].append(record)
+        members[record["relative_path"]] = payload
+
+    if mode != "g3-c":
+        template_documents, _template_members = evidence_fixtures._documents(mode)
+        environment = copy.deepcopy(template_documents["environment.json"])
+        environment["binding"] = session["binding"]
+        environment["reference_contract_body_digest"] = documents[
+            "environment.json"
+        ]["reference_contract_body_digest"]
+        environment["operator_record_id"] = "record-synthetic-environment"
+        environment["environment_fingerprint"] = environment_fingerprint(
+            {"session": session, "environment": environment},
+            environment["reference_contract_body_digest"],
+        )
+        documents["environment.json"] = environment
+        add_record("record-synthetic-environment", "environment")
+
+    if mode == "discovery":
+        for ordinal, point in enumerate(
+            documents["references.json"]["points"], start=1
+        ):
+            record_id = f"record-synthetic-reference-point-{ordinal:02d}"
+            point.update(
+                status="observed",
+                observations=[_synthetic_observation(ordinal)],
+                operator_record_id=record_id,
+            )
+            add_record(record_id, "reference")
+    elif mode == "g2":
+        statuses = {
+            "configuration_product": "observed",
+            "reference_visibility": "available",
+            "api_workbench": "available",
+            "session_checkout": "available",
+            "tool_result": "observed",
+        }
+        for field, status in statuses.items():
+            record_id = f"record-synthetic-entitlement-{field.replace('_', '-')}"
+            documents["entitlements.json"][field] = {
+                "status": status,
+                "operator_record_id": record_id,
+            }
+            add_record(record_id, "entitlement")
+        reference_record = "record-synthetic-reference-point-01"
+        documents["references.json"]["points"][0].update(
+            status="observed",
+            observations=[_synthetic_observation(1)],
+            operator_record_id=reference_record,
+        )
+        add_record(reference_record, "reference")
+
+    index["records"].sort(key=lambda item: item["record_id"])
+    for name, document in documents.items():
+        (capture / name).write_bytes(canonical_json_bytes(document))
+    for relative_path, data in members.items():
+        destination = capture / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+
+
+def _approved_reference_contract(
+    discovery_bundle: dict[str, Any],
+    gate_receipt: Path,
+    observation_approval: Path,
+) -> dict[str, Any]:
+    definitions = [
+        {
+            "stable_reference_id": _STABLE_REFERENCE_ID,
+            "guid": "{000204EF-0000-0000-C000-000000000046}",
+            "major": 4,
+            "minor": 2,
+            "allowed_names": ["VBA"],
+            "allowed_descriptions": ["Visual Basic For Applications"],
+            "source_classification": "host-default",
+            "architecture": "x64",
+            "release_provenance": "B28",
+            "path_policy": {
+                "root_kind": "catia-install",
+                "allowed_basenames": ["VBE7.DLL"],
+                "allowed_relative_paths": ["win_b64/code/bin/VBE7.DLL"],
+                "canonical_path_sha256": "f" * 64,
+            },
+        }
+    ]
+    contract: dict[str, Any] = {
+        "contract_id": "references.core.b28",
+        "contract_version": 1,
+        "status": "approved",
+        "reference_definitions": definitions,
+        "observation_points": {
+            point: [_STABLE_REFERENCE_ID] for point in _REFERENCE_POINTS
+        },
+        "transitions": [
+            {"from": source, "to": target, "added": [], "removed": []}
+            for source, target in zip(
+                _REFERENCE_POINTS[:-1], _REFERENCE_POINTS[1:], strict=True
+            )
+        ],
+        "path_policy": {
+            "allowed_root_kinds": ["catia-install"],
+            "allow_user_paths": False,
+        },
+    }
+    digest = reference_contract_body_digest(contract)
+    assert digest is not None
+    contract["contract_body_digest"] = digest
+    contract["approval"] = {
+        "reference_approval_record_id": _REFERENCE_REVIEW_ID,
+        "reviewer_role": "independent-reference-reviewer",
+        "approved_at": "2026-07-14T13:45:00Z",
+        "discovery_session_id": discovery_bundle["session_id"],
+        "discovery_bundle_sha256": discovery_bundle["zip_sha256"],
+        "discovery_gate_receipt_sha256": sha256_bytes(gate_receipt.read_bytes()),
+        "observation_approval_sha256": sha256_bytes(
+            observation_approval.read_bytes()
+        ),
+        "approved_contract_body_digest": digest,
+    }
+    return contract
 
 
 def _create_fixture_repository(tmp_path: Path) -> tuple[Path, Path, bytes]:
@@ -557,3 +836,462 @@ def test_candidate_kit_is_deterministic_and_dirty_tree_fails_closed(
     assert checked["formal_eligible"] is False
     assert checked["mode"] == "worktree"
     assert not {"kit_id", "kit_dir", "zip_path"} & checked.keys()
+
+
+def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exercise only synthetic offline evidence; never promote target status."""
+    repo, _module_path, _module = _create_fixture_repository(tmp_path)
+    discovery_builds = _build_pair(
+        capsys,
+        repo,
+        tmp_path / "discovery build one",
+        tmp_path / "discovery build two",
+    )
+    discovery_kit = Path(discovery_builds[0]["zip_path"])
+    discovery_revocations = _write_revocations(
+        tmp_path / "discovery revocations.json",
+        captured_at="2026-07-14T10:00:00Z",
+    )
+    discovery_handoff = _invoke_success(
+        capsys,
+        [
+            "create-target-handoff",
+            os.fspath(tmp_path / "discovery build one"),
+            "--compare-build-root",
+            os.fspath(tmp_path / "discovery build two"),
+            "--purpose",
+            "discovery",
+            "--revocation-snapshot",
+            os.fspath(discovery_revocations),
+            "--prepared-record-id",
+            "record-synthetic-discovery-handoff-prepared",
+            "--review-record-id",
+            "record-synthetic-discovery-handoff-reviewed",
+            "--created-at",
+            "2026-07-14T10:30:00Z",
+            "--expires-at",
+            "2026-07-21T10:30:00Z",
+            "--output-root",
+            os.fspath(tmp_path / "discovery handoff"),
+        ],
+    )
+    discovery_handoff_path = Path(discovery_handoff["handoff_path"])
+
+    discovery_runs: list[dict[str, Any]] = []
+    for ordinal in (1, 2):
+        root = tmp_path / f"discovery workflow {ordinal}"
+        initialized = _invoke_success(
+            capsys,
+            [
+                "init-target-session",
+                os.fspath(discovery_kit),
+                "--mode",
+                "discovery",
+                "--package",
+                "core",
+                "--profile",
+                "DISCOVERY",
+                "--handoff",
+                os.fspath(discovery_handoff_path),
+                "--session-id",
+                "session-synthetic-discovery",
+                "--created-at",
+                "2026-07-14T12:00:00Z",
+                "--schema-dir",
+                os.fspath(_SCHEMA_ROOT),
+                "--output-root",
+                os.fspath(root / "capture output"),
+            ],
+        )
+        capture = Path(initialized["session_dir"])
+        _complete_synthetic_capture(
+            capture, mode="discovery", ended_at="2026-07-14T13:00:00Z"
+        )
+        validated = _invoke_success(
+            capsys,
+            [
+                "validate-target-evidence",
+                os.fspath(capture),
+                "--kit",
+                os.fspath(discovery_kit),
+                "--phase",
+                "capture",
+                "--schema-dir",
+                os.fspath(_SCHEMA_ROOT),
+            ],
+        )
+        assert validated["session_id"] == "session-synthetic-discovery"
+
+        gate_code, gate, stdout, stderr = _invoke_json(
+            capsys,
+            [
+                "evaluate-target-gate",
+                os.fspath(capture),
+                "--gate",
+                "DISCOVERY",
+                "--kit",
+                os.fspath(discovery_kit),
+                "--schema-dir",
+                os.fspath(_SCHEMA_ROOT),
+                "--output-root",
+                os.fspath(root / "gate"),
+                "--format",
+                "json",
+            ],
+        )
+        assert gate_code == 7
+        assert stdout and not stderr
+        assert gate["computed_outcome"] == "blocked"
+        assert gate["reason"] == "discovery-only"
+        gate_receipt = Path(gate["receipt_path"])
+
+        approval = _invoke_success(
+            capsys,
+            [
+                "record-target-approval",
+                os.fspath(capture),
+                "--kit",
+                os.fspath(discovery_kit),
+                "--gate-receipt",
+                os.fspath(gate_receipt),
+                "--scope",
+                "observation",
+                "--status",
+                "approved",
+                "--reviewer-role",
+                "independent-evidence-reviewer",
+                "--review-record-id",
+                _DISCOVERY_REVIEW_ID,
+                "--approved-at",
+                "2026-07-14T13:30:00Z",
+                "--schema-dir",
+                os.fspath(_SCHEMA_ROOT),
+                "--output-root",
+                os.fspath(root / "approval"),
+            ],
+        )
+        approval_path = Path(approval["approval_path"])
+        bundle = _invoke_success(
+            capsys,
+            [
+                "pack-target-evidence",
+                os.fspath(capture),
+                "--kit",
+                os.fspath(discovery_kit),
+                "--gate-receipt",
+                os.fspath(gate_receipt),
+                "--approval",
+                os.fspath(approval_path),
+                "--schema-dir",
+                os.fspath(_SCHEMA_ROOT),
+                "--output-root",
+                os.fspath(root / "sealed"),
+            ],
+        )
+        for sealed_input in (bundle["bundle_dir"], bundle["zip_path"]):
+            sealed = _invoke_success(
+                capsys,
+                [
+                    "validate-target-evidence",
+                    sealed_input,
+                    "--kit",
+                    os.fspath(discovery_kit),
+                    "--phase",
+                    "sealed",
+                    "--schema-dir",
+                    os.fspath(_SCHEMA_ROOT),
+                ],
+            )
+            assert sealed["session_id"] == "session-synthetic-discovery"
+        discovery_runs.append(
+            {
+                "capture": capture,
+                "gate": gate_receipt,
+                "approval": approval_path,
+                "bundle": bundle,
+            }
+        )
+
+    first_discovery, second_discovery = discovery_runs
+    assert _tree_bytes(first_discovery["capture"]) == _tree_bytes(
+        second_discovery["capture"]
+    )
+    assert first_discovery["gate"].read_bytes() == second_discovery[
+        "gate"
+    ].read_bytes()
+    assert first_discovery["approval"].read_bytes() == second_discovery[
+        "approval"
+    ].read_bytes()
+    assert _tree_bytes(Path(first_discovery["bundle"]["bundle_dir"])) == _tree_bytes(
+        Path(second_discovery["bundle"]["bundle_dir"])
+    )
+    assert Path(first_discovery["bundle"]["zip_path"]).read_bytes() == Path(
+        second_discovery["bundle"]["zip_path"]
+    ).read_bytes()
+
+    packages_path = repo / "catvba_refactor" / "config" / "packages.json"
+    packages = json.loads(packages_path.read_text(encoding="utf-8"))
+    packages["packages"][0]["reference_contract"] = _approved_reference_contract(
+        first_discovery["bundle"],
+        first_discovery["gate"],
+        first_discovery["approval"],
+    )
+    _write_json(packages_path, packages)
+    old_cutoff = _git(repo, "rev-parse", "dev")
+    _git(repo, "add", "catvba_refactor/config/packages.json")
+    _git(repo, "commit", "-m", "fixture: approve synthetic reference contract")
+    assert _git(repo, "rev-parse", "dev") == old_cutoff
+    assert _git(repo, "rev-parse", "HEAD") != old_cutoff
+
+    formal_builds = _build_pair(
+        capsys,
+        repo,
+        tmp_path / "formal build one",
+        tmp_path / "formal build two",
+    )
+    formal_kit = Path(formal_builds[0]["zip_path"])
+    formal_revocations = _write_revocations(
+        tmp_path / "formal revocations.json",
+        captured_at="2026-07-14T13:50:00Z",
+        withdrawn=[discovery_handoff["handoff_id"]],
+    )
+    formal_handoff = _invoke_success(
+        capsys,
+        [
+            "create-target-handoff",
+            os.fspath(tmp_path / "formal build one"),
+            "--compare-build-root",
+            os.fspath(tmp_path / "formal build two"),
+            "--purpose",
+            "formal",
+            "--supersedes-handoff",
+            os.fspath(discovery_handoff_path),
+            "--revocation-snapshot",
+            os.fspath(formal_revocations),
+            "--prepared-record-id",
+            "record-synthetic-formal-handoff-prepared",
+            "--review-record-id",
+            "record-synthetic-formal-handoff-reviewed",
+            "--created-at",
+            "2026-07-14T14:00:00Z",
+            "--expires-at",
+            "2026-07-21T14:00:00Z",
+            "--output-root",
+            os.fspath(tmp_path / "formal handoff"),
+        ],
+    )
+    formal_handoff_path = Path(formal_handoff["handoff_path"])
+
+    g2_initialized = _invoke_success(
+        capsys,
+        [
+            "init-target-session",
+            os.fspath(formal_kit),
+            "--mode",
+            "g2",
+            "--package",
+            "core",
+            "--profile",
+            "P-AB3",
+            "--handoff",
+            os.fspath(formal_handoff_path),
+            "--session-id",
+            "session-synthetic-g2",
+            "--created-at",
+            "2026-07-14T15:00:00Z",
+            "--schema-dir",
+            os.fspath(_SCHEMA_ROOT),
+            "--output-root",
+            os.fspath(tmp_path / "g2 capture"),
+        ],
+    )
+    g2_capture = Path(g2_initialized["session_dir"])
+    _complete_synthetic_capture(
+        g2_capture, mode="g2", ended_at="2026-07-14T16:00:00Z"
+    )
+    g2_gate = _invoke_success(
+        capsys,
+        [
+            "evaluate-target-gate",
+            os.fspath(g2_capture),
+            "--gate",
+            "G2",
+            "--kit",
+            os.fspath(formal_kit),
+            "--schema-dir",
+            os.fspath(_SCHEMA_ROOT),
+            "--output-root",
+            os.fspath(tmp_path / "g2 gate"),
+        ],
+    )
+    assert g2_gate["computed_outcome"] == "eligible"
+    g2_approval = _invoke_success(
+        capsys,
+        [
+            "record-target-approval",
+            os.fspath(g2_capture),
+            "--kit",
+            os.fspath(formal_kit),
+            "--gate-receipt",
+            g2_gate["receipt_path"],
+            "--scope",
+            "gate",
+            "--status",
+            "approved",
+            "--reviewer-role",
+            "independent-evidence-reviewer",
+            "--review-record-id",
+            _G2_REVIEW_ID,
+            "--approved-at",
+            "2026-07-14T16:30:00Z",
+            "--schema-dir",
+            os.fspath(_SCHEMA_ROOT),
+            "--output-root",
+            os.fspath(tmp_path / "g2 approval"),
+        ],
+    )
+    g2_bundle = _invoke_success(
+        capsys,
+        [
+            "pack-target-evidence",
+            os.fspath(g2_capture),
+            "--kit",
+            os.fspath(formal_kit),
+            "--gate-receipt",
+            g2_gate["receipt_path"],
+            "--approval",
+            g2_approval["approval_path"],
+            "--schema-dir",
+            os.fspath(_SCHEMA_ROOT),
+            "--output-root",
+            os.fspath(tmp_path / "g2 sealed"),
+        ],
+    )
+
+    g3_initialized = _invoke_success(
+        capsys,
+        [
+            "init-target-session",
+            os.fspath(formal_kit),
+            "--mode",
+            "g3-c",
+            "--package",
+            "core",
+            "--profile",
+            "P-AB3",
+            "--handoff",
+            os.fspath(formal_handoff_path),
+            "--prerequisite-evidence",
+            g2_bundle["zip_path"],
+            "--session-id",
+            "session-synthetic-g3-c",
+            "--created-at",
+            "2026-07-14T17:00:00Z",
+            "--schema-dir",
+            os.fspath(_SCHEMA_ROOT),
+            "--output-root",
+            os.fspath(tmp_path / "g3 capture"),
+        ],
+    )
+    g3_capture = Path(g3_initialized["session_dir"])
+    _complete_synthetic_capture(
+        g3_capture, mode="g3-c", ended_at="2026-07-14T18:00:00Z"
+    )
+    g3_gate_code, g3_gate, stdout, stderr = _invoke_json(
+        capsys,
+        [
+            "evaluate-target-gate",
+            os.fspath(g3_capture),
+            "--gate",
+            "G3-C",
+            "--kit",
+            os.fspath(formal_kit),
+            "--schema-dir",
+            os.fspath(_SCHEMA_ROOT),
+            "--output-root",
+            os.fspath(tmp_path / "g3 gate"),
+            "--format",
+            "json",
+        ],
+    )
+    assert g3_gate_code == 7
+    assert stdout and not stderr
+    assert g3_gate["computed_outcome"] == "blocked"
+    g3_approval = _invoke_success(
+        capsys,
+        [
+            "record-target-approval",
+            os.fspath(g3_capture),
+            "--kit",
+            os.fspath(formal_kit),
+            "--gate-receipt",
+            g3_gate["receipt_path"],
+            "--scope",
+            "gate",
+            "--status",
+            "approved",
+            "--reviewer-role",
+            "independent-evidence-reviewer",
+            "--review-record-id",
+            _G3_REVIEW_ID,
+            "--approved-at",
+            "2026-07-14T18:30:00Z",
+            "--schema-dir",
+            os.fspath(_SCHEMA_ROOT),
+            "--output-root",
+            os.fspath(tmp_path / "g3 approval"),
+        ],
+    )
+    assert _G2_REVIEW_ID != _G3_REVIEW_ID
+    nested_approval = json.loads(Path(g2_approval["approval_path"]).read_bytes())
+    outer_approval = json.loads(Path(g3_approval["approval_path"]).read_bytes())
+    assert nested_approval["review_record_id"] == _G2_REVIEW_ID
+    assert outer_approval["review_record_id"] == _G3_REVIEW_ID
+    g3_bundle = _invoke_success(
+        capsys,
+        [
+            "pack-target-evidence",
+            os.fspath(g3_capture),
+            "--kit",
+            os.fspath(formal_kit),
+            "--gate-receipt",
+            g3_gate["receipt_path"],
+            "--approval",
+            g3_approval["approval_path"],
+            "--schema-dir",
+            os.fspath(_SCHEMA_ROOT),
+            "--output-root",
+            os.fspath(tmp_path / "g3 sealed"),
+        ],
+    )
+    for sealed_input in (g2_bundle["bundle_dir"], g2_bundle["zip_path"]):
+        assert _invoke_success(
+            capsys,
+            [
+                "validate-target-evidence",
+                sealed_input,
+                "--kit",
+                os.fspath(formal_kit),
+                "--phase",
+                "sealed",
+                "--schema-dir",
+                os.fspath(_SCHEMA_ROOT),
+            ],
+        )["ok"] is True
+    for sealed_input in (g3_bundle["bundle_dir"], g3_bundle["zip_path"]):
+        assert _invoke_success(
+            capsys,
+            [
+                "validate-target-evidence",
+                sealed_input,
+                "--kit",
+                os.fspath(formal_kit),
+                "--phase",
+                "sealed",
+                "--schema-dir",
+                os.fspath(_SCHEMA_ROOT),
+            ],
+        )["ok"] is True

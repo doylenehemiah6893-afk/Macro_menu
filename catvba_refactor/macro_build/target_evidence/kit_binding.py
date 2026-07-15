@@ -5,6 +5,7 @@ from typing import Any
 
 from ..canonical import (
     CanonicalJsonError,
+    canonical_json_bytes,
     parse_canonical_json_bytes,
     sha256_bytes,
 )
@@ -104,6 +105,14 @@ def load_kit_evidence_binding(
     contract = companion.get("reference_contract")
     contract_digest = companion.get("contract_body_digest")
     status = contract.get("status") if type(contract) is dict else None
+    if (
+        status == "discovery-required"
+        and contract_digest is None
+        and type(contract) is dict
+    ):
+        # A discovery contract deliberately has no approved body. Bind evidence
+        # to the exact authenticated empty-contract identity, matching handoff.
+        contract_digest = sha256_bytes(canonical_json_bytes(contract))
     plan = parsed["target-test-plan/target-test-plan.json"]
     cases = plan.get("cases")
     if (

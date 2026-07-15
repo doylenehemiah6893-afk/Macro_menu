@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from dataclasses import replace
@@ -16,10 +17,12 @@ from catvba_refactor.macro_build.errors import (
     GateError,
     InfrastructureError,
     SourceError,
+    VerificationError,
 )
 from catvba_refactor.macro_build.manifests import ManifestSet
 from catvba_refactor.macro_build.handoff import HandoffReceipt, HandoffRequest
 from catvba_refactor.macro_build.model import (
+    BuildKitInspection,
     BuildKitReceipt,
     Diagnostic,
     GeneratedSourceSet,
@@ -31,6 +34,27 @@ from catvba_refactor.macro_build.model import (
     ValidationReport,
     VerificationReport,
 )
+from catvba_refactor.macro_build.target_evidence.model import (
+    ComputedOutcome,
+    EvidencePhase,
+    GateEvaluation,
+    GateId,
+    PayloadMember,
+    SessionMode,
+    TargetEvidenceBundleReceipt,
+    TargetEvidenceReport,
+    TargetSessionReceipt,
+)
+
+
+_EVIDENCE_COMMANDS = (
+    "init-target-session",
+    "validate-target-evidence",
+    "evaluate-target-gate",
+    "record-target-approval",
+    "pack-target-evidence",
+)
+_TARGET_COMMANDS = ("create-target-handoff", *_EVIDENCE_COMMANDS)
 
 
 def _manifest(report: ValidationReport = ValidationReport()) -> ManifestSet:
@@ -160,17 +184,724 @@ def test_console_help_lists_all_commands() -> None:
         "build-kit",
         "verify-kit",
         "audit-catvba",
-        "create-target-handoff",
+        *_TARGET_COMMANDS,
     ):
         assert command in help_text
-    for future_command in (
+
+
+def _target_command_arguments(
+    command: str,
+    tmp_path: Path,
+    *,
+    include_output_root: bool = True,
+) -> list[str]:
+    output = ["--output-root", os.fspath(tmp_path / "target output")]
+    arguments = {
+        "create-target-handoff": [
+            "create-target-handoff",
+            "primary build",
+            "--compare-build-root",
+            "comparison build",
+            "--purpose",
+            "discovery",
+            "--revocation-snapshot",
+            os.fspath(tmp_path / "revocations.json"),
+            "--prepared-record-id",
+            "record-handoff-prepared",
+            "--review-record-id",
+            "record-handoff-reviewed",
+            "--created-at",
+            "2026-07-14T12:00:00Z",
+            "--expires-at",
+            "2026-07-21T12:00:00Z",
+        ],
+        "init-target-session": [
+            "init-target-session",
+            "kit.zip",
+            "--mode",
+            "g2",
+            "--package",
+            "core",
+            "--profile",
+            "P-AB3",
+            "--handoff",
+            "formal-handoff.json",
+            "--session-id",
+            "session-cli-contract",
+            "--created-at",
+            "2026-07-14T12:00:00Z",
+        ],
+        "validate-target-evidence": [
+            "validate-target-evidence",
+            "capture",
+            "--kit",
+            "kit.zip",
+            "--phase",
+            "capture",
+        ],
+        "evaluate-target-gate": [
+            "evaluate-target-gate",
+            "capture",
+            "--gate",
+            "G2",
+            "--kit",
+            "kit.zip",
+        ],
+        "record-target-approval": [
+            "record-target-approval",
+            "capture",
+            "--kit",
+            "kit.zip",
+            "--gate-receipt",
+            "gate-receipt.json",
+            "--scope",
+            "gate",
+            "--status",
+            "rejected",
+            "--reviewer-role",
+            "independent-reviewer",
+            "--review-record-id",
+            "record-independent-review",
+            "--approved-at",
+            "2026-07-14T13:00:00Z",
+        ],
+        "pack-target-evidence": [
+            "pack-target-evidence",
+            "capture",
+            "--kit",
+            "kit.zip",
+            "--gate-receipt",
+            "gate-receipt.json",
+            "--approval",
+            "approval.json",
+        ],
+    }[command]
+    if include_output_root and command != "validate-target-evidence":
+        arguments.extend(output)
+    return arguments
+
+
+@pytest.mark.parametrize("command", _TARGET_COMMANDS)
+@pytest.mark.parametrize("position", ("before", "after"))
+def test_target_commands_accept_global_options_before_or_after_subcommand(
+    command: str,
+    position: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    revocations = tmp_path / "revocations.json"
+    revocations.write_bytes(b"{}\n")
+    captured: list[argparse.Namespace] = []
+    monkeypatch.setattr(
+        cli,
+        "dispatch",
+        lambda args: captured.append(args) or int(ExitCode.SUCCESS),
+    )
+    global_options = [
+        "--repo-root",
+        os.fspath(tmp_path / "repo"),
+        "--config-dir",
+        os.fspath(tmp_path / "config"),
+        "--schema-dir",
+        os.fspath(tmp_path / "schemas"),
+        "--output-root",
+        os.fspath(tmp_path / "global output"),
+        "--format",
+        "json",
+    ]
+    command_arguments = _target_command_arguments(
+        command, tmp_path, include_output_root=False
+    )
+    arguments = (
+        global_options + command_arguments
+        if position == "before"
+        else command_arguments + global_options
+    )
+
+    assert cli.main(arguments) == 0
+    assert len(captured) == 1
+    assert captured[0].command == command
+    assert captured[0].schema_dir == tmp_path / "schemas"
+    assert captured[0].output_root == tmp_path / "global output"
+    assert captured[0].format == "json"
+
+
+@pytest.mark.parametrize(
+    ("command", "option", "bad_value"),
+    [
+        ("init-target-session", "--mode", "G2"),
+        ("init-target-session", "--package", "fleet-spa"),
+        ("init-target-session", "--profile", "P-UNKNOWN"),
+        ("validate-target-evidence", "--phase", "draft"),
+        ("evaluate-target-gate", "--gate", "g2"),
+        ("record-target-approval", "--scope", "decision"),
+        ("record-target-approval", "--status", "pending"),
+    ],
+)
+def test_target_commands_reject_unknown_enum_values_as_usage_errors(
+    command: str,
+    option: str,
+    bad_value: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = _target_command_arguments(command, tmp_path)
+    arguments[arguments.index(option) + 1] = bad_value
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+
+    assert error.value.code == 2
+    error_message = capsys.readouterr().err.rsplit("error:", 1)[-1]
+    assert option in error_message
+    assert bad_value in error_message
+
+
+@pytest.mark.parametrize(
+    "command",
+    (
+        "create-target-handoff",
         "init-target-session",
-        "validate-target-evidence",
         "evaluate-target-gate",
         "record-target-approval",
         "pack-target-evidence",
-    ):
-        assert future_command not in help_text
+    ),
+)
+def test_target_mutating_commands_require_an_explicit_output_root(
+    command: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = _target_command_arguments(
+        command, tmp_path, include_output_root=False
+    )
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+
+    assert error.value.code == 2
+    error_message = capsys.readouterr().err.rsplit("error:", 1)[-1]
+    assert command in error_message
+    assert "requires --output-root" in error_message
+
+
+@pytest.mark.parametrize(
+    ("command", "option"),
+    [
+        ("create-target-handoff", "--compare-build-root"),
+        ("init-target-session", "--profile"),
+        ("validate-target-evidence", "--phase"),
+        ("evaluate-target-gate", "--gate"),
+        ("record-target-approval", "--status"),
+        ("pack-target-evidence", "--approval"),
+    ],
+)
+def test_target_commands_reject_abbreviated_scalar_options(
+    command: str,
+    option: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = _target_command_arguments(command, tmp_path)
+    index = arguments.index(option)
+    abbreviation = option[:-1]
+    arguments[index] = abbreviation
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+
+    assert error.value.code == 2
+    error_message = capsys.readouterr().err.rsplit("error:", 1)[-1]
+    assert abbreviation in error_message
+
+
+_TARGET_SCALAR_OPTIONS = {
+    "init-target-session": {
+        "--mode": "g2",
+        "--package": "core",
+        "--profile": "P-AB3",
+        "--handoff": "formal-handoff.json",
+        "--prerequisite-evidence": "g2-evidence.zip",
+        "--session-id": "session-cli-contract",
+        "--created-at": "2026-07-14T12:00:00Z",
+        "--output-root": "target-output",
+    },
+    "validate-target-evidence": {
+        "--kit": "kit.zip",
+        "--phase": "capture",
+    },
+    "evaluate-target-gate": {
+        "--gate": "G2",
+        "--kit": "kit.zip",
+        "--output-root": "target-output",
+    },
+    "record-target-approval": {
+        "--kit": "kit.zip",
+        "--gate-receipt": "gate-receipt.json",
+        "--scope": "gate",
+        "--status": "rejected",
+        "--reviewer-role": "independent-reviewer",
+        "--review-record-id": "record-independent-review",
+        "--approved-at": "2026-07-14T13:00:00Z",
+        "--output-root": "target-output",
+    },
+    "pack-target-evidence": {
+        "--kit": "kit.zip",
+        "--gate-receipt": "gate-receipt.json",
+        "--approval": "approval.json",
+        "--output-root": "target-output",
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("command", "option", "value"),
+    [
+        (command, option, value)
+        for command, options in _TARGET_SCALAR_OPTIONS.items()
+        for option, value in options.items()
+    ],
+)
+def test_evidence_commands_reject_every_duplicate_scalar_option(
+    command: str,
+    option: str,
+    value: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = _target_command_arguments(command, tmp_path)
+    if option in arguments:
+        arguments.extend((option, value))
+    else:
+        arguments.extend((option, value, option, value))
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(arguments)
+
+    assert error.value.code == 2
+    error_message = capsys.readouterr().err.rsplit("error:", 1)[-1]
+    assert f"{option} may be specified at most once" in error_message
+
+
+def _authenticated_kit() -> BuildKitInspection:
+    return BuildKitInspection(
+        files=(),
+        kit_id="kit-0123456789abcdef0123",
+        catalog_sha256="a" * 64,
+        manifest_sha256="b" * 64,
+        manifest_digest="c" * 64,
+        upstream_commit="1" * 40,
+        fork_dev_commit="2" * 40,
+        work_commit="3" * 40,
+        work_tree="4" * 40,
+        work_branch="codex/dev-review-report",
+        canonical_zip_sha256="d" * 64,
+        report=VerificationReport(True, ()),
+    )
+
+
+def _install_authenticated_kit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[BuildKitInspection, list[Path]]:
+    inspection = _authenticated_kit()
+    inspected: list[Path] = []
+    monkeypatch.setattr(
+        cli,
+        "inspect_build_kit",
+        lambda path: inspected.append(path) or inspection,
+        raising=False,
+    )
+    return inspection, inspected
+
+
+def test_init_target_session_dispatches_one_authenticated_kit_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    inspection, inspected = _install_authenticated_kit(monkeypatch)
+    calls: list[tuple[Any, ...]] = []
+
+    def initialize(
+        kit: BuildKitInspection,
+        handoff: Path,
+        output_root: Path,
+        **options: Any,
+    ) -> TargetSessionReceipt:
+        calls.append((kit, handoff, output_root, options))
+        return TargetSessionReceipt(
+            session_id="session-cli-contract",
+            session_dir=os.fspath(output_root / "target-session-session-cli-contract"),
+            mode=SessionMode.G2,
+            kit_id=inspection.kit_id or "",
+            evidence_payload_digest="e" * 64,
+        )
+
+    monkeypatch.setattr(cli, "init_target_session", initialize, raising=False)
+    arguments = _target_command_arguments("init-target-session", tmp_path)
+    arguments.extend(
+        ("--schema-dir", os.fspath(tmp_path / "schemas"), "--format", "json")
+    )
+
+    assert cli.main(arguments) == 0
+    assert inspected == [Path("kit.zip")]
+    assert calls == [
+        (
+            inspection,
+            Path("formal-handoff.json"),
+            tmp_path / "target output",
+            {
+                "mode": SessionMode.G2,
+                "package_id": "core",
+                "profile_id": "P-AB3",
+                "schema_dir": tmp_path / "schemas" / "target_evidence",
+                "prerequisite_evidence": None,
+                "session_id": "session-cli-contract",
+                "created_at": "2026-07-14T12:00:00Z",
+            },
+        )
+    ]
+    document = json.loads(capsys.readouterr().out)
+    assert document == {
+        "command": "init-target-session",
+        "diagnostics": [],
+        "evidence_payload_digest": "e" * 64,
+        "kit_id": inspection.kit_id,
+        "mode": "g2",
+        "ok": True,
+        "session_dir": os.fspath(
+            tmp_path / "target output" / "target-session-session-cli-contract"
+        ),
+        "session_id": "session-cli-contract",
+    }
+
+
+def test_validate_target_evidence_dispatches_and_emits_the_domain_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    inspection, inspected = _install_authenticated_kit(monkeypatch)
+    calls: list[tuple[Any, ...]] = []
+    member = PayloadMember("session.json", "e" * 64, 123)
+
+    def validate(
+        evidence: Path,
+        kit: BuildKitInspection,
+        **options: Any,
+    ) -> TargetEvidenceReport:
+        calls.append((evidence, kit, options))
+        return TargetEvidenceReport(
+            EvidencePhase.CAPTURE,
+            "session-cli-contract",
+            "f" * 64,
+            (member,),
+            (),
+        )
+
+    monkeypatch.setattr(cli, "validate_target_evidence", validate, raising=False)
+    arguments = _target_command_arguments("validate-target-evidence", tmp_path)
+    arguments.extend(
+        ("--schema-dir", os.fspath(tmp_path / "schemas"), "--format", "json")
+    )
+
+    assert cli.main(arguments) == 0
+    assert inspected == [Path("kit.zip")]
+    assert calls == [
+        (
+            Path("capture"),
+            inspection,
+            {
+                "phase": EvidencePhase.CAPTURE,
+                "schema_dir": tmp_path / "schemas" / "target_evidence",
+            },
+        )
+    ]
+    assert json.loads(capsys.readouterr().out) == {
+        "command": "validate-target-evidence",
+        "diagnostics": [],
+        "evidence_payload_digest": "f" * 64,
+        "ok": True,
+        "payload_members": [
+            {"path": "session.json", "sha256": "e" * 64, "size": 123}
+        ],
+        "phase": "capture",
+        "session_id": "session-cli-contract",
+    }
+
+
+def test_invalid_evidence_report_is_stdout_and_exit_six(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _install_authenticated_kit(monkeypatch)
+    finding = _diagnostic("TARGET_EVIDENCE_BINDING_MISMATCH", "session.json")
+    monkeypatch.setattr(
+        cli,
+        "validate_target_evidence",
+        lambda *args, **kwargs: TargetEvidenceReport(
+            EvidencePhase.CAPTURE,
+            "session-cli-contract",
+            None,
+            (),
+            (finding,),
+        ),
+        raising=False,
+    )
+    arguments = _target_command_arguments("validate-target-evidence", tmp_path)
+    arguments.extend(("--format", "json"))
+
+    assert cli.main(arguments) == 6
+    captured = capsys.readouterr()
+    assert not captured.err
+    document = json.loads(captured.out)
+    assert document["command"] == "validate-target-evidence"
+    assert document["ok"] is False
+    assert document["diagnostics"] == [
+        {
+            "code": finding.code,
+            "details": finding.details,
+            "message": finding.message,
+            "path": finding.path,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("outcome", "reason", "expected_exit"),
+    [
+        (ComputedOutcome.ELIGIBLE, "eligible", ExitCode.SUCCESS),
+        (ComputedOutcome.FAIL, "compile-failed", ExitCode.GATE),
+        (ComputedOutcome.BLOCKED, "discovery-only", ExitCode.GATE),
+    ],
+)
+def test_evaluate_target_gate_dispatches_and_classifies_normal_outcomes(
+    outcome: ComputedOutcome,
+    reason: str,
+    expected_exit: ExitCode,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    inspection, inspected = _install_authenticated_kit(monkeypatch)
+    calls: list[tuple[Any, ...]] = []
+    receipt_path = tmp_path / "target output" / "gate-receipt.json"
+
+    def evaluate(
+        capture: Path,
+        kit: BuildKitInspection,
+        output_root: Path,
+        **options: Any,
+    ) -> GateEvaluation:
+        calls.append((capture, kit, output_root, options))
+        return GateEvaluation(
+            GateId.G2,
+            outcome,
+            reason,
+            "e" * 64,
+            os.fspath(receipt_path),
+            "f" * 64,
+            (),
+        )
+
+    monkeypatch.setattr(cli, "evaluate_target_gate", evaluate, raising=False)
+    arguments = _target_command_arguments("evaluate-target-gate", tmp_path)
+    arguments.extend(
+        ("--schema-dir", os.fspath(tmp_path / "schemas"), "--format", "json")
+    )
+
+    assert cli.main(arguments) == int(expected_exit)
+    assert inspected == [Path("kit.zip")]
+    assert calls == [
+        (
+            Path("capture"),
+            inspection,
+            tmp_path / "target output",
+            {
+                "gate_id": GateId.G2,
+                "schema_dir": tmp_path / "schemas" / "target_evidence",
+            },
+        )
+    ]
+    document = json.loads(capsys.readouterr().out)
+    assert document["command"] == "evaluate-target-gate"
+    assert document["ok"] is (outcome is ComputedOutcome.ELIGIBLE)
+    assert document["computed_outcome"] == outcome.value
+    assert document["reason"] == reason
+    assert document["receipt_path"] == os.fspath(receipt_path)
+    assert document["receipt_sha256"] == "f" * 64
+
+
+def test_record_target_approval_dispatches_rejected_decision_and_exits_zero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    inspection, inspected = _install_authenticated_kit(monkeypatch)
+    calls: list[tuple[Any, ...]] = []
+    approval_path = tmp_path / "target output" / "approval-decision.json"
+
+    def record(
+        capture: Path,
+        kit: BuildKitInspection,
+        gate_receipt: Path,
+        output_root: Path,
+        **options: Any,
+    ) -> Path:
+        calls.append((capture, kit, gate_receipt, output_root, options))
+        return approval_path
+
+    monkeypatch.setattr(cli, "record_target_approval", record, raising=False)
+    arguments = _target_command_arguments("record-target-approval", tmp_path)
+    arguments.extend(
+        ("--schema-dir", os.fspath(tmp_path / "schemas"), "--format", "json")
+    )
+
+    assert cli.main(arguments) == 0
+    assert inspected == [Path("kit.zip")]
+    assert calls == [
+        (
+            Path("capture"),
+            inspection,
+            Path("gate-receipt.json"),
+            tmp_path / "target output",
+            {
+                "scope": "gate",
+                "status": "rejected",
+                "reviewer_role": "independent-reviewer",
+                "review_record_id": "record-independent-review",
+                "approved_at": "2026-07-14T13:00:00Z",
+                "schema_dir": tmp_path / "schemas" / "target_evidence",
+            },
+        )
+    ]
+    assert json.loads(capsys.readouterr().out) == {
+        "approval_id": "approval-decision",
+        "approval_path": os.fspath(approval_path),
+        "approval_status": "rejected",
+        "command": "record-target-approval",
+        "diagnostics": [],
+        "ok": True,
+    }
+
+
+def test_pack_target_evidence_dispatches_and_emits_bundle_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    inspection, inspected = _install_authenticated_kit(monkeypatch)
+    calls: list[tuple[Any, ...]] = []
+    output = tmp_path / "target output"
+
+    def pack(
+        capture: Path,
+        kit: BuildKitInspection,
+        gate_receipt: Path,
+        approval: Path,
+        output_root: Path,
+        **options: Any,
+    ) -> TargetEvidenceBundleReceipt:
+        calls.append((capture, kit, gate_receipt, approval, output_root, options))
+        return TargetEvidenceBundleReceipt(
+            "session-cli-contract",
+            os.fspath(output / "target-session-session-cli-contract"),
+            os.fspath(output / "target-session-session-cli-contract.zip"),
+            "e" * 64,
+            "f" * 64,
+            "a" * 64,
+        )
+
+    monkeypatch.setattr(cli, "pack_target_evidence", pack, raising=False)
+    arguments = _target_command_arguments("pack-target-evidence", tmp_path)
+    arguments.extend(
+        ("--schema-dir", os.fspath(tmp_path / "schemas"), "--format", "json")
+    )
+
+    assert cli.main(arguments) == 0
+    assert inspected == [Path("kit.zip")]
+    assert calls == [
+        (
+            Path("capture"),
+            inspection,
+            Path("gate-receipt.json"),
+            Path("approval.json"),
+            output,
+            {"schema_dir": tmp_path / "schemas" / "target_evidence"},
+        )
+    ]
+    assert json.loads(capsys.readouterr().out) == {
+        "bundle_content_digest": "a" * 64,
+        "bundle_dir": os.fspath(output / "target-session-session-cli-contract"),
+        "command": "pack-target-evidence",
+        "diagnostics": [],
+        "evidence_payload_digest": "f" * 64,
+        "ok": True,
+        "session_id": "session-cli-contract",
+        "zip_path": os.fspath(output / "target-session-session-cli-contract.zip"),
+        "zip_sha256": "e" * 64,
+    }
+
+
+def test_invalid_authenticated_kit_maps_to_verification_error_before_domain_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    finding = _diagnostic("KIT_HASH_MISMATCH", "catalog.json")
+    invalid = replace(
+        _authenticated_kit(), report=VerificationReport(False, (finding,))
+    )
+    monkeypatch.setattr(cli, "inspect_build_kit", lambda path: invalid, raising=False)
+    monkeypatch.setattr(
+        cli,
+        "init_target_session",
+        lambda *args, **kwargs: pytest.fail("invalid Kit must stop before dispatch"),
+        raising=False,
+    )
+    arguments = _target_command_arguments("init-target-session", tmp_path)
+    arguments.extend(("--format", "json"))
+
+    assert cli.main(arguments) == 5
+    captured = capsys.readouterr()
+    assert not captured.out
+    document = json.loads(captured.err)
+    assert document["command"] == "init-target-session"
+    assert document["error"]["exit_code"] == 5
+    assert document["error"]["type"] == VerificationError.__name__
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_exit"),
+    [
+        (InfrastructureError("TARGET_EVIDENCE_PUBLISH_FAILED"), ExitCode.INFRASTRUCTURE),
+        (EvidenceError("TARGET_EVIDENCE_CAPTURE_INVALID"), ExitCode.EVIDENCE),
+    ],
+)
+def test_target_domain_errors_remain_canonical_stderr_errors(
+    error: Exception,
+    expected_exit: ExitCode,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _install_authenticated_kit(monkeypatch)
+    monkeypatch.setattr(
+        cli,
+        "pack_target_evidence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(error),
+        raising=False,
+    )
+    arguments = _target_command_arguments("pack-target-evidence", tmp_path)
+    arguments.extend(("--format", "json"))
+
+    assert cli.main(arguments) == int(expected_exit)
+    captured = capsys.readouterr()
+    assert not captured.out
+    document = json.loads(captured.err)
+    assert document["command"] == "pack-target-evidence"
+    assert document["error"]["exit_code"] == int(expected_exit)
 
 
 def test_create_target_handoff_forwards_exact_frozen_request_and_emits_receipt(

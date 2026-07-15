@@ -901,6 +901,7 @@ git commit -m "feat: approve and seal target evidence"
 
 **Files:**
 - Modify: `catvba_refactor/macro_build/cli.py`
+- Modify: `catvba_refactor/macro_build/target_evidence/kit_binding.py`
 - Modify: `catvba_refactor/tests/test_cli.py`
 - Modify: `catvba_refactor/tests/test_end_to_end.py`
 
@@ -908,11 +909,11 @@ git commit -m "feat: approve and seal target evidence"
 - Produces exactly: `init-target-session`, `validate-target-evidence`, `evaluate-target-gate`, `record-target-approval`, `pack-target-evidence` in addition to `create-target-handoff`.
 - Preserves existing inventory/check/build/verify/audit CLI behavior.
 
-- [ ] **Step 1: Write failing parser and dispatch tests**
+- [x] **Step 1: Write failing parser and dispatch tests**
 
 Assert `--help` lists all eleven commands. Test every new command with global options both before and after the subcommand; reject abbreviations, duplicate `--kit/--gate/--status/--phase/--output-root`, missing required output root, unknown profile/package and phase/mode/Gate mismatches. Extend `_reject_duplicate_global_options` into `_reject_duplicate_options` for every scalar option.
 
-- [ ] **Step 2: Write failing exit/output tests**
+- [x] **Step 2: Write failing exit/output tests**
 
 Lock exit behavior:
 
@@ -927,15 +928,18 @@ Lock exit behavior:
 
 Discovery evaluator must return 7 with a `blocked/discovery-only` receipt; packer can subsequently seal it with an approved observation record and return 0.
 
-- [ ] **Step 3: Verify RED**
+- [x] **Step 3: Verify RED**
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q catvba_refactor/tests/test_cli.py
+UV_NO_SYNC=1 \
+UV_PYTHON=/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+UV_CACHE_DIR=/tmp/uv-cache \
+.venv/bin/python -m pytest -q catvba_refactor/tests/test_cli.py
 ```
 
 Expected: FAIL because only handoff and legacy commands are wired.
 
-- [ ] **Step 4: Implement command handlers**
+- [x] **Step 4: Implement command handlers**
 
 Add and dispatch the exact handlers `_init_target_session_command`, `_validate_target_evidence_command`,
 `_evaluate_target_gate_command`, `_record_target_approval_command`, and `_pack_target_evidence_command`; each takes
@@ -943,18 +947,26 @@ one `argparse.Namespace` and returns an integer exit code.
 
 Each handler delegates to one domain API and renders the same canonical record in text/JSON. It must not implement a second validator, reopen Kit bytes or update `Docs/STATUS.md`.
 
-- [ ] **Step 5: Add one complete synthetic end-to-end test**
+- [x] **Step 5: Add one complete synthetic end-to-end test**
 
 First build a discovery-required fixture twice and prove `handoff → init → blocked receipt → observation approval → seal → directory/ZIP validate` is byte-identical across two explicit output roots. Then create an approved-contract fixture whose provenance binds that synthetic discovery bundle, build it twice, issue a formal handoff that explicitly supersedes the discovery handoff, initialize G2, fill a structurally valid eligible G2 capture with synthetic non-CATIA evidence, evaluate, record approval and seal. Finally initialize G3-C with the sealed G2 prerequisite and prove a deliberately blocked G3 capture still seals. Label every fixture fact synthetic and never promote repository target status.
 
-- [ ] **Step 6: Verify GREEN and commit**
+- [x] **Step 6: Verify GREEN and commit**
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q \
+UV_NO_SYNC=1 \
+UV_PYTHON=/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+UV_CACHE_DIR=/tmp/uv-cache \
+.venv/bin/python -m pytest -q \
   catvba_refactor/tests/test_cli.py \
   catvba_refactor/tests/test_end_to_end.py
 git diff --check
-git add catvba_refactor/macro_build/cli.py catvba_refactor/tests/test_cli.py catvba_refactor/tests/test_end_to_end.py
+git add Docs/superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md \
+  Docs/superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md \
+  catvba_refactor/macro_build/cli.py \
+  catvba_refactor/macro_build/target_evidence/kit_binding.py \
+  catvba_refactor/tests/test_cli.py \
+  catvba_refactor/tests/test_end_to_end.py
 git commit -m "feat: expose target evidence workflow"
 ```
 

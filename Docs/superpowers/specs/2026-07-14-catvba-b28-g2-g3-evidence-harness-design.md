@@ -476,6 +476,10 @@ identity。Core 在本轮必须具有合同；尚无源码的 Fleet package 可�
 Fleet 正式 handoff。单独把 status 文本改成
 `approved` 而缺少批准证据时，manifest/schema 检查必须失败。
 
+`discovery-required` 的 package companion 因尚无可批准 body，保留 `contract_body_digest=null`。Evidence
+session 需要固定 SHA-256 binding 时，必须从同一 authenticated companion contract bytes 派生 identity digest，
+与 handoff 的 discovery fallback 完全一致；不得把 `null` 当作 Kit 无效，也不得为它伪造 approved body digest。
+
 只有 discovery 五点全部 `observed`、transition 可解释、无污染/unresolved/duplicate Reference，且 sealed
 bundle 与 observation approval 验证通过时，A 环境才能批准 contract body；否则必须修复环境后创建新的
 discovery session，不能靠编辑合同绕过。
