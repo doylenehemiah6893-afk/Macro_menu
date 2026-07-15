@@ -617,6 +617,8 @@ git commit -m "feat: audit structured reference contracts"
 
 Build canonical discovery, G2 and G3-C file maps by hand. Assert the validator requires the eight root evidence JSON documents plus operator index and handoff, exact shared binding, exact five Reference/Compile points, exact 30 target-result records/case hashes/order, mode/profile/handoff purpose, environment fingerprint, time ordering, record cross-links and conditional artifact/prerequisite files. For observed References, recompute `ref.<32hex>.<major>.<minor>` from GUID/version; discovery may retain a `null` stable ID with hashed unresolved observation ID, while formal sessions become blocked. Preserve duplicate stable IDs as distinct observation records and map them to formal failure rather than silently deduplicating.
 
+The committed schemas define five ordered Reference points and four ordered Compile points. Each Compile point has its own explicit, unique event `record_id`; CATIA/VBE operator record IDs are witnesses and must never be used as aliases for that Compile event ID.
+
 Distinguish structure from outcome: `failed|blocked|not-run` business states remain structurally valid, while missing/extra/unknown/reordered/cross-Kit records, forged expected values, non-null fields on `not-run`, unsafe operator members and invalid hashes are evidence errors.
 
 - [ ] **Step 2: Write failing sealed envelope tests**

@@ -336,8 +336,9 @@ post-save
 post-restart
 ```
 
-每条包含 `not-run|passed|failed|blocked`、开始/结束 UTC、CATIA/VBE operator record ID、错误阶段、模块和
-脱敏错误摘要。四条记录始终存在；G2 全部为 `not-run`，discovery 按实际步骤记录。G3-C evidence 可如实
+每条包含独立且唯一的 Compile record ID、`not-run|passed|failed|blocked`、开始/结束 UTC、CATIA/VBE
+operator record ID、错误阶段、模块和脱敏错误摘要。Compile record ID 标识 Compile 事件本身，不得复用
+CATIA/VBE witness ID。四条记录始终存在；G2 全部为 `not-run`，discovery 按实际步骤记录。G3-C evidence 可如实
 记录四种状态；只有 post-import、post-save 和 post-restart Compile 均为 `passed` 才可能 `eligible`。Kit manifest 中的 `compile_status` 仍保持
 `not-run`，不得反向改写。
 

@@ -38,10 +38,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "point", "status", "started_at", "ended_at", "catia_operator_record_id",
+        "record_id", "point", "status", "started_at", "ended_at", "catia_operator_record_id",
         "vbe_operator_record_id", "error_stage", "error_module", "redacted_error_summary"
       ],
       "properties": {
+        "record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
         "point": {"enum": ["blank-project", "post-import", "post-save", "post-restart"]},
         "status": {"enum": ["not-run", "passed", "failed", "blocked"]},
         "started_at": {"oneOf": [{"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"}, {"type": "null"}]},

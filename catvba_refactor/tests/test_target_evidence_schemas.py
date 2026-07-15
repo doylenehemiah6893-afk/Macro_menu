@@ -83,6 +83,7 @@ def _reference_point(point: str) -> dict:
 
 def _compile_record(point: str) -> dict:
     return {
+        "record_id": f"record-compile-{point}",
         "point": point,
         "status": "not-run",
         "started_at": None,
@@ -702,6 +703,13 @@ def test_not_run_test_records_cannot_retain_observations(schemas, field, value) 
 def test_not_run_compile_records_cannot_retain_error_observations(schemas) -> None:
     document = copy.deepcopy(_documents()["compile-result.json"])
     document["records"][0]["redacted_error_summary"] = "stale error"
+    assert not validate_target_document("compile-result.json", document, schemas).ok
+
+
+def test_compile_checkpoint_requires_an_explicit_event_record_id(schemas) -> None:
+    document = copy.deepcopy(_documents()["compile-result.json"])
+    del document["records"][0]["record_id"]
+
     assert not validate_target_document("compile-result.json", document, schemas).ok
 
 

@@ -19,6 +19,10 @@ from ..portable_paths import validate_portable_ascii_paths
 from ..reference_contract import resolved_reference_id
 from .container import (
     EvidenceContainerSnapshot,
+    MAX_EVIDENCE_DIRECTORIES,
+    MAX_EVIDENCE_ENTRIES,
+    MAX_EVIDENCE_FILE_BYTES,
+    MAX_EVIDENCE_TOTAL_BYTES,
     NESTED_G2_PATH,
     _read_zip_bytes,
     canonical_payload_manifest,
@@ -91,6 +95,10 @@ def _mapping(value: object) -> Mapping[str, Any] | None:
     return value if isinstance(value, Mapping) else None
 
 
+def _sort_text(value: object) -> str:
+    return value if type(value) is str else ""
+
+
 def environment_fingerprint(document: Mapping[str, Any], contract_body_digest: str) -> str:
     """Hash the stable, anonymous CATIA target environment projection.
 
@@ -142,6 +150,59 @@ def _empty_inspection(
         diagnostics=tuple(sorted(set(diagnostics))),
     )
     return TargetEvidenceInspection(report, files, documents, kit)
+
+
+def _snapshot_boundary_diagnostics(
+    snapshot: EvidenceContainerSnapshot,
+) -> tuple[Diagnostic, ...]:
+    invalid = type(snapshot.files) is not tuple or type(snapshot.directories) is not tuple
+    paths: list[str] = []
+    total = 0
+    if not invalid:
+        for item in snapshot.files:
+            if (
+                type(item) is not tuple
+                or len(item) != 2
+                or type(item[0]) is not str
+                or type(item[1]) is not bytes
+            ):
+                invalid = True
+                continue
+            path, data = item
+            paths.append(path)
+            total += len(data)
+            if len(data) > MAX_EVIDENCE_FILE_BYTES:
+                invalid = True
+            if path.lower().endswith(".zip") and path != NESTED_G2_PATH:
+                invalid = True
+    directories = list(snapshot.directories) if type(snapshot.directories) is tuple else []
+    directory_paths = [path for path in directories if type(path) is str]
+    if len(directory_paths) != len(directories):
+        invalid = True
+    if (
+        len(paths) > MAX_EVIDENCE_ENTRIES
+        or len(directories) > MAX_EVIDENCE_DIRECTORIES
+        or total > MAX_EVIDENCE_TOTAL_BYTES
+        or len(paths) != len(set(paths))
+        or len(directory_paths) != len(set(directory_paths))
+        or paths
+        != sorted(paths, key=lambda value: value.encode("utf-8", errors="surrogatepass"))
+        or directory_paths
+        != sorted(
+            directory_paths,
+            key=lambda value: value.encode("utf-8", errors="surrogatepass"),
+        )
+    ):
+        invalid = True
+    if not invalid:
+        return ()
+    return (
+        _diagnostic(
+            "TARGET_EVIDENCE_FILE_POLICY",
+            "snapshot",
+            "direct evidence snapshot violates secure container invariants",
+        ),
+    )
 
 
 def _parse_documents(
@@ -402,6 +463,7 @@ def _time_diagnostics(
         records = document.get("records") if document is not None else None
         if type(records) is not list:
             continue
+        previous_compile_end: datetime | None = None
         for index, record in enumerate(records):
             if type(record) is not dict:
                 continue
@@ -419,6 +481,23 @@ def _time_diagnostics(
                         "record timestamps fall outside the session",
                     )
                 )
+            if (
+                path == "compile-result.json"
+                and record_started is not None
+                and record_ended is not None
+            ):
+                if (
+                    previous_compile_end is not None
+                    and record_started < previous_compile_end
+                ):
+                    diagnostics.append(
+                        _diagnostic(
+                            "TARGET_EVIDENCE_TIME_ORDER",
+                            f"{path}#/records/{index}/started_at",
+                            "Compile checkpoints are not chronologically monotonic",
+                        )
+                    )
+                previous_compile_end = record_ended
 
     if phase is EvidencePhase.SEALED:
         approval = _mapping(documents.get("approval.json"))
@@ -480,9 +559,9 @@ def _reference_diagnostics(
         ordered = sorted(
             observations,
             key=lambda item: (
-                item.get("stable_reference_id") or "",
-                item.get("path_sha256") or "",
-                item.get("observation_record_id") or "",
+                _sort_text(item.get("stable_reference_id")),
+                _sort_text(item.get("path_sha256")),
+                _sort_text(item.get("observation_record_id")),
             )
             if type(item) is dict
             else ("", "", ""),
@@ -575,6 +654,21 @@ def _compile_diagnostics(
                 "TARGET_EVIDENCE_CHECKPOINT_ORDER",
                 "compile-result.json#/records",
                 "Compile checkpoints are missing, unknown or reordered",
+            )
+        )
+    record_ids = [
+        item.get("record_id") for item in records if type(item) is dict
+    ]
+    if (
+        len(record_ids) != len(_COMPILE_POINTS)
+        or any(type(record_id) is not str for record_id in record_ids)
+        or len(set(record_ids)) != len(record_ids)
+    ):
+        diagnostics.append(
+            _diagnostic(
+                "TARGET_EVIDENCE_RECORD_LINK",
+                "compile-result.json#/records",
+                "Compile checkpoint record IDs must be explicit and unique",
             )
         )
     if mode == "g2" and any(
@@ -695,8 +789,7 @@ def _execution_link_diagnostics(
         if type(record) is dict and type(record.get("point")) is str
     }
     compile_ids = {
-        point: record.get("vbe_operator_record_id")
-        for point, record in compile_by_point.items()
+        point: record.get("record_id") for point, record in compile_by_point.items()
     }
     state_by_id = {
         record.get("record_id"): record
@@ -1125,8 +1218,11 @@ def _inspect_snapshot(
     schema_dir: os.PathLike[str] | str,
     nesting_depth: int,
 ) -> TargetEvidenceInspection:
-    if snapshot.diagnostics:
-        return _empty_inspection(phase, kit, list(snapshot.diagnostics))
+    boundary_diagnostics = _snapshot_boundary_diagnostics(snapshot)
+    if snapshot.diagnostics or boundary_diagnostics:
+        return _empty_inspection(
+            phase, kit, [*snapshot.diagnostics, *boundary_diagnostics]
+        )
     files = dict(snapshot.files)
     diagnostics: list[Diagnostic] = []
     _required_and_seal_policy(files, phase, diagnostics)

@@ -424,6 +424,7 @@ def _observation(
 
 def _compile(point: str) -> dict[str, Any]:
     return {
+        "record_id": f"record-compile-{point}",
         "point": point,
         "status": "not-run",
         "started_at": None,
@@ -692,7 +693,7 @@ def _executed_g3_files() -> dict[str, bytes]:
     smoke = documents["test-results.json"]["records"][0]
     smoke.update(
         execution_point="post-restart",
-        compile_record_id="record-compile-post-restart-vbe",
+        compile_record_id="record-compile-post-restart",
         status="passed",
         observed_result_code=0,
         started_at="2026-07-14T12:32:00Z",
@@ -727,8 +728,8 @@ def _executed_g3_files() -> dict[str, bytes]:
             "package_id": "core",
             "sha256": sha256_bytes(artifact),
             "size": len(artifact),
-            "post_import_compile_record_id": "record-compile-post-import-vbe",
-            "post_restart_compile_record_id": "record-compile-post-restart-vbe",
+            "post_import_compile_record_id": "record-compile-post-import",
+            "post_restart_compile_record_id": "record-compile-post-restart",
             "modules_sha256": CATALOG_SHA,
             "form_frx_sha256": MANIFEST_SHA,
             "reference_observation_sha256": MANIFEST_DIGEST,
@@ -917,6 +918,25 @@ def test_directory_and_zip_inputs_have_identical_validation_semantics(
 
     assert directory_report == zip_report
     assert directory_report.ok
+
+
+def test_direct_snapshot_rejects_duplicate_member_paths_before_mapping() -> None:
+    snapshot = _snapshot(_capture_files("discovery"))
+    duplicated = EvidenceContainerSnapshot(
+        files=(("session.json", b"forged shadow\n"), *snapshot.files),
+        directories=snapshot.directories,
+        container_sha256=None,
+        diagnostics=(),
+    )
+
+    report = validate_target_evidence(
+        duplicated,
+        _kit(formal=False),
+        phase=EvidencePhase.CAPTURE,
+        schema_dir=SCHEMA_DIR,
+    )
+
+    _assert_invalid(report, "TARGET_EVIDENCE_FILE_POLICY")
 
 
 @pytest.mark.parametrize("missing", [*ROOT_DOCUMENTS, "handoff.json"])
@@ -1217,6 +1237,43 @@ def test_executed_g3_capture_closes_compile_test_state_and_returned_artifact_lin
     assert _validate(_executed_g3_files(), "g3-c").ok
 
 
+def test_compile_checkpoints_must_remain_monotonic_across_records() -> None:
+    def move_post_import_after_restart(document: dict[str, Any]) -> None:
+        document["records"][1].update(
+            started_at="2026-07-14T12:40:00Z",
+            ended_at="2026-07-14T12:41:00Z",
+        )
+
+    _assert_invalid(
+        _validate(
+            _replace_json(
+                _executed_g3_files(),
+                "compile-result.json",
+                move_post_import_after_restart,
+            ),
+            "g3-c",
+        ),
+        "TARGET_EVIDENCE_TIME_ORDER",
+    )
+
+
+def test_compile_checkpoint_record_ids_are_explicit_and_unique() -> None:
+    def duplicate_compile_identity(document: dict[str, Any]) -> None:
+        document["records"][2]["record_id"] = document["records"][1]["record_id"]
+
+    _assert_invalid(
+        _validate(
+            _replace_json(
+                _executed_g3_files(),
+                "compile-result.json",
+                duplicate_compile_identity,
+            ),
+            "g3-c",
+        ),
+        "TARGET_EVIDENCE_RECORD_LINK",
+    )
+
+
 @pytest.mark.parametrize(
     ("filename", "mutate", "code"),
     [
@@ -1237,7 +1294,7 @@ def test_executed_g3_capture_closes_compile_test_state_and_returned_artifact_lin
         (
             "test-results.json",
             lambda document: document["records"][0].__setitem__(
-                "compile_record_id", "record-compile-post-save-vbe"
+                "compile_record_id", "record-compile-post-save"
             ),
             "TARGET_EVIDENCE_RECORD_LINK",
         ),
@@ -1277,7 +1334,7 @@ def test_returned_artifact_manifest_binds_exact_bytes_and_compile_records(field:
         elif field == "sha256":
             artifact[field] = REVOKE_SHA
         else:
-            artifact[field] = "record-compile-blank-project-vbe"
+            artifact[field] = "record-compile-blank-project"
 
     _assert_invalid(
         _validate(
@@ -1297,6 +1354,20 @@ def test_resolved_reference_stable_id_is_recomputed_from_guid_and_version() -> N
         _validate(_replace_json(_capture_files("discovery"), "references.json", mutate), "discovery"),
         "TARGET_EVIDENCE_REFERENCE_ID_MISMATCH",
     )
+
+
+def test_schema_invalid_reference_sort_fields_return_diagnostics_not_type_errors() -> None:
+    observations = [_observation(ordinal=1), _observation(ordinal=2)]
+    observations[0]["stable_reference_id"] = 7
+
+    report = _validate(
+        _capture_with_reference_point(
+            "discovery", status="failed", observations=observations
+        ),
+        "discovery",
+    )
+
+    _assert_invalid(report, "TARGET_EVIDENCE_SCHEMA_INVALID")
 
 
 def test_discovery_preserves_hashed_unresolved_observation_identity() -> None:
