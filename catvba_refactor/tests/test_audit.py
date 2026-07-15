@@ -261,27 +261,31 @@ def _approved_vba_contract() -> dict[str, Any]:
     return contract
 
 
-def _vba_reference() -> dict[str, str]:
+def _vba_reference() -> dict[str, str | int]:
     return {
         "name": "VBA",
         "guid": "{000204EF-0000-0000-C000-000000000046}",
         "version": "4.2",
+        "major": 4,
+        "minor": 2,
         "description": "VBA Object Library",
         "libid_sha256": "d" * 64,
     }
 
 
-def _msforms_reference() -> dict[str, str]:
+def _msforms_reference() -> dict[str, str | int]:
     return {
         "name": "MSForms",
         "guid": "{0D452EE1-E08F-101A-852E-02608C4D0BB4}",
         "version": "2.0",
+        "major": 2,
+        "minor": 0,
         "description": "MSForms Object Library",
         "libid_sha256": "c" * 64,
     }
 
 
-def _approved_references() -> tuple[dict[str, str], ...]:
+def _approved_references() -> tuple[dict[str, str | int], ...]:
     return (_vba_reference(), _msforms_reference())
 
 
@@ -371,7 +375,7 @@ def _reference_observation(inspection: Any, contract: dict[str, Any]) -> dict:
 
 def _stub_reference_audit(
     monkeypatch: pytest.MonkeyPatch,
-    references: tuple[dict[str, str], ...],
+    references: tuple[dict[str, str | int], ...],
 ) -> None:
     monkeypatch.setattr(
         audit_module,
@@ -588,6 +592,20 @@ def test_reference_parser_uses_declared_codepage_and_unicode_name() -> None:
     records = audit_module._parse_logical_references(renamed)
 
     assert any(item["name"] == "CaféLib" for item in records)
+
+
+def test_reference_parser_converts_hex_libid_version_to_integers() -> None:
+    record = audit_module._libid_record(
+        "HexVersion",
+        (
+            b"*\\G{000204EF-0000-0000-C000-000000000046}"
+            b"#A.10#0##Hex Version Library"
+        ),
+    )
+
+    assert record["version"] == "A.10"
+    assert record["major"] == 10
+    assert record["minor"] == 16
 
 
 def test_reference_parser_fails_closed_on_unknown_record_type() -> None:
@@ -917,7 +935,7 @@ def test_external_reference_cross_binding_never_verifies(
             },
         ),
         (
-            {**_vba_reference(), "version": "4.3"},
+            {**_vba_reference(), "version": "4.3", "minor": 3},
             _msforms_reference(),
         ),
         (
@@ -929,7 +947,7 @@ def test_external_reference_cross_binding_never_verifies(
 def test_structured_container_references_preserve_pollution_and_versions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    references: tuple[dict[str, str], ...],
+    references: tuple[dict[str, str | int], ...],
 ) -> None:
     contract = _approved_vba_contract()
     manifest = _stage_audit_kit(

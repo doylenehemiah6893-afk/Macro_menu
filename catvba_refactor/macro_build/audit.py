@@ -62,6 +62,9 @@ _LIBID = re.compile(
     rb"(?P<location>[^#\x00\r\n]{0,2048})#"
     rb"(?P<description>[\x20-\x7e]{0,512})"
 )
+_LIBID_VERSION = re.compile(
+    rb"^(?P<major>[0-9A-Fa-f]{1,8})\.(?P<minor>[0-9A-Fa-f]{1,4})$"
+)
 _GUID_TEXT = (
     r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
     r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
@@ -88,6 +91,7 @@ _KIT_MANIFEST_FIELDS = frozenset(
 _EXPECTED_MAPPING_FIELDS = frozenset(
     {"file_sha256", "modules", "frx", "references", "hashes"}
 )
+ReferenceRecord = dict[str, str | int]
 
 
 @dataclass(frozen=True)
@@ -112,7 +116,7 @@ class AuditReport:
     file_sha256: str
     streams: tuple[dict[str, str | int], ...]
     modules: tuple[dict[str, str], ...]
-    references: tuple[dict[str, str], ...]
+    references: tuple[ReferenceRecord, ...]
     pcode: PCodeSignal
     diagnostics: tuple[Diagnostic, ...]
     package_id: str | None = None
@@ -509,23 +513,29 @@ def _parse_reference_control(reader: _DirReader) -> bytes:
 
 def _libid_record(
     name: str, libid: bytes
-) -> dict[str, str]:
+) -> ReferenceRecord:
     match = _LIBID.fullmatch(libid)
     if match is None:
         raise ValueError("VBA reference LIBID is malformed")
+    raw_version = match.group("version")
+    version = _LIBID_VERSION.fullmatch(raw_version)
+    if version is None:
+        raise ValueError("VBA reference LIBID version is malformed")
     return {
         "name": name,
         "guid": "{" + match.group("guid").decode("ascii").upper() + "}",
-        "version": match.group("version").decode("ascii"),
+        "version": raw_version.decode("ascii"),
+        "major": int(version.group("major"), 16),
+        "minor": int(version.group("minor"), 16),
         "description": match.group("description").decode("ascii").strip(),
         "libid_sha256": hashlib.sha256(libid).hexdigest(),
     }
 
 
-def _parse_logical_references(decompressed: bytes) -> tuple[dict[str, str], ...]:
+def _parse_logical_references(decompressed: bytes) -> tuple[ReferenceRecord, ...]:
     reader = _DirReader(decompressed)
     codec = _skip_project_information(reader)
-    records: list[dict[str, str]] = []
+    records: list[ReferenceRecord] = []
     pending_name = ""
     pending_original: bytes | None = None
     record_id = reader.u16()
@@ -556,7 +566,7 @@ def _parse_logical_references(decompressed: bytes) -> tuple[dict[str, str], ...]
             major = reader.u32()
             minor = reader.u16()
             record = _libid_record(pending_name, absolute)
-            if record["version"] != f"{major}.{minor}":
+            if record["major"] != major or record["minor"] != minor:
                 raise ValueError("VBA project reference version disagrees with LIBID")
             records.append(record)
         else:
@@ -579,7 +589,7 @@ def _parse_logical_references(decompressed: bytes) -> tuple[dict[str, str], ...]
 
 def _reference_records(
     compressed: bytes, diagnostics: list[Diagnostic]
-) -> tuple[dict[str, str], ...]:
+) -> tuple[ReferenceRecord, ...]:
     if len(compressed) > _MAX_REFERENCE_STREAM:
         diagnostics.append(
             _diag(
@@ -1416,7 +1426,7 @@ def _audit_ole(
     readonly_copy: Path, diagnostics: list[Diagnostic]
 ) -> tuple[
     tuple[dict[str, str | int], ...],
-    tuple[dict[str, str], ...],
+    tuple[ReferenceRecord, ...],
     tuple[_FormStorage, ...],
 ]:
     try:
@@ -1454,7 +1464,7 @@ def _audit_ole(
                         "the compound file does not contain exactly one VBA dir stream",
                     )
                 )
-                references: tuple[dict[str, str], ...] = ()
+                references: tuple[ReferenceRecord, ...] = ()
             else:
                 references = _reference_records(
                     ole.openstream(dir_entries[0]).read(), diagnostics
@@ -2786,9 +2796,6 @@ def _load_expected(
         return None
 
 
-_REFERENCE_VERSION = re.compile(
-    r"^(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)$"
-)
 _REFERENCE_POINTS = (
     "blank-project",
     "post-form-import",
@@ -2809,24 +2816,34 @@ def _alias_matches(value: object, allowed: tuple[str, ...]) -> bool:
 
 def _match_structured_references(
     contract: _ExpectedReferenceContract,
-    references: tuple[dict[str, str], ...],
+    references: tuple[ReferenceRecord, ...],
 ) -> tuple[bool, tuple[str, ...]]:
     expected = {item.stable_id: item for item in contract.definitions}
     matched: list[str] = []
     valid = len(references) == len(contract.definitions)
     for reference in references:
-        version = reference.get("version")
-        match = (
-            _REFERENCE_VERSION.fullmatch(version)
-            if type(version) is str
-            else None
-        )
+        raw_version = reference.get("version")
+        major = reference.get("major")
+        minor = reference.get("minor")
         guid = reference.get("guid")
-        if match is None or type(guid) is not str:
+        try:
+            version = (
+                _LIBID_VERSION.fullmatch(raw_version.encode("ascii"))
+                if type(raw_version) is str
+                else None
+            )
+        except UnicodeEncodeError:
+            version = None
+        if (
+            version is None
+            or type(guid) is not str
+            or type(major) is not int
+            or type(minor) is not int
+            or int(version.group("major"), 16) != major
+            or int(version.group("minor"), 16) != minor
+        ):
             valid = False
             continue
-        major = int(match.group("major"))
-        minor = int(match.group("minor"))
         try:
             stable_id = resolved_reference_id(guid, major, minor)
         except ValueError:
@@ -2972,7 +2989,7 @@ def _compare_expected(
     source_hashes: dict[str, frozenset[str]],
     source_semantic_hashes: dict[str, frozenset[str]],
     actual_forms: dict[str, str],
-    references: tuple[dict[str, str], ...],
+    references: tuple[ReferenceRecord, ...],
     diagnostics: list[Diagnostic],
     *,
     expected_kit: BuildKitInspection | None = None,
