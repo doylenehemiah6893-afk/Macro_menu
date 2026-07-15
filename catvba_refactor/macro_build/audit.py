@@ -29,6 +29,7 @@ from .encoding import decode_vba
 from .errors import SourceError, VerificationError
 from .kit import _verify_file_map
 from .model import Diagnostic
+from .reference_contract import reference_companion
 
 
 _MAX_PCODE_CAPTURE = 1024 * 1024
@@ -2200,6 +2201,7 @@ def _kit_expected_snapshot(
     if type(package_records) is not list or type(component_records) is not list:
         raise ValueError("catalog package graph is invalid")
     package_ids = tuple(record["package_id"] for record in package_records)
+    packages_by_id = {record["package_id"]: record for record in package_records}
     nonempty_packages = tuple(
         value
         for value in package_ids
@@ -2425,18 +2427,15 @@ def _kit_expected_snapshot(
             raise ValueError("reference package IDs are not unique")
         reference_packages.add(entry.stem)
         record = _load_json_object(raw)
-        if set(record) != {
-            "schema_version",
-            "package_id",
-            "reference_allowlist",
-            "compile_status",
-        }:
-            raise ValueError("reference companion fields are not exact")
+        package = packages_by_id.get(entry.stem)
+        if package is None or record != reference_companion(package):
+            raise ValueError("reference companion does not match its catalog package")
+        contract = record.get("reference_contract")
         if (
-            record["schema_version"] != 1
-            or type(record["package_id"]) is not str
-            or record["package_id"] != entry.stem
-            or record["compile_status"] != "not-run"
+            record.get("schema_version") != 2
+            or not isinstance(contract, dict)
+            or contract.get("status") not in {"discovery-required", "approved"}
+            or record.get("compile_status") != "not-run"
         ):
             raise ValueError("reference companion header is invalid")
         references_by_package[entry.stem] = _strict_strings(

@@ -20,6 +20,7 @@ from catvba_refactor.macro_build.errors import InfrastructureError, SourceError
 from catvba_refactor.macro_build.generator import generate_sources
 from catvba_refactor.macro_build.kit import (
     assemble_catalog,
+    inspect_build_kit,
     stage_build_kit,
     verify_build_kit,
 )
@@ -153,14 +154,34 @@ def _tool(tool_id: str = "core.safe") -> dict[str, Any]:
     }
 
 
+def _reference_contract(package_id: str) -> dict[str, Any]:
+    return {
+        "contract_id": f"references.{package_id}.b28",
+        "contract_version": 1,
+        "observation_points": None,
+        "reference_definitions": None,
+        "status": "discovery-required",
+        "transitions": None,
+    }
+
+
+def _package(
+    package_id: str, classification: str, **changes: Any
+) -> dict[str, Any]:
+    value = {
+        "package_id": package_id,
+        "classification": classification,
+        "reference_allowlist": [],
+        "reference_contract": _reference_contract(package_id),
+    }
+    value.update(changes)
+    return value
+
+
 def _manifests() -> ManifestSet:
     packages = [
-        {"package_id": "fleet-spa", "classification": "FLEET_EXTENSION_SPA"},
-        {
-            "package_id": "core",
-            "classification": "CORE_CANDIDATE",
-            "reference_allowlist": ["VBA", "CATIA V5 Interfaces"],
-        },
+        _package("fleet-spa", "FLEET_EXTENSION_SPA"),
+        _package("core", "CORE_CANDIDATE"),
     ]
     return ManifestSet(
         project={"schema_version": 1},
@@ -557,15 +578,9 @@ def test_staged_and_verified_core_generated_sources_exclude_fleet_tools(
         packages={
             "schema_version": 1,
             "packages": [
-                {"package_id": "core", "classification": "CORE_CANDIDATE"},
-                {
-                    "package_id": "fleet-spa",
-                    "classification": "FLEET_EXTENSION_SPA",
-                },
-                {
-                    "package_id": "fleet-fta",
-                    "classification": "FLEET_EXTENSION_FTA",
-                },
+                _package("core", "CORE_CANDIDATE"),
+                _package("fleet-spa", "FLEET_EXTENSION_SPA"),
+                _package("fleet-fta", "FLEET_EXTENSION_FTA"),
             ],
         },
         tools={
@@ -783,6 +798,7 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
             "fork_dev_commit": "2" * 40,
             "work_commit": "3" * 40,
             "work_tree": "4" * 40,
+            "work_branch": "codex/dev-review-report",
             "manifest_digest": "5" * 64,
             "tool_version": "0.1.0",
             "formal_eligible": True,
@@ -842,15 +858,8 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
             },
         ],
         "packages": [
-            {
-                "package_id": "core",
-                "classification": "CORE_CANDIDATE",
-                "reference_allowlist": ["VBA", "CATIA V5 Interfaces"],
-            },
-            {
-                "package_id": "fleet-spa",
-                "classification": "FLEET_EXTENSION_SPA",
-            },
+            _package("core", "CORE_CANDIDATE"),
+            _package("fleet-spa", "FLEET_EXTENSION_SPA"),
         ],
         "tools": [_tool()],
         "policy_evidence": {"compile_status": "not-run", "diagnostics": []},
@@ -902,7 +911,7 @@ def test_stages_full_layout_exact_bytes_and_independent_identity_oracles(
         ),
     ]
     independent_id = "kit-" + hashlib.sha256(catalog_bytes).hexdigest()[:20]
-    assert independent_id == "kit-245b5a1cf86d1e49ed1b"
+    assert independent_id == "kit-3d84900bd41154fa4129"
     assert receipt.kit_id == independent_id
 
     manifest_bytes = (kit_dir / "kit-manifest.json").read_bytes()
@@ -1597,7 +1606,6 @@ def test_snapshot_repository_labels_do_not_change_immutable_kit_identity(
         upstream_ref="refs/users/alice/private",
         fork_repository="C:/Users/Alice/fork",
         work_repository="//server/private/work",
-        work_branch="secret-user-branch",
     )
     second = replace(first, snapshot=noisy_snapshot)
 
@@ -1607,6 +1615,114 @@ def test_snapshot_repository_labels_do_not_change_immutable_kit_identity(
     assert Path(second_receipt.zip_path).read_bytes() == Path(
         first_receipt.zip_path
     ).read_bytes()
+
+
+def test_work_branch_changes_immutable_kit_identity(tmp_path: Path) -> None:
+    first, _ = _catalog()
+    second = replace(
+        first,
+        snapshot=replace(first.snapshot, work_branch="codex/other-work-branch"),
+    )
+
+    first_receipt = stage_build_kit(first, tmp_path / "one")
+    second_receipt = stage_build_kit(second, tmp_path / "two")
+
+    assert second_receipt.kit_id != first_receipt.kit_id
+    assert Path(second_receipt.zip_path).read_bytes() != Path(
+        first_receipt.zip_path
+    ).read_bytes()
+
+
+def test_directory_and_zip_inspection_return_same_authenticated_identity(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "out")
+
+    directory = inspect_build_kit(receipt.kit_dir)
+    archive = inspect_build_kit(receipt.zip_path)
+
+    assert directory.report.ok and archive.report.ok
+    assert directory.files == archive.files
+    assert directory.kit_id == archive.kit_id == receipt.kit_id
+    assert directory.manifest_sha256 == archive.manifest_sha256 == receipt.manifest_sha256
+    assert directory.catalog_sha256 == archive.catalog_sha256
+    assert directory.manifest_digest == archive.manifest_digest == catalog.snapshot.manifest_digest
+    assert directory.upstream_commit == archive.upstream_commit == catalog.snapshot.upstream_commit
+    assert directory.fork_dev_commit == archive.fork_dev_commit == catalog.snapshot.fork_dev_commit
+    assert directory.work_commit == archive.work_commit == catalog.snapshot.work_commit
+    assert directory.work_tree == archive.work_tree == catalog.snapshot.work_tree
+    assert directory.work_branch == archive.work_branch == catalog.snapshot.work_branch
+    assert directory.canonical_zip_sha256 == archive.canonical_zip_sha256 == receipt.zip_sha256
+
+
+def test_inspection_uses_one_captured_directory_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "out")
+    catalog_path = Path(receipt.kit_dir) / "catalog.json"
+    original = kit_module._directory_file_map
+    calls = 0
+
+    def capture_then_mutate(path: Path):
+        nonlocal calls
+        calls += 1
+        result = original(path)
+        catalog_path.write_bytes(b"mutated-after-capture")
+        return result
+
+    monkeypatch.setattr(kit_module, "_directory_file_map", capture_then_mutate)
+    inspection = inspect_build_kit(receipt.kit_dir)
+
+    assert calls == 1
+    assert inspection.report.ok
+    assert inspection.kit_id == receipt.kit_id
+
+
+def test_invalid_inspection_does_not_expose_unauthenticated_identity(
+    tmp_path: Path,
+) -> None:
+    catalog, _ = _catalog()
+    receipt = stage_build_kit(catalog, tmp_path / "out")
+    manifest_path = Path(receipt.kit_dir) / "kit-manifest.json"
+    manifest_path.write_bytes(b"{}\n")
+
+    inspection = inspect_build_kit(receipt.kit_dir)
+
+    assert not inspection.report.ok
+    assert inspection.files
+    assert inspection.kit_id is None
+    assert inspection.catalog_sha256 is None
+    assert inspection.manifest_sha256 is None
+    assert inspection.manifest_digest is None
+    assert inspection.canonical_zip_sha256 is None
+
+
+def test_verify_build_kit_delegates_to_inspection(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected = kit_module.BuildKitInspection(
+        files=(),
+        kit_id=None,
+        catalog_sha256=None,
+        manifest_sha256=None,
+        manifest_digest=None,
+        upstream_commit=None,
+        fork_dev_commit=None,
+        work_commit=None,
+        work_tree=None,
+        work_branch=None,
+        canonical_zip_sha256=None,
+        report=kit_module.VerificationReport(ok=False, diagnostics=()),
+    )
+    calls = []
+    monkeypatch.setattr(
+        kit_module,
+        "inspect_build_kit",
+        lambda path: calls.append(path) or expected,
+    )
+
+    assert verify_build_kit("captured-kit") is expected.report
+    assert calls == ["captured-kit"]
 
 
 def test_directory_and_zip_container_names_are_bound_to_catalog_id(
@@ -1629,7 +1745,7 @@ def test_directory_and_zip_container_names_are_bound_to_catalog_id(
     [
         lambda value: value["snapshot"].update(mode="worktree"),
         lambda value: value["snapshot"].update(formal_eligible=False),
-        lambda value: value["snapshot"].update(work_branch="secret"),
+        lambda value: value["snapshot"].update(work_branch="/secret"),
         lambda value: value.update(components=[]),
         lambda value: value["packages"][0].update(secret="/private"),
         lambda value: value["tools"][0].update(module_name="9Bad"),

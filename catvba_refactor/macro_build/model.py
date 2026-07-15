@@ -132,3 +132,19 @@ class BuildKitReceipt:
 class VerificationReport:
     ok: bool
     diagnostics: tuple[Diagnostic, ...]
+
+
+@dataclass(frozen=True)
+class BuildKitInspection:
+    files: tuple[tuple[str, bytes], ...]
+    kit_id: str | None
+    catalog_sha256: str | None
+    manifest_sha256: str | None
+    manifest_digest: str | None
+    upstream_commit: str | None
+    fork_dev_commit: str | None
+    work_commit: str | None
+    work_tree: str | None
+    work_branch: str | None
+    canonical_zip_sha256: str | None
+    report: VerificationReport

@@ -100,11 +100,20 @@ def _package(
     result: dict[str, Any] = {
         "package_id": package_id,
         "classification": classification,
+        "reference_allowlist": (
+            list(reference_allowlist) if reference_allowlist is not None else []
+        ),
+        "reference_contract": {
+            "contract_id": f"references.{package_id}.b28",
+            "contract_version": 1,
+            "observation_points": None,
+            "reference_definitions": None,
+            "status": "discovery-required",
+            "transitions": None,
+        },
     }
     if additional_deny_tokens is not None:
         result["additional_deny_tokens"] = additional_deny_tokens
-    if reference_allowlist is not None:
-        result["reference_allowlist"] = reference_allowlist
     return result
 
 

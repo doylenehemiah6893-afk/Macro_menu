@@ -41,6 +41,25 @@ def _tool(tool_id: str, caption: str) -> dict[str, Any]:
     }
 
 
+def _complete_package(record: dict[str, Any]) -> dict[str, Any]:
+    value = dict(record)
+    package_id = value.get("package_id")
+    if isinstance(package_id, str):
+        value.setdefault("reference_allowlist", [])
+        value.setdefault(
+            "reference_contract",
+            {
+                "contract_id": f"references.{package_id}.b28",
+                "contract_version": 1,
+                "observation_points": None,
+                "reference_definitions": None,
+                "status": "discovery-required",
+                "transitions": None,
+            },
+        )
+    return value
+
+
 def _manifests(
     tools: list[dict[str, Any]],
     *,
@@ -52,9 +71,14 @@ def _manifests(
         components={"schema_version": 1, "source_roots": [], "components": []},
         packages={
             "schema_version": 1,
-            "packages": packages
-            if packages is not None
-            else [{"package_id": "core", "classification": "CORE_CANDIDATE"}],
+            "packages": [
+                _complete_package(record)
+                for record in (
+                    packages
+                    if packages is not None
+                    else [{"package_id": "core", "classification": "CORE_CANDIDATE"}]
+                )
+            ],
         },
         tools={"schema_version": 1, "tools": tools},
         digest="f" * 64,

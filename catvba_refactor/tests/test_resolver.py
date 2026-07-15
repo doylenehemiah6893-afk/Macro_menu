@@ -120,6 +120,22 @@ def _roots() -> list[dict[str, Any]]:
     ]
 
 
+def _package(package_id: str, classification: str) -> dict[str, Any]:
+    return {
+        "package_id": package_id,
+        "classification": classification,
+        "reference_allowlist": [],
+        "reference_contract": {
+            "contract_id": f"references.{package_id}.b28",
+            "contract_version": 1,
+            "observation_points": None,
+            "reference_definitions": None,
+            "status": "discovery-required",
+            "transitions": None,
+        },
+    }
+
+
 def _manifests(
     records: list[dict[str, Any]],
     *,
@@ -135,11 +151,8 @@ def _manifests(
         packages={
             "schema_version": 1,
             "packages": [
-                {"package_id": "core", "classification": "CORE_CANDIDATE"},
-                {
-                    "package_id": "fleet-spa",
-                    "classification": "FLEET_EXTENSION_SPA",
-                },
+                _package("core", "CORE_CANDIDATE"),
+                _package("fleet-spa", "FLEET_EXTENSION_SPA"),
             ],
         },
         tools={"schema_version": 1, "tools": []},

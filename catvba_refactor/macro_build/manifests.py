@@ -10,6 +10,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from .canonical import canonical_json_bytes, sha256_bytes
 from .errors import ConfigError
 from .model import Diagnostic, ValidationReport
+from .reference_contract import reference_contract_diagnostics
 from .runtime_contract import canonical_runtime_id
 
 
@@ -399,6 +400,14 @@ def _cross_file_diagnostics(documents: dict[str, Any]) -> list[Diagnostic]:
         _canonical_id_diagnostics(tool_records, field="group_id", kind="group")
     )
     diagnostics.extend(_group_caption_diagnostics(tool_records))
+
+    for index, package in package_records:
+        diagnostics.extend(
+            reference_contract_diagnostics(
+                package,
+                path=_pointer("packages.json", ("packages", index)),
+            )
+        )
 
     for index, component in component_records:
         package_id = component.get("package_id")

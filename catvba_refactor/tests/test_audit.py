@@ -54,6 +54,13 @@ def _git_blob_oid(data: bytes) -> str:
     return hashlib.sha1(header + data).hexdigest()
 
 
+def _reference_id(label: str) -> str:
+    if label.startswith("ref."):
+        return label
+    identity = hashlib.sha256(label.encode("utf-8")).hexdigest()[:32]
+    return f"ref.{identity}.1.0"
+
+
 def _stage_audit_kit(
     tmp_path: Path,
     package_sources: dict[str, list[tuple[str, bytes]]],
@@ -95,7 +102,17 @@ def _stage_audit_kit(
                 if package_id == "core"
                 else "FLEET_EXTENSION_SPA"
             ),
-            "reference_allowlist": references.get(package_id, []),
+            "reference_allowlist": [
+                _reference_id(value) for value in references.get(package_id, [])
+            ],
+            "reference_contract": {
+                "contract_id": f"references.{package_id}.b28",
+                "contract_version": 1,
+                "observation_points": None,
+                "reference_definitions": None,
+                "status": "discovery-required",
+                "transitions": None,
+            },
         }
         for package_id in sorted(package_sources)
     )
@@ -497,11 +514,11 @@ def test_expected_kit_requires_selector_for_multiple_nonempty_packages(
 
     assert core_expected.package_id == "core"
     assert core_expected.modules == ("CoreOnly.bas", *_GENERATED_CORE_MODULES)
-    assert core_expected.references == ("VBA",)
+    assert core_expected.references == (_reference_id("VBA"),)
     assert all(path.startswith("packages/core/") for path, _ in core_expected.hashes)
     assert fleet_expected.package_id == "fleet-spa"
     assert fleet_expected.modules == ("FleetOnly.bas",)
-    assert fleet_expected.references == ("SPATypeLib",)
+    assert fleet_expected.references == (_reference_id("SPATypeLib"),)
     assert all(
         path.startswith("packages/fleet-spa/")
         for path, _ in fleet_expected.hashes

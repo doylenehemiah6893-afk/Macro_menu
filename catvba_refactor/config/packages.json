@@ -1,8 +1,44 @@
 {
   "schema_version": 1,
   "packages": [
-    {"package_id": "core", "classification": "CORE_CANDIDATE"},
-    {"package_id": "fleet-spa", "classification": "FLEET_EXTENSION_SPA"},
-    {"package_id": "fleet-fta", "classification": "FLEET_EXTENSION_FTA"}
+    {
+      "package_id": "core",
+      "classification": "CORE_CANDIDATE",
+      "reference_allowlist": [],
+      "reference_contract": {
+        "contract_id": "references.core.b28",
+        "contract_version": 1,
+        "observation_points": null,
+        "reference_definitions": null,
+        "status": "discovery-required",
+        "transitions": null
+      }
+    },
+    {
+      "package_id": "fleet-spa",
+      "classification": "FLEET_EXTENSION_SPA",
+      "reference_allowlist": [],
+      "reference_contract": {
+        "contract_id": "references.fleet-spa.b28",
+        "contract_version": 1,
+        "observation_points": null,
+        "reference_definitions": null,
+        "status": "discovery-required",
+        "transitions": null
+      }
+    },
+    {
+      "package_id": "fleet-fta",
+      "classification": "FLEET_EXTENSION_FTA",
+      "reference_allowlist": [],
+      "reference_contract": {
+        "contract_id": "references.fleet-fta.b28",
+        "contract_version": 1,
+        "observation_points": null,
+        "reference_definitions": null,
+        "status": "discovery-required",
+        "transitions": null
+      }
+    }
   ]
 }

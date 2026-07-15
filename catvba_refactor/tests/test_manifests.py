@@ -139,6 +139,24 @@ def test_committed_core_manifests_are_first_cycle_only_and_valid() -> None:
         "fleet-spa",
         "fleet-fta",
     ]
+    assert [
+        package["reference_contract"]
+        for package in manifest_set.packages["packages"]
+    ] == [
+        {
+            "contract_id": f"references.{package_id}.b28",
+            "contract_version": 1,
+            "observation_points": None,
+            "reference_definitions": None,
+            "status": "discovery-required",
+            "transitions": None,
+        }
+        for package_id in ("core", "fleet-spa", "fleet-fta")
+    ]
+    assert all(
+        package["reference_allowlist"] == []
+        for package in manifest_set.packages["packages"]
+    )
     assert all(
         "verified" not in json.dumps(package).lower()
         and "pass" not in json.dumps(package).lower()

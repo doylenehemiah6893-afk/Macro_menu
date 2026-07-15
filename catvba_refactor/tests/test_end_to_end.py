@@ -226,7 +226,19 @@ def _create_fixture_repository(tmp_path: Path) -> tuple[Path, Path, bytes]:
         {
             "schema_version": 1,
             "packages": [
-                {"package_id": "core", "classification": "CORE_CANDIDATE"}
+                {
+                    "package_id": "core",
+                    "classification": "CORE_CANDIDATE",
+                    "reference_allowlist": [],
+                    "reference_contract": {
+                        "contract_id": "references.core.b28",
+                        "contract_version": 1,
+                        "observation_points": None,
+                        "reference_definitions": None,
+                        "status": "discovery-required",
+                        "transitions": None,
+                    },
+                }
             ],
         },
     )

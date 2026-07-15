@@ -27,6 +27,7 @@ from .generator import (
 )
 from .manifests import ManifestSet
 from .model import (
+    BuildKitInspection,
     BuildKitReceipt,
     Component,
     Diagnostic,
@@ -45,6 +46,10 @@ from .model import (
 )
 from .policy import validate_catalog
 from .portable_paths import portable_key, validate_portable_paths
+from .reference_contract import (
+    reference_companion,
+    reference_contract_diagnostics,
+)
 
 
 _IMMUTABLE_STATUS = {
@@ -89,7 +94,13 @@ _OLE_OBJECT_BLOB = re.compile(
 )
 _WINDOWS_INVALID = frozenset('<>:"|?*')
 _PACKAGE_FIELDS = frozenset(
-    {"package_id", "classification", "additional_deny_tokens", "reference_allowlist"}
+    {
+        "package_id",
+        "classification",
+        "additional_deny_tokens",
+        "reference_allowlist",
+        "reference_contract",
+    }
 )
 _PACKAGE_CLASSIFICATIONS = frozenset(
     {
@@ -125,6 +136,7 @@ _SNAPSHOT_FIELDS = frozenset(
         "fork_dev_commit",
         "work_commit",
         "work_tree",
+        "work_branch",
         "manifest_digest",
         "tool_version",
         "formal_eligible",
@@ -369,6 +381,7 @@ def _snapshot_record(snapshot: InputSnapshot) -> dict[str, Any]:
         "fork_dev_commit": snapshot.fork_dev_commit,
         "work_commit": snapshot.work_commit,
         "work_tree": snapshot.work_tree,
+        "work_branch": snapshot.work_branch,
         "manifest_digest": snapshot.manifest_digest,
         "tool_version": snapshot.tool_version,
         "formal_eligible": snapshot.formal_eligible,
@@ -555,6 +568,18 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
         version = snapshot["tool_version"]
         if type(version) is not str or _TOOL_VERSION.fullmatch(version) is None:
             add("CATALOG_RECORD_INVALID", "catalog.json#/snapshot/tool_version", "tool version is invalid")
+        branch = snapshot["work_branch"]
+        if (
+            type(branch) is not str
+            or not branch
+            or _has_control(branch)
+            or _looks_pathlike(branch)
+        ):
+            add(
+                "CATALOG_RECORD_INVALID",
+                "catalog.json#/snapshot/work_branch",
+                "work branch is invalid",
+            )
 
     packages = value["packages"]
     package_ids: list[str] = []
@@ -564,7 +589,16 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
     for index, package in enumerate(packages):
         path = f"catalog.json#/packages/{index}"
         error = _record_keys_error(
-            package, _PACKAGE_FIELDS, frozenset({"package_id", "classification"})
+            package,
+            _PACKAGE_FIELDS,
+            frozenset(
+                {
+                    "package_id",
+                    "classification",
+                    "reference_allowlist",
+                    "reference_contract",
+                }
+            ),
         )
         if error is not None:
             add("CATALOG_RECORD_INVALID", path, error)
@@ -582,6 +616,11 @@ def _catalog_document_errors(value: Any) -> list[tuple[str, str, str]]:
                 list_error = _string_list_error(package[field])
                 if list_error is not None:
                     add("CATALOG_RECORD_INVALID", f"{path}/{field}", list_error)
+        if error is None:
+            for diagnostic in reference_contract_diagnostics(
+                package, path=path
+            ):
+                add(diagnostic.code, diagnostic.path, diagnostic.message)
     if package_ids != sorted(package_ids) or len(package_ids) != len(set(package_ids)):
         add("CATALOG_RECORD_INVALID", "catalog.json#/packages", "package IDs must be unique and sorted")
     package_id_set = set(package_ids)
@@ -1109,14 +1148,7 @@ def _layout(
         )
         package = _package_record(catalog, package_id)
         files[f"references/{package_id}.json"] = canonical_json_bytes(
-            {
-                "schema_version": 1,
-                "package_id": package_id,
-                "reference_allowlist": _json_safe(
-                    package.get("reference_allowlist", [])
-                ),
-                "compile_status": "not-run",
-            }
+            reference_companion(package)
         )
 
     resolution = {
@@ -2086,14 +2118,7 @@ def _expected_catalog_graph(
             f"{name}\n" for name in import_names[package_id]
         ).encode("utf-8")
         expected[f"references/{package_id}.json"] = canonical_json_bytes(
-            {
-                "schema_version": 1,
-                "package_id": package_id,
-                "reference_allowlist": _json_safe(
-                    package.get("reference_allowlist", [])
-                ),
-                "compile_status": "not-run",
-            }
+            reference_companion(package)
         )
 
     expected["receipts/source-resolution.json"] = canonical_json_bytes(
@@ -3136,8 +3161,8 @@ def _zip_file_map(
     return files, diagnostics, None
 
 
-def verify_build_kit(path: str | os.PathLike[str]) -> VerificationReport:
-    """Verify a staged directory or deterministic ZIP without extracting it."""
+def inspect_build_kit(path: str | os.PathLike[str]) -> BuildKitInspection:
+    """Capture, verify, and inspect one authenticated directory or ZIP snapshot."""
     candidate = Path(path)
     is_zip = candidate.suffix.casefold() == ".zip"
     if is_zip:
@@ -3153,4 +3178,45 @@ def verify_build_kit(path: str | os.PathLike[str]) -> VerificationReport:
         )
     )
     stable = _stable_diagnostics((diagnostics,))
-    return VerificationReport(ok=not stable, diagnostics=stable)
+    report = VerificationReport(ok=not stable, diagnostics=stable)
+    captured = tuple(sorted(files.items()))
+    if not report.ok:
+        return BuildKitInspection(
+            files=captured,
+            kit_id=None,
+            catalog_sha256=None,
+            manifest_sha256=None,
+            manifest_digest=None,
+            upstream_commit=None,
+            fork_dev_commit=None,
+            work_commit=None,
+            work_tree=None,
+            work_branch=None,
+            canonical_zip_sha256=None,
+            report=report,
+        )
+
+    catalog_bytes = files["catalog.json"]
+    manifest_bytes = files["kit-manifest.json"]
+    catalog = json.loads(catalog_bytes.decode("ascii"))
+    manifest = json.loads(manifest_bytes.decode("ascii"))
+    snapshot = catalog["snapshot"]
+    return BuildKitInspection(
+        files=captured,
+        kit_id=manifest["kit_id"],
+        catalog_sha256=sha256_bytes(catalog_bytes),
+        manifest_sha256=sha256_bytes(manifest_bytes),
+        manifest_digest=manifest["manifest_digest"],
+        upstream_commit=snapshot["upstream_commit"],
+        fork_dev_commit=snapshot["fork_dev_commit"],
+        work_commit=snapshot["work_commit"],
+        work_tree=snapshot["work_tree"],
+        work_branch=snapshot["work_branch"],
+        canonical_zip_sha256=sha256_bytes(_zip_bytes(files)),
+        report=report,
+    )
+
+
+def verify_build_kit(path: str | os.PathLike[str]) -> VerificationReport:
+    """Verify a staged directory or deterministic ZIP from one captured snapshot."""
+    return inspect_build_kit(path).report
