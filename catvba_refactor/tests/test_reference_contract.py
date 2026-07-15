@@ -197,6 +197,122 @@ def test_approved_contract_satisfies_the_package_schema() -> None:
     assert list(Draft202012Validator(schema).iter_errors(document)) == []
 
 
+def _schema_errors(contract: dict) -> list:
+    schema_path = Path(__file__).parents[1] / "schemas/packages.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    document = {
+        "schema_version": 1,
+        "packages": [
+            {
+                "package_id": "core",
+                "classification": "CORE_CANDIDATE",
+                "reference_allowlist": [],
+                "reference_contract": contract,
+            }
+        ],
+    }
+    return list(Draft202012Validator(schema).iter_errors(document))
+
+
+def _resign(contract: dict) -> None:
+    digest = reference_contract_body_digest(contract)
+    contract["contract_body_digest"] = digest
+    contract["approval"]["approved_contract_body_digest"] = digest
+
+
+@pytest.mark.parametrize(
+    "basename",
+    [
+        ".",
+        "..",
+        "CON",
+        "AUX.dll",
+        "nul.TLB",
+        "COM1.ocx",
+        "LPT9.dll",
+        "library.",
+        "library ",
+    ],
+)
+def test_definition_path_policy_rejects_nonportable_basenames_in_schema_and_semantics(
+    basename: str,
+) -> None:
+    contract = approved_contract()
+    contract["reference_definitions"][0]["path_policy"]["allowed_basenames"] = [
+        basename
+    ]
+
+    assert _schema_errors(contract)
+    assert "REFERENCE_PATH_POLICY_INVALID" in _codes(contract)
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "./VBE7.DLL",
+        "../VBE7.DLL",
+        "Libraries/CON.dll",
+        "AUX/VBE7.DLL",
+        "Libraries/nul.TLB",
+        "Libraries/COM1.ocx",
+        "Libraries/LPT9.dll",
+        "Libraries./VBE7.DLL",
+        "Libraries /VBE7.DLL",
+        "Libraries/VBE7.DLL.",
+        "Libraries/VBE7.DLL ",
+        "A" * 241,
+    ],
+)
+def test_definition_path_policy_rejects_nonportable_relative_segments_in_schema_and_semantics(
+    relative_path: str,
+) -> None:
+    contract = approved_contract()
+    contract["reference_definitions"][0]["path_policy"][
+        "allowed_relative_paths"
+    ] = [relative_path]
+
+    assert _schema_errors(contract)
+    assert "REFERENCE_PATH_POLICY_INVALID" in _codes(contract)
+
+
+@pytest.mark.parametrize(
+    ("field", "values"),
+    [
+        ("allowed_basenames", ["VBE7.DLL", "vbe7.dll"]),
+        ("allowed_basenames", ["K.TLB", "\u212a.tlb"]),
+        (
+            "allowed_relative_paths",
+            ["System/VBE7.DLL", "system/vbe7.dll"],
+        ),
+        (
+            "allowed_relative_paths",
+            ["System/K.TLB", "system/\u212a.tlb"],
+        ),
+    ],
+)
+def test_definition_path_policy_rejects_portable_key_collisions(
+    field: str, values: list[str]
+) -> None:
+    contract = approved_contract()
+    contract["reference_definitions"][0]["path_policy"][field] = values
+
+    assert "REFERENCE_PATH_POLICY_INVALID" in _codes(contract)
+
+
+def test_definition_path_policy_preserves_valid_windows_library_names() -> None:
+    contract = approved_contract()
+    policy = contract["reference_definitions"][0]["path_policy"]
+    policy["allowed_basenames"] = ["VBE7.DLL", "CATIA.Application.TLB"]
+    policy["allowed_relative_paths"] = [
+        "System32/VBE7.DLL",
+        "Dassault Systemes/B28/CATIA.Application.TLB",
+    ]
+    _resign(contract)
+
+    assert not _schema_errors(contract)
+    assert not _codes(contract)
+
+
 def test_contract_body_digest_is_order_independent_for_objects_and_excludes_metadata() -> None:
     contract = approved_contract()
     expected = reference_contract_body_digest(contract)

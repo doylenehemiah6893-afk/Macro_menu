@@ -8,6 +8,7 @@ from typing import Any
 
 from .canonical import canonical_json_bytes, sha256_bytes
 from .model import Diagnostic
+from .portable_paths import validate_portable_ascii_paths
 
 
 _POINTS = (
@@ -148,17 +149,6 @@ def approved_reference_set(contract: object, point: str) -> frozenset[str]:
     if any(type(value) is not str for value in values):
         raise ValueError("approved Reference point is malformed")
     return frozenset(values)
-
-
-def _portable_relative_path(value: object) -> bool:
-    if type(value) is not str or not value or "\\" in value or value.startswith("/"):
-        return False
-    try:
-        value.encode("ascii")
-    except UnicodeEncodeError:
-        return False
-    parts = value.split("/")
-    return all(part not in {"", ".", ".."} and ":" not in part for part in parts)
 
 
 def _unique_string_array(
@@ -365,20 +355,29 @@ def reference_contract_diagnostics(
                 "approved Reference must bind x64 B28 provenance",
             )
         definition_policy = definition.get("path_policy")
+        allowed_basenames = (
+            definition_policy.get("allowed_basenames", [])
+            if isinstance(definition_policy, Mapping)
+            else []
+        )
+        allowed_relative_paths = (
+            definition_policy.get("allowed_relative_paths", [])
+            if isinstance(definition_policy, Mapping)
+            else []
+        )
         valid_definition_policy = (
             isinstance(definition_policy, Mapping)
             and frozenset(definition_policy) == _DEFINITION_PATH_FIELDS
             and definition_policy.get("root_kind") in _ROOT_KINDS
             and _unique_string_array(
-                definition_policy.get("allowed_basenames"),
+                allowed_basenames,
                 nonempty=True,
                 pattern=_BASENAME,
             )
-            and _unique_string_array(definition_policy.get("allowed_relative_paths"))
-            and all(
-                _portable_relative_path(value)
-                for value in definition_policy.get("allowed_relative_paths", [])
-            )
+            and validate_portable_ascii_paths(allowed_basenames).ok
+            and _unique_string_array(allowed_relative_paths)
+            and all(len(value) <= 240 for value in allowed_relative_paths)
+            and validate_portable_ascii_paths(allowed_relative_paths).ok
             and (
                 definition_policy.get("canonical_path_sha256") is None
                 or (
