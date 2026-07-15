@@ -20,7 +20,7 @@
     "kit_zip_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
     "kit_verifier_report_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
     "evidence_payload_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
-    "rule_version": {"const": 1},
+    "rule_version": {"const": "b28-g2-g3-c-v1"},
     "computed_outcome": {"enum": ["eligible", "fail", "blocked"]},
     "reason": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "audit_rule_version": {"const": 1},

@@ -41,7 +41,18 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 240,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[ -~]+$"
+      "allOf": [
+        {"pattern": "^[ -~]+$"},
+        {"not": {"pattern": "[<>:\"\\\\|?*]"}},
+        {"not": {"pattern": "(?:^/|/$|//|\\\\)"}},
+        {"not": {"pattern": "(?:^|/)\\.{1,2}(?:/|$)"}},
+        {"not": {"pattern": "[ .](?:/|$)"}},
+        {
+          "not": {
+            "pattern": "(?i)(?:^|/)(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\.[^/]*)?(?:/|$)"
+          }
+        }
+      ]
     },
     "nullable_record_id": {
       "oneOf": [

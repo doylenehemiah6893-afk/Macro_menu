@@ -5,11 +5,14 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "handoff_id", "purpose", "created_at", "expires_at",
-    "revocation_status", "kit_id", "catalog_sha256", "manifest_sha256",
+    "revocation_status", "revocation_snapshot_sha256", "kit_id", "catalog_sha256", "manifest_sha256",
     "manifest_digest", "zip_sha256", "zip_sidecar_sha256", "work_commit",
     "work_tree", "work_branch", "upstream_cutoff", "fork_dev_cutoff",
     "package_id", "target", "compile_status", "release_eligible",
-    "generation_command", "verifier_results", "prepared_record_id",
+    "generation_command", "primary_directory_verifier_report_digest",
+    "comparison_directory_verifier_report_digest",
+    "primary_zip_verifier_report_digest", "comparison_zip_verifier_report_digest",
+    "prepared_record_id",
     "review_record_id", "reference_contract"
   ],
   "properties": {
@@ -19,6 +22,7 @@
     "created_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
     "expires_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
     "revocation_status": {"enum": ["active", "revoked"]},
+    "revocation_snapshot_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
     "kit_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/kit_id"},
     "catalog_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
     "manifest_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
@@ -35,15 +39,10 @@
     "compile_status": {"const": "not-run"},
     "release_eligible": {"const": false},
     "generation_command": {"type": "string", "minLength": 1, "maxLength": 500},
-    "verifier_results": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["directory", "zip"],
-      "properties": {
-        "directory": {"const": "passed"},
-        "zip": {"const": "passed"}
-      }
-    },
+    "primary_directory_verifier_report_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "comparison_directory_verifier_report_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "primary_zip_verifier_report_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "comparison_zip_verifier_report_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
     "prepared_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
     "review_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
     "reference_contract": {"$ref": "#/$defs/reference_contract"}

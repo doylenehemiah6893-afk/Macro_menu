@@ -3,10 +3,9 @@
   "$id": "https://schemas.catvba.invalid/target-evidence/payload-manifest.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "session_id", "members", "evidence_payload_digest"],
+  "required": ["schema_version", "members"],
   "properties": {
     "schema_version": {"const": 1},
-    "session_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/session_id"},
     "members": {
       "type": "array",
       "minItems": 1,
@@ -28,7 +27,6 @@
           "size": {"type": "integer", "minimum": 0}
         }
       }
-    },
-    "evidence_payload_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"}
+    }
   }
 }

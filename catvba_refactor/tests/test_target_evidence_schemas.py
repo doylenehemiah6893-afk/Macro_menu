@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from catvba_refactor.macro_build.errors import ConfigError
 from catvba_refactor.macro_build.model import Diagnostic
 from catvba_refactor.macro_build.target_evidence.model import (
     ComputedOutcome,
@@ -323,6 +324,7 @@ def _documents() -> dict[str, dict]:
             "created_at": UTC,
             "expires_at": "2026-07-21T12:00:00Z",
             "revocation_status": "active",
+            "revocation_snapshot_sha256": SHA,
             "kit_id": "kit-0123456789abcdef0123",
             "catalog_sha256": SHA,
             "manifest_sha256": SHA_B,
@@ -339,19 +341,20 @@ def _documents() -> dict[str, dict]:
             "compile_status": "not-run",
             "release_eligible": False,
             "generation_command": "macro-menu-build create-target-handoff",
-            "verifier_results": {"directory": "passed", "zip": "passed"},
+            "primary_directory_verifier_report_digest": SHA,
+            "comparison_directory_verifier_report_digest": SHA_B,
+            "primary_zip_verifier_report_digest": SHA,
+            "comparison_zip_verifier_report_digest": SHA_B,
             "prepared_record_id": "record-handoff-prepared",
             "review_record_id": "record-handoff-reviewed",
             "reference_contract": _reference_contract(),
         },
         "payload-manifest.json": {
             "schema_version": 1,
-            "session_id": "session-20260714-001",
             "members": [
                 {"path": "session.json", "sha256": SHA, "size": 1024},
                 {"path": "environment.json", "sha256": SHA_B, "size": 2048},
             ],
-            "evidence_payload_digest": SHA,
         },
         "gate-receipt.json": {
             "schema_version": 1,
@@ -363,7 +366,7 @@ def _documents() -> dict[str, dict]:
             "kit_zip_sha256": SHA,
             "kit_verifier_report_digest": SHA_B,
             "evidence_payload_digest": SHA,
-            "rule_version": 1,
+            "rule_version": "b28-g2-g3-c-v1",
             "computed_outcome": "blocked",
             "reason": "discovery-only",
             "audit_rule_version": 1,
@@ -397,6 +400,139 @@ def _documents() -> dict[str, dict]:
             "approval_sha256": SHA,
         },
     }
+
+
+def _state_snapshot() -> dict:
+    return {
+        "active_document_generic_type": "none",
+        "saved": None,
+        "read_only": None,
+        "dirty": None,
+        "selection_count": 0,
+        "alerts": "enabled",
+        "refresh": "enabled",
+        "interactivity": "enabled",
+        "opened_document_count": 0,
+        "closed_document_count": 0,
+        "recovered_after_error": True,
+        "recovered_after_cancel": True,
+        "recovered_after_restart": True,
+        "scalar_state_sha256": SHA,
+    }
+
+
+def _formal_documents(mode: str) -> dict[str, dict]:
+    profile = "P-AB3"
+    documents = copy.deepcopy(_documents())
+    binding = _binding(mode, profile)
+    documents["common.schema.json"] = binding
+    for filename in (
+        "session.json",
+        "environment.json",
+        "entitlements.json",
+        "references.json",
+        "compile-result.json",
+        "test-results.json",
+        "state-diff.json",
+        "artifact-manifest.json",
+        "operator-records/index.json",
+    ):
+        documents[filename]["binding"] = copy.deepcopy(binding)
+    for record in documents["test-results.json"]["records"]:
+        record["profile_id"] = profile
+
+    documents["handoff.json"]["purpose"] = "formal"
+    documents["handoff.json"]["reference_contract"] = _reference_contract("approved")
+    gate_id = "G2" if mode == "g2" else "G3-C"
+    documents["gate-receipt.json"].update(
+        {
+            "session_mode": mode,
+            "gate_id": gate_id,
+            "computed_outcome": "blocked",
+            "reason": "not-run",
+        }
+    )
+    documents["approval.json"].update(
+        {
+            "session_mode": mode,
+            "gate_id": gate_id,
+            "approval_scope": "gate",
+        }
+    )
+
+    if mode == "g3-c":
+        for point in documents["references.json"]["points"]:
+            point["status"] = "observed"
+            point["operator_record_id"] = f"record-reference-{point['point']}"
+        for record in documents["compile-result.json"]["records"][1:]:
+            record.update(
+                {
+                    "status": "passed",
+                    "started_at": UTC,
+                    "ended_at": UTC_LATER,
+                    "catia_operator_record_id": f"record-catia-{record['point']}",
+                    "vbe_operator_record_id": f"record-vbe-{record['point']}",
+                }
+            )
+        smoke = documents["test-results.json"]["records"][0]
+        smoke.update(
+            {
+                "execution_point": "post-restart",
+                "compile_record_id": "compile-post-restart",
+                "status": "passed",
+                "observed_result_code": 0,
+                "observed_state": "clean",
+                "started_at": "2026-07-14T12:02:00Z",
+                "ended_at": "2026-07-14T12:03:00Z",
+                "operator_record_id": "record-test-smoke",
+                "state_diff_record_id": "state-diff-smoke",
+            }
+        )
+        documents["state-diff.json"].update(
+            {
+                "overall_status": "observed",
+                "records": [
+                    {
+                        "record_id": "state-diff-smoke",
+                        "case_id": "context.core.healthcheck.none",
+                        "execution_point": "post-restart",
+                        "status": "observed",
+                        "operator_record_id": "record-test-smoke",
+                        "before": _state_snapshot(),
+                        "after": _state_snapshot(),
+                    }
+                ],
+            }
+        )
+        documents["artifact-manifest.json"].update(
+            {
+                "artifact_status": "returned",
+                "artifact": {
+                    "relative_path": "returned-catvba/core.catvba",
+                    "filename": "core.catvba",
+                    "package_id": "core",
+                    "sha256": SHA,
+                    "size": 1024,
+                    "post_import_compile_record_id": "compile-post-import",
+                    "post_restart_compile_record_id": "compile-post-restart",
+                    "modules_sha256": SHA,
+                    "form_frx_sha256": SHA_B,
+                    "reference_observation_sha256": SHA,
+                    "signature_stream_status": "absent",
+                    "kit_source_receipt_sha256": SHA_B,
+                    "readonly": True,
+                },
+            }
+        )
+        documents["gate-receipt.json"].update(
+            {
+                "computed_outcome": "eligible",
+                "reason": "rules-satisfied",
+                "audit_status": "verified",
+                "audit_report_digest": SHA,
+            }
+        )
+    return documents
 
 
 @pytest.fixture(scope="module")
@@ -667,5 +803,233 @@ def test_loader_checks_every_draft_2020_12_schema(tmp_path: Path) -> None:
     bad["type"] = "not-a-json-schema-type"
     (copied / "common.schema.json").write_text(json.dumps(bad), encoding="utf-8")
 
-    with pytest.raises(Exception, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*common"):
+    with pytest.raises(ConfigError, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*common"):
+        load_target_evidence_schemas(copied)
+
+
+def _copy_schema_family(tmp_path: Path) -> Path:
+    copied = tmp_path / "schemas"
+    copied.mkdir()
+    for source in SCHEMA_DIR.glob("*.schema.json"):
+        (copied / source.name).write_bytes(source.read_bytes())
+    return copied
+
+
+def _replace_schema(copied: Path, filename: str, document: dict) -> None:
+    (copied / filename).write_text(json.dumps(document), encoding="utf-8")
+
+
+def test_review_contract_payload_manifest_has_exact_non_self_referential_shape(
+    schemas,
+) -> None:
+    document = _documents()["payload-manifest.json"]
+    assert set(document) == {"schema_version", "members"}
+    assert validate_target_document("payload-manifest.json", document, schemas).ok
+
+    for forbidden in ("session_id", "evidence_payload_digest"):
+        mutated = copy.deepcopy(document)
+        mutated[forbidden] = SHA
+        assert not validate_target_document(
+            "payload-manifest.json", mutated, schemas
+        ).ok
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "revocation_snapshot_sha256",
+        "primary_directory_verifier_report_digest",
+        "comparison_directory_verifier_report_digest",
+        "primary_zip_verifier_report_digest",
+        "comparison_zip_verifier_report_digest",
+    ],
+)
+def test_review_contract_handoff_requires_all_authenticated_verifier_digests(
+    schemas, field: str
+) -> None:
+    canonical = _documents()["handoff.json"]
+    assert validate_target_document("handoff.json", canonical, schemas).ok
+
+    missing = copy.deepcopy(canonical)
+    del missing[field]
+    assert not validate_target_document("handoff.json", missing, schemas).ok
+
+    uppercase = copy.deepcopy(canonical)
+    uppercase[field] = "A" * 64
+    assert not validate_target_document("handoff.json", uppercase, schemas).ok
+
+
+def test_review_contract_gate_receipt_uses_exact_public_rule_version(schemas) -> None:
+    canonical = _documents()["gate-receipt.json"]
+    assert canonical["rule_version"] == "b28-g2-g3-c-v1"
+    assert validate_target_document("gate-receipt.json", canonical, schemas).ok
+
+    for invalid in (1, "v1", "b28-g2-g3-c-v2"):
+        mutated = copy.deepcopy(canonical)
+        mutated["rule_version"] = invalid
+        assert not validate_target_document("gate-receipt.json", mutated, schemas).ok
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "bad:name.txt",
+        "x/<bad>.txt",
+        "x/quoted\".txt",
+        "x/pipe|.txt",
+        "x/question?.txt",
+        "x/star*.txt",
+        "CON",
+        "aux.txt",
+        "x/COM1.log",
+        "x/lpt9",
+        ".",
+        "x/./y.txt",
+        "x/../y.txt",
+        "x//y.txt",
+        "x/name.",
+        "x/name ",
+        "x\\name.txt",
+        "/absolute.txt",
+        "客户.txt",
+    ],
+)
+def test_review_contract_common_portable_path_rejects_windows_unsafe_names(
+    schemas, path: str
+) -> None:
+    common = schemas.validators["common.schema.json"]
+    path_validator = common.evolve(schema=common.schema["$defs"]["portable_path"])
+    assert path_validator.is_valid("operator-records/safe-record.txt")
+    assert not path_validator.is_valid(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "operator-records/../secret.txt",
+        "operator-records/CON.txt",
+        "operator-records/record.txt.",
+        "operator-records/nested//record.txt",
+    ],
+)
+def test_review_contract_operator_paths_reuse_portable_grammar(
+    schemas, path: str
+) -> None:
+    document = copy.deepcopy(_documents()["operator-records/index.json"])
+    assert validate_target_document("operator-records/index.json", document, schemas).ok
+    document["records"][0]["relative_path"] = path
+    assert not validate_target_document(
+        "operator-records/index.json", document, schemas
+    ).ok
+
+
+@pytest.mark.parametrize("root_kind", ["user-profile", "customer-root", "temp"])
+def test_review_contract_private_environment_roots_cannot_carry_path_data(
+    schemas, root_kind: str
+) -> None:
+    validator = schemas.validators["environment.schema.json"]
+    path_validator = validator.evolve(
+        schema=validator.schema["$defs"]["path_evidence"]
+    )
+    private = {
+        "root_kind": root_kind,
+        "basename": None,
+        "relative_path": None,
+        "redacted_display": f"<{root_kind.upper().replace('-', '_')}>",
+        "normalized_path_sha256": SHA,
+    }
+    assert path_validator.is_valid(private)
+
+    private["basename"] = "alice"
+    private["relative_path"] = "Users/alice/Acme/B28"
+    assert not path_validator.is_valid(private)
+
+    private["basename"] = None
+    private["relative_path"] = None
+    private["redacted_display"] += "/alice/Acme"
+    assert not path_validator.is_valid(private)
+
+
+@pytest.mark.parametrize(
+    "root_kind", ["windows-install", "user-profile", "customer-root", "temp", "other"]
+)
+def test_review_contract_catia_install_root_is_only_public_catia_category(
+    schemas, root_kind: str
+) -> None:
+    document = copy.deepcopy(_documents()["environment.json"])
+    document["catia_environment"]["install_root"]["root_kind"] = root_kind
+    assert not validate_target_document("environment.json", document, schemas).ok
+
+
+@pytest.mark.parametrize("mode", ["g2", "g3-c"])
+def test_review_contract_complete_formal_mode_schema_family_is_valid(
+    schemas, mode: str
+) -> None:
+    documents = _formal_documents(mode)
+    reports = {
+        filename: validate_target_document(filename, document, schemas)
+        for filename, document in documents.items()
+    }
+    assert {filename: report.diagnostics for filename, report in reports.items() if not report.ok} == {}
+    if mode == "g3-c":
+        smoke = documents["test-results.json"]["records"][0]
+        assert smoke["status"] == "passed"
+        assert smoke["execution_point"] == "post-restart"
+        assert smoke["observed_result_code"] == 0
+
+
+@pytest.mark.parametrize(
+    "schema_id",
+    [
+        "https://schemas.catvba.invalid/target-evidence/shadow.schema.json",
+        "https://schemas.catvba.invalid/target-evidence/common.schema.json",
+    ],
+)
+def test_review_contract_loader_rejects_noncanonical_or_duplicate_schema_id(
+    tmp_path: Path, schema_id: str
+) -> None:
+    copied = _copy_schema_family(tmp_path)
+    filename = "session.schema.json"
+    schema = json.loads((copied / filename).read_text(encoding="utf-8"))
+    schema["$id"] = schema_id
+    _replace_schema(copied, filename, schema)
+
+    with pytest.raises(ConfigError, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*session"):
+        load_target_evidence_schemas(copied)
+
+
+def test_review_contract_loader_rejects_nested_shadow_id(tmp_path: Path) -> None:
+    copied = _copy_schema_family(tmp_path)
+    filename = "session.schema.json"
+    schema = json.loads((copied / filename).read_text(encoding="utf-8"))
+    schema["$defs"] = {
+        "shadow": {
+            "$id": "https://schemas.catvba.invalid/target-evidence/common.schema.json",
+            "type": "null",
+        }
+    }
+    _replace_schema(copied, filename, schema)
+
+    with pytest.raises(ConfigError, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*session"):
+        load_target_evidence_schemas(copied)
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "https://schemas.catvba.invalid/target-evidence/missing.schema.json#/$defs/binding",
+        "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/missing",
+        "http://[malformed",
+    ],
+)
+def test_review_contract_loader_eagerly_rejects_unresolvable_refs(
+    tmp_path: Path, reference: str
+) -> None:
+    copied = _copy_schema_family(tmp_path)
+    filename = "session.schema.json"
+    schema = json.loads((copied / filename).read_text(encoding="utf-8"))
+    schema["properties"]["binding"]["$ref"] = reference
+    _replace_schema(copied, filename, schema)
+
+    with pytest.raises(ConfigError, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*session"):
         load_target_evidence_schemas(copied)

@@ -69,7 +69,12 @@
       "required": ["root_kind", "basename", "relative_path", "redacted_display", "normalized_path_sha256"],
       "properties": {
         "root_kind": {"enum": ["catia-install", "windows-install", "temp", "user-profile", "customer-root", "other"]},
-        "basename": {"type": "string", "pattern": "^[A-Za-z0-9._ -]{1,80}$"},
+        "basename": {
+          "oneOf": [
+            {"type": "string", "pattern": "^[A-Za-z0-9._ -]{1,80}$"},
+            {"type": "null"}
+          ]
+        },
         "relative_path": {
           "oneOf": [
             {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/portable_path"},
@@ -83,7 +88,34 @@
         "normalized_path_sha256": {
           "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "root_kind": {"enum": ["temp", "user-profile", "customer-root"]}
+            }
+          },
+          "then": {
+            "properties": {
+              "basename": {"type": "null"},
+              "relative_path": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"root_kind": {"const": "temp"}}},
+          "then": {"properties": {"redacted_display": {"const": "<TEMP>"}}}
+        },
+        {
+          "if": {"properties": {"root_kind": {"const": "user-profile"}}},
+          "then": {"properties": {"redacted_display": {"const": "<USER_PROFILE>"}}}
+        },
+        {
+          "if": {"properties": {"root_kind": {"const": "customer-root"}}},
+          "then": {"properties": {"redacted_display": {"const": "<CUSTOMER_ROOT>"}}}
+        }
+      ]
     },
     "catia_environment": {
       "type": "object",
@@ -93,7 +125,17 @@
         "anonymous_id": {
           "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"
         },
-        "install_root": {"$ref": "#/$defs/path_evidence"}
+        "install_root": {
+          "allOf": [
+            {"$ref": "#/$defs/path_evidence"},
+            {
+              "properties": {
+                "root_kind": {"const": "catia-install"},
+                "basename": {"type": "string"}
+              }
+            }
+          ]
+        }
       }
     },
     "vba": {

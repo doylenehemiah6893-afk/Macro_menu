@@ -10,6 +10,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from referencing import Registry, Resource
+from referencing.exceptions import Unresolvable
 
 from ..errors import ConfigError
 from ..model import Diagnostic, ValidationReport
@@ -32,6 +33,8 @@ _SCHEMA_FILES = (
     "approval.schema.json",
     "session-complete.schema.json",
 )
+
+_SCHEMA_ID_BASE = "https://schemas.catvba.invalid/target-evidence/"
 
 _DOCUMENT_SCHEMAS = {
     "session.json": "session.schema.json",
@@ -56,10 +59,30 @@ class TargetEvidenceSchemaSet:
     validators: Mapping[str, Draft202012Validator]
 
 
+def _schema_references(value: object) -> tuple[str, ...]:
+    references: list[str] = []
+
+    def visit(node: object, *, root: bool = False) -> None:
+        if isinstance(node, dict):
+            if not root and "$id" in node:
+                raise ValueError("nested $id is not permitted")
+            for key, child in node.items():
+                if key in {"$ref", "$dynamicRef"} and isinstance(child, str):
+                    references.append(child)
+                visit(child)
+        elif isinstance(node, list):
+            for child in node:
+                visit(child)
+
+    visit(value, root=True)
+    return tuple(references)
+
+
 def load_target_evidence_schemas(schema_dir: str | Path) -> TargetEvidenceSchemaSet:
     root = Path(schema_dir)
     documents: dict[str, dict[str, Any]] = {}
     resources: list[tuple[str, Resource[Any]]] = []
+    seen_ids: set[str] = set()
     for filename in _SCHEMA_FILES:
         path = root / filename
         try:
@@ -70,20 +93,33 @@ def load_target_evidence_schemas(schema_dir: str | Path) -> TargetEvidenceSchema
             ) from exc
         if not isinstance(value, dict):
             raise ConfigError(f"INVALID_TARGET_EVIDENCE_SCHEMA: {filename}")
+        expected_id = f"{_SCHEMA_ID_BASE}{filename}"
+        schema_id = value.get("$id")
+        if schema_id != expected_id or schema_id in seen_ids:
+            raise ConfigError(f"INVALID_TARGET_EVIDENCE_SCHEMA: {filename}")
         try:
             Draft202012Validator.check_schema(value)
+            _schema_references(value)
             resource = Resource.from_contents(value)
         except (SchemaError, ValueError) as exc:
             raise ConfigError(
                 f"INVALID_TARGET_EVIDENCE_SCHEMA: {filename}"
             ) from exc
-        schema_id = value.get("$id")
-        if not isinstance(schema_id, str):
-            raise ConfigError(f"INVALID_TARGET_EVIDENCE_SCHEMA: {filename}")
+        seen_ids.add(schema_id)
         documents[filename] = value
         resources.append((schema_id, resource))
 
-    registry = Registry().with_resources(resources)
+    registry = Registry().with_resources(resources).crawl()
+    for filename in _SCHEMA_FILES:
+        schema_id = f"{_SCHEMA_ID_BASE}{filename}"
+        resolver = registry.resolver(schema_id)
+        try:
+            for reference in _schema_references(documents[filename]):
+                resolver.lookup(reference)
+        except (Unresolvable, ValueError) as exc:
+            raise ConfigError(
+                f"INVALID_TARGET_EVIDENCE_SCHEMA: {filename}"
+            ) from exc
     validators = {
         filename: Draft202012Validator(
             documents[filename],
@@ -122,13 +158,8 @@ def validate_target_document(
             )
         )
 
-    diagnostics = tuple(
-        Diagnostic(
-            code="TARGET_EVIDENCE_SCHEMA_INVALID",
-            path=f"{filename}#{_pointer(tuple(error.absolute_path))}",
-            message=error.message,
-        )
-        for error in sorted(
+    try:
+        errors = sorted(
             validator.iter_errors(document),
             key=lambda item: (
                 tuple(str(part) for part in item.absolute_path),
@@ -136,5 +167,22 @@ def validate_target_document(
                 item.message,
             ),
         )
+    except Unresolvable:
+        return ValidationReport(
+            (
+                Diagnostic(
+                    code="TARGET_EVIDENCE_SCHEMA_UNRESOLVABLE",
+                    path=f"{filename}#",
+                    message="target evidence schema reference could not be resolved",
+                ),
+            )
+        )
+    diagnostics = tuple(
+        Diagnostic(
+            code="TARGET_EVIDENCE_SCHEMA_INVALID",
+            path=f"{filename}#{_pointer(tuple(error.absolute_path))}",
+            message=error.message,
+        )
+        for error in errors
     )
     return ValidationReport(diagnostics).sorted()
