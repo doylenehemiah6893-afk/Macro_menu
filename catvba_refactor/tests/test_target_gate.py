@@ -340,6 +340,17 @@ def test_g2_explicit_failure_is_fail(
         lambda d, _m: d["environment.json"]["pollution_scan"].__setitem__("b30", "unknown"),
         lambda d, _m: d["environment.json"]["security"].__setitem__("office_state", "unknown"),
         lambda d, _m: d["environment.json"]["dsls"].__setitem__("connection_mode", "unknown"),
+        lambda d, _m: d["environment.json"].__setitem__("catia", None),
+        lambda d, _m: d["environment.json"].__setitem__("vba", None),
+        lambda d, _m: d["environment.json"].__setitem__("accounts_isolated", None),
+        lambda d, _m: d["environment.json"].__setitem__("operator_record_id", None),
+        lambda d, _m: (
+            d["environment.json"].__setitem__("operator_record_id", None),
+            d["environment.json"]["catia"].__setitem__("ga", False),
+        ),
+        lambda d, _m: d["session.json"].update(
+            capture_status="in-progress", ended_at=None
+        ),
         lambda d, _m: d["references.json"]["points"][0].__setitem__("status", "blocked"),
     ],
     ids=[
@@ -347,6 +358,12 @@ def test_g2_explicit_failure_is_fail(
         "pollution-unknown",
         "office-unknown",
         "dsls-unknown",
+        "catia-not-observed",
+        "vba-not-observed",
+        "accounts-not-observed",
+        "environment-witness-not-recorded",
+        "unwitnessed-template-value",
+        "capture-in-progress",
         "reference-blocked",
     ],
 )

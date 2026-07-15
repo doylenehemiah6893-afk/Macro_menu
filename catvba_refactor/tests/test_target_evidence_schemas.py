@@ -1002,6 +1002,58 @@ def test_review_contract_catia_install_root_is_only_public_catia_category(
     assert not validate_target_document("environment.json", document, schemas).ok
 
 
+def test_in_progress_session_and_all_null_environment_projection_are_valid(
+    schemas,
+) -> None:
+    session = copy.deepcopy(_documents()["session.json"])
+    session.update(
+        capture_status="in-progress",
+        anonymous_host_id=None,
+        vm_lineage_id=None,
+        snapshot_id=None,
+        ended_at=None,
+    )
+    assert validate_target_document("session.json", session, schemas).ok
+
+    environment = copy.deepcopy(_documents()["environment.json"])
+    for field in ("windows", "catia", "catia_environment", "vba", "dsls"):
+        environment[field] = None
+    environment.update(
+        security={
+            "office_state": "unknown",
+            "network_state": "unknown",
+            "powershell_state": "unknown",
+            "wsh_state": "unknown",
+        },
+        accounts_isolated=None,
+        pollution_scan={
+            name: "not-run"
+            for name in ("b30", "x86", "vba6", "syswow64", "temp_com", "user_com")
+        },
+        environment_fingerprint=None,
+        operator_record_id=None,
+    )
+    assert validate_target_document("environment.json", environment, schemas).ok
+
+
+def test_environment_fingerprint_projection_cannot_be_partially_populated(
+    schemas,
+) -> None:
+    complete = copy.deepcopy(_documents()["environment.json"])
+    partial_without_fingerprint = copy.deepcopy(complete)
+    partial_without_fingerprint["environment_fingerprint"] = None
+    partial_without_fingerprint["operator_record_id"] = None
+    assert not validate_target_document(
+        "environment.json", partial_without_fingerprint, schemas
+    ).ok
+
+    partial_with_fingerprint = copy.deepcopy(complete)
+    partial_with_fingerprint["catia"] = None
+    assert not validate_target_document(
+        "environment.json", partial_with_fingerprint, schemas
+    ).ok
+
+
 @pytest.mark.parametrize("mode", ["g2", "g3-c"])
 def test_review_contract_complete_formal_mode_schema_family_is_valid(
     schemas, mode: str

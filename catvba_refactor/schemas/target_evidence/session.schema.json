@@ -23,13 +23,22 @@
     },
     "capture_status": {"enum": ["in-progress", "complete"]},
     "anonymous_host_id": {
-      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"
+      "oneOf": [
+        {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"},
+        {"type": "null"}
+      ]
     },
     "vm_lineage_id": {
-      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"
+      "oneOf": [
+        {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"},
+        {"type": "null"}
+      ]
     },
     "snapshot_id": {
-      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"
+      "oneOf": [
+        {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"},
+        {"type": "null"}
+      ]
     },
     "builder_role": {"enum": ["isolated-builder"]},
     "standard_user_role": {"enum": ["isolated-standard-user"]},
@@ -52,5 +61,19 @@
     "notes_record_id": {
       "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"capture_status": {"const": "in-progress"}}},
+      "then": {"properties": {"ended_at": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"capture_status": {"const": "complete"}}},
+      "then": {
+        "properties": {
+          "ended_at": {"type": "string"}
+        }
+      }
+    }
+  ]
 }

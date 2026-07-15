@@ -25,7 +25,7 @@
     "tool_result": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
     "baseline_any_of": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "uniqueItems": true,
       "items": {"enum": ["AB3", "HD2", "MD2"]}
     },

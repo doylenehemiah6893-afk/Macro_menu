@@ -443,14 +443,34 @@ def _time_diagnostics(
     ended = _utc(session.get("ended_at"))
     created = _utc(handoff.get("created_at"))
     expires = _utc(handoff.get("expires_at"))
+    capture_status = session.get("capture_status")
+    capture_state_invalid = (
+        capture_status not in {"in-progress", "complete"}
+        or (capture_status == "in-progress" and ended is not None)
+        or (capture_status == "complete" and ended is None)
+        or (phase is EvidencePhase.SEALED and capture_status != "complete")
+    )
+    if capture_state_invalid:
+        diagnostics.append(
+            _diagnostic(
+                "TARGET_EVIDENCE_CAPTURE_INCOMPLETE",
+                "session.json#/capture_status",
+                "capture lifecycle state is incomplete or inconsistent",
+            )
+        )
+        return
     invalid = (
         started is None
-        or ended is None
         or created is None
         or expires is None
-        or not created <= started <= ended < expires
-        or ended < started
-        or session.get("capture_status") != "complete"
+        or not created <= started < expires
+        or (
+            capture_status == "complete"
+            and (
+                ended is None
+                or not started <= ended < expires
+            )
+        )
     )
     if invalid:
         diagnostics.append(
@@ -461,7 +481,6 @@ def _time_diagnostics(
             )
         )
         return
-
     for path in ("compile-result.json", "test-results.json"):
         document = _mapping(documents.get(path))
         records = document.get("records") if document is not None else None
@@ -473,10 +492,20 @@ def _time_diagnostics(
                 continue
             record_started = _utc(record.get("started_at"))
             record_ended = _utc(record.get("ended_at"))
+            after_session = (
+                record_ended is not None
+                and (
+                    (ended is not None and record_ended > ended)
+                    or (ended is None and expires is not None and record_ended >= expires)
+                )
+            )
             if (record_started is None) != (record_ended is None) or (
                 record_started is not None
                 and record_ended is not None
-                and not started <= record_started <= record_ended <= ended
+                and (
+                    not started <= record_started <= record_ended
+                    or after_session
+                )
             ):
                 diagnostics.append(
                     _diagnostic(
@@ -508,7 +537,7 @@ def _time_diagnostics(
         completion = _mapping(documents.get("SESSION_COMPLETE"))
         approved = _utc(approval.get("approved_at")) if approval is not None else None
         sealed = _utc(completion.get("sealed_at")) if completion is not None else None
-        if approved is None or sealed != approved or approved < ended:
+        if approved is None or sealed != approved or ended is None or approved < ended:
             diagnostics.append(
                 _diagnostic(
                     "TARGET_EVIDENCE_TIME_ORDER",
@@ -752,7 +781,9 @@ def _test_plan_diagnostics(
 
 
 def _entitlement_diagnostics(
-    document: Mapping[str, Any], profile: object, diagnostics: list[Diagnostic]
+    document: Mapping[str, Any],
+    profile: object,
+    diagnostics: list[Diagnostic],
 ) -> None:
     baseline = document.get("baseline_any_of")
     expected = {
@@ -763,13 +794,20 @@ def _entitlement_diagnostics(
     }.get(profile) if type(profile) is str else None
     valid = (
         type(baseline) is list
-        and bool(baseline)
         and all(type(item) is str for item in baseline)
         and set(baseline) <= {"AB3", "HD2", "MD2"}
         and document.get("additional_required") == ["SPA", "FTA"]
     )
     if expected is not None:
         valid = valid and baseline == expected
+    elif profile == "DISCOVERY":
+        valid = valid and baseline == []
+    elif profile == "P-PROD" and type(baseline) is list:
+        valid = valid and baseline == [
+            item for item in ("AB3", "HD2", "MD2") if item in baseline
+        ]
+    else:
+        valid = False
     if not valid:
         diagnostics.append(
             _diagnostic(
@@ -916,6 +954,8 @@ def _operator_and_record_diagnostics(
     session = _mapping(documents.get("session.json"))
     session_started = _utc(session.get("started_at")) if session is not None else None
     session_ended = _utc(session.get("ended_at")) if session is not None else None
+    handoff = _mapping(documents.get("handoff.json"))
+    handoff_expires = _utc(handoff.get("expires_at")) if handoff is not None else None
     for record in records:
         if not isinstance(record, Mapping):
             continue
@@ -934,11 +974,23 @@ def _operator_and_record_diagnostics(
         by_id[record_id] = record
         declared_paths.add(path)
         captured = _utc(record.get("captured_at"))
+        captured_after_session = (
+            captured is not None
+            and (
+                (session_ended is not None and captured > session_ended)
+                or (
+                    session_ended is None
+                    and handoff_expires is not None
+                    and captured >= handoff_expires
+                )
+            )
+        )
         if (
             captured is None
             or session_started is None
-            or session_ended is None
-            or not session_started <= captured <= session_ended
+            or (session_ended is None and handoff_expires is None)
+            or captured < session_started
+            or captured_after_session
         ):
             diagnostics.append(
                 _diagnostic(
@@ -1006,14 +1058,6 @@ def _operator_and_record_diagnostics(
         for index_value, record in enumerate(state_records):
             if type(record) is dict:
                 referenced.append((f"state-diff.json#/records/{index_value}/operator_record_id", record.get("operator_record_id")))
-    handoff = _mapping(documents.get("handoff.json"))
-    if handoff is not None:
-        referenced.extend(
-            (
-                ("handoff.json#/prepared_record_id", handoff.get("prepared_record_id")),
-                ("handoff.json#/review_record_id", handoff.get("review_record_id")),
-            )
-        )
     approval = _mapping(documents.get("approval.json"))
     if approval is not None:
         referenced.append(("approval.json#/review_record_id", approval.get("review_record_id")))
@@ -1198,11 +1242,15 @@ def _nested_g2_diagnostics(
     nested_session = _mapping(nested_documents.get("session.json"))
     nested_environment = _mapping(nested_documents.get("environment.json"))
     nested_references = _mapping(nested_documents.get("references.json"))
+    outer_handoff = _mapping(outer_documents.get("handoff.json"))
+    nested_files = dict(nested_snapshot.files)
     outer_binding = _mapping(outer_session.get("binding")) if outer_session is not None else None
     nested_binding = _mapping(nested_session.get("binding")) if nested_session is not None else None
     inherited = (
         nested_binding is not None
         and nested_binding.get("session_mode") == "g2"
+        and outer_handoff is not None
+        and nested_files.get("handoff.json") == canonical_json_bytes(outer_handoff)
         and outer_binding is not None
         and nested_binding.get("profile_id") == outer_binding.get("profile_id")
         and nested_binding.get("handoff_id") == outer_binding.get("handoff_id")
@@ -1225,7 +1273,8 @@ def _nested_g2_diagnostics(
             _diagnostic(
                 "TARGET_EVIDENCE_PREREQUISITE_MISMATCH",
                 NESTED_G2_PATH,
-                "G3-C prerequisite does not inherit the exact G2 environment",
+                "G3-C prerequisite does not inherit the stable G2 environment "
+                "fingerprint and identity",
             )
         )
 
@@ -1283,16 +1332,28 @@ def _inspect_snapshot(
         environment = _mapping(documents.get("environment.json"))
         if environment is not None:
             digest = environment.get("reference_contract_body_digest")
-            try:
-                fingerprint = environment_fingerprint(
-                    {"session": session, "environment": environment}, digest
+            fingerprint_value = environment.get("environment_fingerprint")
+            fingerprint_valid = fingerprint_value is None
+            if fingerprint_value is not None:
+                try:
+                    fingerprint = environment_fingerprint(
+                        {"session": session, "environment": environment}, digest
+                    )
+                except (TypeError, ValueError):
+                    fingerprint = None
+                fingerprint_valid = (
+                    fingerprint_value == fingerprint
+                    and session is not None
+                    and all(
+                        type(session.get(field)) is str
+                        for field in (
+                            "anonymous_host_id",
+                            "vm_lineage_id",
+                            "snapshot_id",
+                        )
+                    )
                 )
-            except (TypeError, ValueError):
-                fingerprint = None
-            if (
-                digest != kit_binding.reference_contract_body_digest
-                or environment.get("environment_fingerprint") != fingerprint
-            ):
+            if digest != kit_binding.reference_contract_body_digest or not fingerprint_valid:
                 diagnostics.append(
                     _diagnostic(
                         "TARGET_EVIDENCE_FINGERPRINT_MISMATCH",
@@ -1319,7 +1380,9 @@ def _inspect_snapshot(
         entitlements = _mapping(documents.get("entitlements.json"))
         if entitlements is not None:
             _entitlement_diagnostics(
-                entitlements, binding.get("profile_id"), diagnostics
+                entitlements,
+                binding.get("profile_id"),
+                diagnostics,
             )
         artifact = _mapping(documents.get("artifact-manifest.json"))
         if artifact is not None:

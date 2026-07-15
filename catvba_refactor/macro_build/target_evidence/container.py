@@ -963,7 +963,11 @@ def _read_zip_bytes(
     )
 
 
-def _read_regular_path(path: os.PathLike[str] | str) -> tuple[bytes, str]:
+def _read_regular_path(
+    path: os.PathLike[str] | str,
+    *,
+    max_bytes: int = MAX_EVIDENCE_CONTAINER_BYTES,
+) -> tuple[bytes, str]:
     absolute = _absolute_path(path)
     parent = os.path.dirname(absolute)
     name = os.path.basename(absolute)
@@ -997,7 +1001,7 @@ def _read_regular_path(path: os.PathLike[str] | str) -> tuple[bytes, str]:
                 absolute,
                 "container file must have exactly one link",
             )
-        if before.st_size > MAX_EVIDENCE_CONTAINER_BYTES:
+        if before.st_size > max_bytes:
             raise _ContainerFault(
                 "EVIDENCE_CONTAINER_SIZE_LIMIT",
                 absolute,

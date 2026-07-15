@@ -21,24 +21,75 @@
     "binding": {
       "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"
     },
-    "windows": {"$ref": "#/$defs/windows"},
-    "catia": {"$ref": "#/$defs/catia"},
-    "catia_environment": {"$ref": "#/$defs/catia_environment"},
-    "vba": {"$ref": "#/$defs/vba"},
-    "dsls": {"$ref": "#/$defs/dsls"},
+    "windows": {"oneOf": [{"$ref": "#/$defs/windows"}, {"type": "null"}]},
+    "catia": {"oneOf": [{"$ref": "#/$defs/catia"}, {"type": "null"}]},
+    "catia_environment": {"oneOf": [{"$ref": "#/$defs/catia_environment"}, {"type": "null"}]},
+    "vba": {"oneOf": [{"$ref": "#/$defs/vba"}, {"type": "null"}]},
+    "dsls": {"oneOf": [{"$ref": "#/$defs/dsls"}, {"type": "null"}]},
     "security": {"$ref": "#/$defs/security"},
-    "accounts_isolated": {"type": "boolean"},
+    "accounts_isolated": {"type": ["boolean", "null"]},
     "pollution_scan": {"$ref": "#/$defs/pollution_scan"},
     "reference_contract_body_digest": {
       "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"
     },
     "environment_fingerprint": {
-      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"
+      "oneOf": [
+        {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        {"type": "null"}
+      ]
     },
     "operator_record_id": {
-      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"
     }
   },
+  "allOf": [
+    {
+      "if": {"properties": {"environment_fingerprint": {"type": "null"}}},
+      "then": {
+        "properties": {
+          "windows": {"type": "null"},
+          "catia": {"type": "null"},
+          "catia_environment": {"type": "null"},
+          "vba": {"type": "null"},
+          "dsls": {"type": "null"},
+          "security": {
+            "properties": {
+              "office_state": {"const": "unknown"},
+              "network_state": {"const": "unknown"},
+              "powershell_state": {"const": "unknown"},
+              "wsh_state": {"const": "unknown"}
+            }
+          },
+          "accounts_isolated": {"type": "null"},
+          "pollution_scan": {
+            "properties": {
+              "b30": {"const": "not-run"},
+              "x86": {"const": "not-run"},
+              "vba6": {"const": "not-run"},
+              "syswow64": {"const": "not-run"},
+              "temp_com": {"const": "not-run"},
+              "user_com": {"const": "not-run"}
+            }
+          },
+          "environment_fingerprint": {"type": "null"},
+          "operator_record_id": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"environment_fingerprint": {"type": "string"}}},
+      "then": {
+        "properties": {
+          "windows": {"type": "object"},
+          "catia": {"type": "object"},
+          "catia_environment": {"type": "object"},
+          "vba": {"type": "object"},
+          "dsls": {"type": "object"},
+          "environment_fingerprint": {"type": "string"}
+        }
+      }
+    }
+  ],
   "$defs": {
     "windows": {
       "type": "object",

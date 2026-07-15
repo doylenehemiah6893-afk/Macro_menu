@@ -748,38 +748,71 @@ git commit -m "feat: evaluate target evidence gates"
 **Files:**
 - Create: `catvba_refactor/macro_build/target_evidence/session.py`
 - Create: `catvba_refactor/tests/test_target_session.py`
+- Modify: `catvba_refactor/schemas/target_evidence/session.schema.json`
+- Modify: `catvba_refactor/schemas/target_evidence/environment.schema.json`
+- Modify: `catvba_refactor/schemas/target_evidence/entitlements.schema.json`
+- Modify: `catvba_refactor/macro_build/target_evidence/validator.py`
+- Modify: `catvba_refactor/macro_build/target_evidence/gate.py`
+- Modify: `catvba_refactor/macro_build/target_evidence/container.py`
+- Modify: `catvba_refactor/tests/test_target_evidence_schemas.py`
+- Modify: `catvba_refactor/tests/test_target_evidence_validator.py`
+- Modify: `catvba_refactor/tests/test_target_gate.py`
 
 **Interfaces:**
 - Produces: `init_target_session(kit, handoff, output_root, *, mode, package_id, profile_id, schema_dir, prerequisite_evidence=None, session_id=None, created_at=None) -> TargetSessionReceipt`.
 
-- [ ] **Step 1: Write failing skeleton tests**
+- [x] **Step 1: Write failing skeleton tests**
 
-For fixed `session_id` and UTC, assert two output roots receive byte-identical discovery/G2 skeletons. Every skeleton has canonical `session/environment/entitlements/references/compile-result/test-results/state-diff/artifact-manifest/operator-records/index`, an exact handoff copy, no current receipt/approval/seal files and all mutable observation fields set to safe `not-run/null` values.
+For fixed `session_id` and UTC, assert two output roots receive byte-identical discovery/G2 skeletons. Every skeleton has canonical `session/environment/entitlements/references/compile-result/test-results/state-diff/artifact-manifest/operator-records/index`, an exact handoff copy, no current receipt/approval/seal files, `capture_status=in-progress`, `ended_at=null`, an empty current operator index and all mutable observation fields set to safe `not-run/unknown/null` values. Detached handoff witness IDs are never synthesized as current records.
 
 Derive `test-results.json` from the authenticated target plan: exactly 30 records in canonical order, each with `case_definition_sha256 = sha256(canonical_json_bytes(case))`, copied expected values and external result fields `not-run/null`. Never copy a mutable PASS into the Kit.
 
-- [ ] **Step 2: Test mode/profile/file matrices**
+- [x] **Step 2: Test mode/profile/file matrices**
 
 Discovery accepts only discovery handoff + `DISCOVERY`; G2 accepts only formal handoff + one formal profile and has `artifact_status=not-produced`; G3-C requires the same formal profile and a fully validated sealed G2 ZIP, copies it canonically to `prerequisites/g2-evidence.zip`, and permits conditional returned artifact. Reject unknown package, Fleet/empty package, mismatched purpose/contract, invalid prerequisite and default/random fields when explicit determinism was requested.
 
-- [ ] **Step 3: Verify RED**
+- [x] **Step 3: Verify RED**
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q catvba_refactor/tests/test_target_session.py
+UV_NO_SYNC=1 \
+UV_PYTHON=/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+UV_CACHE_DIR=/tmp/uv-cache \
+.venv/bin/python -m pytest -q catvba_refactor/tests/test_target_session.py
 ```
 
 Expected: FAIL during import.
 
-- [ ] **Step 4: Implement fail-before-write initialization**
+- [x] **Step 4: Implement fail-before-write initialization**
 
-Inspect Kit, validate handoff and optional G2 prerequisite completely before creating output. Default ID is a cryptographically random `session-<lowerhex>` and default UTC is current UTC; explicit values are required for deterministic tests. Build all bytes in memory, validate the capture skeleton through Task 8, then publish the new directory atomically without modifying Kit/handoff/prerequisite.
+Inspect Kit, validate handoff and optional G2 prerequisite completely before creating output. Default ID is a cryptographically random `session-<lowerhex>` and default UTC is current UTC; explicit values are required for deterministic tests. Build all bytes in memory, validate the in-progress capture skeleton through Task 8, then publish the new directory atomically without modifying Kit/handoff/prerequisite. CAPTURE accepts truthful drafts, while Gate receipt generation and SEALED validation require `complete`. G3 inheritance eligibility binds only the sealed G2 fingerprint projection and host/VM/snapshot identity; anonymous container IDs may remain prerequisite context, while current security, pollution, account and operator facts restart unobserved. Reject any G3 `started_at` earlier than the prerequisite `sealed_at`.
 
-- [ ] **Step 5: Verify GREEN and commit**
+Enforce the 4 MiB handoff limit before reading payload bytes. For a directory prerequisite, reject canonical no-follow path or directory-identity overlap where `output_root` is inside the prerequisite or the final session directory would contain it; the prerequisite tree must remain byte- and identity-unchanged on failure.
+
+- [x] **Step 5: Verify GREEN and commit**
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q catvba_refactor/tests/test_target_session.py
+UV_NO_SYNC=1 \
+UV_PYTHON=/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+UV_CACHE_DIR=/tmp/uv-cache \
+.venv/bin/python -m pytest -q \
+  catvba_refactor/tests/test_target_session.py \
+  catvba_refactor/tests/test_target_evidence_schemas.py \
+  catvba_refactor/tests/test_target_evidence_validator.py \
+  catvba_refactor/tests/test_target_gate.py
 git diff --check
-git add catvba_refactor/macro_build/target_evidence/session.py catvba_refactor/tests/test_target_session.py
+git add Docs/superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md \
+  Docs/superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md \
+  catvba_refactor/macro_build/target_evidence/session.py \
+  catvba_refactor/macro_build/target_evidence/validator.py \
+  catvba_refactor/macro_build/target_evidence/gate.py \
+  catvba_refactor/macro_build/target_evidence/container.py \
+  catvba_refactor/schemas/target_evidence/session.schema.json \
+  catvba_refactor/schemas/target_evidence/environment.schema.json \
+  catvba_refactor/schemas/target_evidence/entitlements.schema.json \
+  catvba_refactor/tests/test_target_session.py \
+  catvba_refactor/tests/test_target_evidence_schemas.py \
+  catvba_refactor/tests/test_target_evidence_validator.py \
+  catvba_refactor/tests/test_target_gate.py
 git commit -m "feat: initialize target evidence sessions"
 ```
 

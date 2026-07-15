@@ -563,7 +563,7 @@ def _documents(mode: str) -> tuple[dict[str, dict[str, Any]], dict[str, bytes]]:
                     "tool_result",
                 )
             },
-            "baseline_any_of": ["AB3"],
+            "baseline_any_of": [] if mode == "discovery" else ["AB3"],
             "additional_required": ["SPA", "FTA"],
             "set_license_used": False,
             "scripted_reference_selection_used": False,
@@ -926,6 +926,71 @@ def test_canonical_capture_for_each_mode_is_structurally_valid(mode: str) -> Non
     assert report.payload_members == expected_members
 
 
+def test_capture_accepts_truthful_in_progress_unobserved_skeleton() -> None:
+    files = _capture_files("discovery")
+    documents = _documents_from_files(files)
+    documents["session.json"].update(
+        capture_status="in-progress",
+        anonymous_host_id=None,
+        vm_lineage_id=None,
+        snapshot_id=None,
+        ended_at=None,
+    )
+    documents["environment.json"].update(
+        windows=None,
+        catia=None,
+        catia_environment=None,
+        vba=None,
+        dsls=None,
+        accounts_isolated=None,
+        security={
+            "office_state": "unknown",
+            "network_state": "unknown",
+            "powershell_state": "unknown",
+            "wsh_state": "unknown",
+        },
+        pollution_scan={
+            name: "not-run"
+            for name in ("b30", "x86", "vba6", "syswow64", "temp_com", "user_com")
+        },
+        environment_fingerprint=None,
+        operator_record_id=None,
+    )
+    documents["entitlements.json"]["baseline_any_of"] = []
+    documents["operator-records/index.json"]["records"] = []
+    skeleton = {
+        path: canonical_json_bytes(document)
+        for path, document in documents.items()
+    }
+
+    report = _validate(skeleton, "discovery")
+
+    assert report.ok, report.diagnostics
+
+
+def test_handoff_record_ids_are_detached_provenance_not_current_operator_links() -> None:
+    files = _capture_files("g2")
+    index = json.loads(files["operator-records/index.json"])
+    detached_ids = {"record-handoff-prepared", "record-handoff-reviewed"}
+    removed_paths = {
+        record["relative_path"]
+        for record in index["records"]
+        if record["record_id"] in detached_ids
+    }
+    index["records"] = [
+        record
+        for record in index["records"]
+        if record["record_id"] not in detached_ids
+    ]
+    files["operator-records/index.json"] = canonical_json_bytes(index)
+    for path in removed_paths:
+        del files[path]
+
+    report = _validate(files, "g2")
+
+    assert report.ok, report.diagnostics
+
+
 def test_directory_and_zip_inputs_have_identical_validation_semantics(
     tmp_path: Path,
 ) -> None:
@@ -1125,6 +1190,25 @@ def test_environment_fingerprint_has_an_independent_known_projection() -> None:
     digest = environment["reference_contract_body_digest"]
 
     assert environment_fingerprint(document, digest) == _expected_fingerprint(document, digest)
+
+
+def test_non_null_environment_fingerprint_requires_all_session_identity_inputs() -> None:
+    files = _capture_files("g2")
+    session = json.loads(files["session.json"])
+    environment = json.loads(files["environment.json"])
+    for field in ("anonymous_host_id", "vm_lineage_id", "snapshot_id"):
+        session[field] = None
+    environment["environment_fingerprint"] = environment_fingerprint(
+        {"session": session, "environment": environment},
+        environment["reference_contract_body_digest"],
+    )
+    files["session.json"] = canonical_json_bytes(session)
+    files["environment.json"] = canonical_json_bytes(environment)
+
+    _assert_invalid(
+        _validate(files, "g2"),
+        "TARGET_EVIDENCE_FINGERPRINT_MISMATCH",
+    )
 
 
 @pytest.mark.parametrize("field", ["windows", "catia", "vba", "catia_environment", "dsls"])
@@ -1622,6 +1706,21 @@ def test_canonical_sealed_envelope_for_each_mode_is_structurally_valid(mode: str
     assert report.ok
     assert report.evidence_payload_digest == expected_digest
     assert report.payload_members == expected_members
+
+
+def test_sealed_phase_rejects_an_in_progress_capture() -> None:
+    files = _replace_json(
+        _sealed_files("g2"),
+        "session.json",
+        lambda document: document.update(
+            capture_status="in-progress", ended_at=None
+        ),
+    )
+
+    _assert_invalid(
+        _validate(files, "g2", EvidencePhase.SEALED),
+        "TARGET_EVIDENCE_CAPTURE_INCOMPLETE",
+    )
 
 
 @pytest.mark.parametrize("required", ["gate-receipt.json", "approval.json", "SHA256SUMS", "SESSION_COMPLETE"])

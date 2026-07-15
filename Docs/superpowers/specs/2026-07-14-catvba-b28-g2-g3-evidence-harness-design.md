@@ -176,6 +176,9 @@ target-session-<session_id>/
 
 capture draft 不含 `gate-receipt.json`、`approval.json`、`SHA256SUMS` 和 `SESSION_COMPLETE`；G3-C draft
 包含已批准的 G2 prerequisite 副本。evaluator 和复核者都不得原地修改 draft，packer 也只写新输出根。
+initializer 只建立 `capture_status=in-progress`、`ended_at=null` 的草稿；在尚未发生目标机采集时，host/VM/
+snapshot、environment 和 operator witness 使用 `null|unknown|not-run`，不得以模板值冒充现场事实。初始
+operator index 为空，handoff 的 prepared/review ID 是 detached provenance，不复制成当前 session record。
 `SHA256SUMS` 覆盖除自身和 `SESSION_COMPLETE` 外的全部普通文件；完成标记绑定 SHA 清单、payload digest、
 gate receipt digest 和 approval digest。seal 后禁止原地修改；更正必须创建新 session，并通过
 `supersedes_session_id` 指向旧 session，旧包本身保持不变。
@@ -254,6 +257,10 @@ Schema 放在 `catvba_refactor/schemas/target_evidence/`，与四份输入 manif
 开始结束 UTC、是否触及 Production 宏库、supersedes 关系和备注记录 ID。禁止用户名、客户名、机器全名、
 完整用户路径和凭据。
 
+初始化 draft 的三个匿名环境 ID 和 `ended_at` 均为 `null`；操作员完成采集时才写入实际匿名 ID、结束 UTC
+并把 status 改为 `complete`。capture validator 接受这一 draft，Gate receipt 和 sealed evidence 只接受
+`complete`。
+
 ### 7.2 `environment.json`
 
 记录：
@@ -267,6 +274,10 @@ Schema 放在 `catvba_refactor/schemas/target_evidence/`，与四份输入 manif
 - 构建账号和普通用户是否隔离；
 - B30、x86、VBA6、SysWOW64、Temp/user COM 污染扫描结果。
 
+初始化时没有现场观察，因此 Windows/CATIA/CATIA environment/VBA/DSLS、账号隔离、fingerprint 和
+environment operator record 均为 `null`，security 为 `unknown`，pollution scan 为 `not-run`。非空
+fingerprint 必须具备完整稳定投影并可复算，禁止部分填充。
+
 路径证据使用：允许根类别、相对路径、basename、规范化路径 SHA-256。CATIA/Windows 公共安装根可以记录
 规范化路径；用户目录、客户目录和 Temp 路径只记录类别、hash 和脱敏显示值。
 
@@ -274,6 +285,11 @@ Schema 放在 `catvba_refactor/schemas/target_evidence/`，与四份输入 manif
 Windows edition/build/patch、CATIA R28/B28 GA/SP/HF、VBA/VBE/VBA7/Win64、安装根类别/hash、DSLS 连接类别、
 profile ID 和 Reference contract body digest。开始/结束时间、operator record ID、自由备注和 checkout 瞬态
 状态不进入 fingerprint。G3-C 必须与 G2 的 fingerprint 精确相等；任一输入变化都必须重新执行 G2。
+G3-C initializer 从 sealed G2 继承该 fingerprint 的稳定投影和 host/VM/snapshot identity；为保持匿名
+容器结构，可保留 CATIA environment 与 DSLS endpoint 的匿名 ID，但继承判定只比较 fingerprint 投影。security、
+账号隔离、pollution scan 和 operator record 属于当前 G3-C 瞬态观察，必须重新置为
+`unknown|null|not-run`，不得复制成当前 session 事实。
+G3-C `started_at` 不得早于 prerequisite 的 `sealed_at`；否则即使内容有效也属于时间倒序，初始化必须停止。
 
 ### 7.3 `entitlements.json`
 
@@ -284,6 +300,9 @@ profile ID 和 Reference contract body digest。开始/结束时间、operator r
 3. API/Workbench 可取得性；
 4. 当前 session checkout；
 5. 工具运行结果。
+
+`baseline_any_of` 对 P-AB3/P-HD2/P-MD2/P-ALL 表示所选 profile；DISCOVERY 和尚未观察现场组合的
+P-PROD 初始化为 `[]`。`additional_required=[SPA, FTA]` 是要求，不等于已观察到 entitlement。
 
 每一层都有独立 `not-run|observed|available|unavailable|blocked|failed` 状态和 operator record ID。不得从
 上层状态推导下层通过，不得把产品名称当作 API 或 checkout 证据。记录必须声明未使用 `SetLicense`、
@@ -398,6 +417,8 @@ observation hash、签名流观测、Kit source receipt hash、readonly return �
 
 每项包含 record ID、类别、相对路径、SHA-256、UTC、采集者角色和 redaction status。截图必须先经过人工
 脱敏复核；若无法保证无客户数据，使用两人签字的纯文本操作记录替代，不把原图放入一般回传包。
+index 只解析当前 session 实际采集的 payload。handoff prepared/review ID 属于 handoff envelope 的 detached
+provenance，不要求、也禁止 initializer 合成同名当前记录。
 
 ### 7.10 Envelope 与决策 Schema
 
@@ -547,7 +568,9 @@ canonical ZIP 形式复制到 capture。G3-C evaluator 必须递归验证该包�
 `computed_outcome=eligible`、`approval_scope=gate`、`approval_status=approved`。G2 与当前 session 的 Kit、
 handoff、environment fingerprint、package 和 profile 必须满足明确的继承规则。嵌套验证具有独立 size、entry、
 compression ratio 和 depth=1 限制。packer 在复制后重新计算所有 digest，任何 detached 文件或 prerequisite
-不匹配都禁止封包。
+不匹配都禁止封包。directory prerequisite 与 `output_root` 或最终 session directory 的包含/身份重叠必须在
+写入前通过 canonical no-follow 路径与目录身份检查拒绝，initializer 不得把输出写进或包住前置证据树。
+handoff 读取上限为 4 MiB，必须在读取前按文件大小 fail-closed，不得先按通用容器上限读入内存再拒绝。
 
 session mode 与 Gate 参数必须精确对应：`discovery -> DISCOVERY`、`g2 -> G2`、`g3-c -> G3-C`，不允许
 拿 discovery capture 请求 G2/G3-C 结论。

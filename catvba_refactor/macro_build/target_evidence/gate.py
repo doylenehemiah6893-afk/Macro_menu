@@ -180,6 +180,25 @@ def _common_rules(
                 "session touched the Production macro library",
             )
         )
+    if session.get("capture_status") != "complete":
+        blockers.append(
+            _diagnostic(
+                "GATE_EVIDENCE_INCOMPLETE",
+                "session.json#/capture_status",
+                "capture has not been marked complete",
+            )
+        )
+    if any(
+        session.get(field) is None
+        for field in ("anonymous_host_id", "vm_lineage_id", "snapshot_id")
+    ):
+        blockers.append(
+            _diagnostic(
+                "GATE_EVIDENCE_INCOMPLETE",
+                "session.json",
+                "target host, VM lineage or snapshot identity is unobserved",
+            )
+        )
     if handoff.get("purpose") != "formal":
         blockers.append(
             _diagnostic(
@@ -200,7 +219,24 @@ def _common_rules(
 
     catia = _mapping(environment.get("catia"))
     vba = _mapping(environment.get("vba"))
-    if catia is None or catia.get("ga") is not True:
+    environment_witnessed = environment.get("operator_record_id") is not None
+    if not environment_witnessed:
+        blockers.append(
+            _diagnostic(
+                "GATE_EVIDENCE_INCOMPLETE",
+                "environment.json#/operator_record_id",
+                "current-session environment witness is unavailable",
+            )
+        )
+    if catia is None or catia.get("ga") is None:
+        blockers.append(
+            _diagnostic(
+                "GATE_EVIDENCE_INCOMPLETE",
+                "environment.json#/catia/ga",
+                "target CATIA environment has not been observed",
+            )
+        )
+    elif catia.get("ga") is not True and environment_witnessed:
         failures.append(
             _diagnostic(
                 "GATE_TARGET_MISMATCH",
@@ -208,7 +244,17 @@ def _common_rules(
                 "target is not the governed B28 GA environment",
             )
         )
-    if vba is None or vba.get("vba7") is not True or vba.get("win64") is not True:
+    if vba is None or vba.get("vba7") is None or vba.get("win64") is None:
+        blockers.append(
+            _diagnostic(
+                "GATE_EVIDENCE_INCOMPLETE",
+                "environment.json#/vba",
+                "target VBA environment has not been observed",
+            )
+        )
+    elif environment_witnessed and (
+        vba.get("vba7") is not True or vba.get("win64") is not True
+    ):
         failures.append(
             _diagnostic(
                 "GATE_TARGET_MISMATCH",
@@ -216,7 +262,15 @@ def _common_rules(
                 "target is not VBA7 Win64",
             )
         )
-    if environment.get("accounts_isolated") is not True:
+    if environment.get("accounts_isolated") is None:
+        blockers.append(
+            _diagnostic(
+                "GATE_EVIDENCE_INCOMPLETE",
+                "environment.json#/accounts_isolated",
+                "account isolation has not been observed",
+            )
+        )
+    elif environment.get("accounts_isolated") is not True and environment_witnessed:
         failures.append(
             _diagnostic(
                 "GATE_ENVIRONMENT_NOT_ISOLATED",
@@ -236,7 +290,7 @@ def _common_rules(
         )
     else:
         for field, value in pollution.items():
-            if value == "present":
+            if value == "present" and environment_witnessed:
                 failures.append(
                     _diagnostic(
                         "GATE_ENVIRONMENT_POLLUTION",
@@ -264,7 +318,7 @@ def _common_rules(
         )
     else:
         office_state = security.get("office_state")
-        if office_state == "installed":
+        if office_state == "installed" and environment_witnessed:
             failures.append(
                 _diagnostic(
                     "GATE_ENVIRONMENT_NOT_ISOLATED",
@@ -287,7 +341,7 @@ def _common_rules(
         }
         for field, bad_value in forbidden.items():
             value = security.get(field)
-            if value == bad_value:
+            if value == bad_value and environment_witnessed:
                 failures.append(
                     _diagnostic(
                         "GATE_ENVIRONMENT_NOT_ISOLATED",
@@ -341,6 +395,15 @@ def _common_rules(
                     "session used a forbidden license or Reference mutation",
                 )
             )
+    baseline = entitlements.get("baseline_any_of")
+    if type(baseline) is not list or not baseline:
+        blockers.append(
+            _diagnostic(
+                "GATE_ENTITLEMENT_BASELINE_UNOBSERVED",
+                "entitlements.json#/baseline_any_of",
+                "target baseline configuration has not been observed",
+            )
+        )
 
 
 def _reference_rules(
@@ -760,6 +823,8 @@ def gate_receipt_document(
     documents = dict(inspection.documents)
     session = _mapping(documents.get("session.json")) or {}
     binding = _mapping(session.get("binding")) or {}
+    if session.get("capture_status") != "complete":
+        raise EvidenceError("TARGET_EVIDENCE_CAPTURE_INCOMPLETE")
     stable_gate = gate_id.value if isinstance(gate_id, GateId) else gate_id
     body = {
         "schema_version": 1,
@@ -850,6 +915,8 @@ def evaluate_target_gate(
     documents = dict(inspection.documents)
     session = _mapping(documents.get("session.json")) or {}
     binding = _mapping(session.get("binding")) or {}
+    if session.get("capture_status") != "complete":
+        raise EvidenceError("TARGET_EVIDENCE_CAPTURE_INCOMPLETE")
     stable_gate = gate_id.value if isinstance(gate_id, GateId) else gate_id
     if _MODE_GATE.get(binding.get("session_mode")) != stable_gate:
         raise EvidenceError("TARGET_GATE_MODE_MISMATCH")
