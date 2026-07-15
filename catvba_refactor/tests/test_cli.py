@@ -11,7 +11,13 @@ import pytest
 
 from catvba_refactor.macro_build import cli
 from catvba_refactor.macro_build.audit import AuditReport, PCodeSignal
-from catvba_refactor.macro_build.errors import InfrastructureError, SourceError
+from catvba_refactor.macro_build.errors import (
+    EvidenceError,
+    ExitCode,
+    GateError,
+    InfrastructureError,
+    SourceError,
+)
 from catvba_refactor.macro_build.manifests import ManifestSet
 from catvba_refactor.macro_build.model import (
     BuildKitReceipt,
@@ -176,6 +182,12 @@ def test_unknown_arguments_remain_argparse_usage_errors() -> None:
         cli.main(["inventory", "--unknown"])
 
     assert error.value.code == 2
+
+
+def test_exit_code_values_and_error_boundaries_are_stable() -> None:
+    assert [int(code) for code in ExitCode] == [0, 2, 3, 4, 5, 6, 7]
+    assert EvidenceError.exit_code is ExitCode.EVIDENCE
+    assert GateError.exit_code is ExitCode.GATE
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,8 @@ class ExitCode(IntEnum):
     SOURCE = 3
     INFRASTRUCTURE = 4
     VERIFICATION = 5
+    EVIDENCE = 6
+    GATE = 7
 
 
 class BuildKitError(Exception):
@@ -27,3 +29,11 @@ class InfrastructureError(BuildKitError):
 
 class VerificationError(BuildKitError):
     exit_code = ExitCode.VERIFICATION
+
+
+class EvidenceError(BuildKitError):
+    exit_code = ExitCode.EVIDENCE
+
+
+class GateError(BuildKitError):
+    exit_code = ExitCode.GATE

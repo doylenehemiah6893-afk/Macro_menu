@@ -11,6 +11,7 @@ from .model import Diagnostic, ValidationReport
 
 
 _DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
+_EVIDENCE_INVALID_CHARACTERS = frozenset('<>:"|?*')
 _RESERVED_BASENAMES = {
     "aux",
     "con",
@@ -32,7 +33,10 @@ _PATH_MESSAGES = {
     "PATH_EMPTY": "path must not be empty",
     "PATH_EMPTY_SEGMENT": "path must not contain an empty segment",
     "PATH_INVALID_UTF8": "path must be valid UTF-8",
+    "PATH_INVALID_CHARACTER": "path contains a forbidden character",
+    "PATH_NOT_ASCII": "path must contain ASCII characters only",
     "PATH_RESERVED_NAME": "path contains a Windows reserved basename",
+    "PATH_SEPARATOR_INVALID": "path separators must use forward slashes",
     "PATH_TRAILING_DOT_SPACE": "path segments must not end in a dot or space",
     "PATH_TRAVERSAL": "path must not contain dot traversal segments",
 }
@@ -172,4 +176,41 @@ def validate_portable_paths(paths: Iterable[str]) -> ValidationReport:
     stable_paths = tuple(valid_paths)
     diagnostics.extend(_collision_diagnostics(stable_paths))
     diagnostics.extend(_file_directory_diagnostics(stable_paths))
+    return ValidationReport(tuple(diagnostics)).sorted()
+
+
+def validate_portable_ascii_paths(paths: Iterable[str]) -> ValidationReport:
+    """Validate evidence paths without normalizing their stored names."""
+    stored_paths = tuple(paths)
+    diagnostics = list(validate_portable_paths(stored_paths).diagnostics)
+    for path in stored_paths:
+        if any(ord(character) > 0x7F for character in path):
+            diagnostics.append(
+                Diagnostic(
+                    code="PATH_NOT_ASCII",
+                    path=path,
+                    message=_PATH_MESSAGES["PATH_NOT_ASCII"],
+                )
+            )
+        if "\\" in path:
+            diagnostics.append(
+                Diagnostic(
+                    code="PATH_SEPARATOR_INVALID",
+                    path=path,
+                    message=_PATH_MESSAGES["PATH_SEPARATOR_INVALID"],
+                )
+            )
+        if any(
+            character in _EVIDENCE_INVALID_CHARACTERS
+            or ord(character) < 0x20
+            or ord(character) == 0x7F
+            for character in path
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    code="PATH_INVALID_CHARACTER",
+                    path=path,
+                    message=_PATH_MESSAGES["PATH_INVALID_CHARACTER"],
+                )
+            )
     return ValidationReport(tuple(diagnostics)).sorted()

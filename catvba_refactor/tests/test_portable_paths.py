@@ -5,6 +5,7 @@ import pytest
 from catvba_refactor.macro_build.errors import SourceError
 from catvba_refactor.macro_build.portable_paths import (
     portable_key,
+    validate_portable_ascii_paths,
     validate_portable_paths,
 )
 
@@ -18,6 +19,54 @@ def _codes(paths: list[str]) -> list[str]:
 
 def test_portable_key_normalizes_windows_separators_and_unicode_for_matching() -> None:
     assert portable_key(r"Folder\Ａ.bas") == "folder/a.bas"
+
+
+@pytest.mark.parametrize(
+    ("paths", "codes"),
+    [
+        (["folder/中.bas"], ["PATH_NOT_ASCII"]),
+        ([r"folder\A.bas"], ["PATH_SEPARATOR_INVALID"]),
+        (["folder/bad\x00.bas"], ["PATH_INVALID_CHARACTER"]),
+        (["folder/bad\x7f.bas"], ["PATH_INVALID_CHARACTER"]),
+        *(
+            ([f"folder/bad{character}.bas"], ["PATH_INVALID_CHARACTER"])
+            for character in '<>:"|?*'
+        ),
+        (["folder/../A.bas"], ["PATH_TRAVERSAL"]),
+        (["folder/CON.bas"], ["PATH_RESERVED_NAME"]),
+        (["Folder/A.bas", "folder/a.bas"], ["PATH_COLLISION"]),
+        (
+            ["Ｆｏｏ.bas", "foo.bas"],
+            ["PATH_COLLISION", "PATH_NOT_ASCII"],
+        ),
+    ],
+)
+def test_portable_ascii_paths_reject_unsafe_evidence_names(
+    paths: list[str], codes: list[str]
+) -> None:
+    report = validate_portable_ascii_paths(paths)
+
+    assert [diagnostic.code for diagnostic in report.diagnostics] == codes
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["folder/中.bas", r"folder\A.bas", "folder/bad<.bas"],
+)
+def test_portable_ascii_validation_does_not_change_source_path_behavior(
+    path: str,
+) -> None:
+    assert validate_portable_paths([path]).ok
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["folder/中.bas", r"folder\A.bas", "folder/bad<.bas"],
+)
+def test_portable_ascii_diagnostics_preserve_stored_name(path: str) -> None:
+    report = validate_portable_ascii_paths([path])
+
+    assert report.diagnostics[0].path == path
 
 
 def test_surrogateescaped_non_utf8_path_is_rejected() -> None:
