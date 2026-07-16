@@ -7,6 +7,12 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from .records import (
+    add_operator_record,
+    import_reference_csv,
+    record_entitlements,
+    record_environment,
+)
 from .workspace import CollectorResult, init_capture, preflight, status
 
 
@@ -25,6 +31,24 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("--capture", type=Path, required=True)
     status_command = commands.add_parser("status")
     status_command.add_argument("--capture", type=Path, required=True)
+    environment_command = commands.add_parser("record-environment")
+    environment_command.add_argument("--capture", type=Path, required=True)
+    environment_command.add_argument("--input", type=Path, required=True)
+    entitlements_command = commands.add_parser("record-entitlements")
+    entitlements_command.add_argument("--capture", type=Path, required=True)
+    entitlements_command.add_argument("--input", type=Path, required=True)
+    references_command = commands.add_parser("import-reference-csv")
+    references_command.add_argument("--capture", type=Path, required=True)
+    references_command.add_argument("--point", choices=(
+        "blank-project", "post-form-import", "post-all-import", "post-save", "post-restart"
+    ), required=True)
+    references_command.add_argument("--input", type=Path, required=True)
+    operator_command = commands.add_parser("add-operator-record")
+    operator_command.add_argument("--capture", type=Path, required=True)
+    operator_command.add_argument("--input", type=Path, required=True)
+    operator_command.add_argument("--category", choices=(
+        "session", "environment", "entitlement", "reference", "review", "state", "other"
+    ), required=True)
     return parser
 
 
@@ -55,7 +79,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             ledger=args.ledger,
             capture=args.capture,
         )
-    else:
+    elif args.command == "status":
         result = status(args.capture)
+    elif args.command == "record-environment":
+        result = record_environment(args.capture, args.input)
+    elif args.command == "record-entitlements":
+        result = record_entitlements(args.capture, args.input)
+    elif args.command == "import-reference-csv":
+        result = import_reference_csv(args.capture, point=args.point, source=args.input)
+    else:
+        result = add_operator_record(args.capture, source=args.input, category=args.category)
     print(json.dumps(_document(result), ensure_ascii=True, sort_keys=True, separators=(",", ":")))
     return result.exit_code
