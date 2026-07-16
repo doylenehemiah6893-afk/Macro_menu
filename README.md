@@ -25,12 +25,14 @@ Eligible license = (AB3 OR HD2 OR MD2) AND SPA AND FTA
 
 ## 从这里开始
 
+- [新环境唯一续作入口](RESUME.md)
 - [当前状态](Docs/STATUS.md)
 - [文档索引](Docs/README.md)
 - [恢复总架构](Docs/superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md)
 - [项目结构](Docs/PROJECT_STRUCTURE.md)
 - [调查与决策](Docs/CATVBA重构调查与决策记录.md)
 - [R2018 恢复指南](Docs/CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
+- [B28 Discovery 原生 Windows 操作手册](Docs/runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md)
 
 ## 仓库边界
 
@@ -65,7 +67,7 @@ uv run pytest -q
 
 当前 manifest 精确批准 13 个固定 Core candidate component 和两个首回合只读工具：
 `core.healthcheck` 与 `core.document-summary`。Generator 加入 3 个确定生成 component，所以 checked/built
-catalog 为 16 个 component、2 个 tool。证据 Kit 为 `kit-134ecc68d131cdff743b`，ZIP SHA-256 为
-`e6ec490827dd78c4e9e0e83650591a7f46d71892160c1da4284b0e80501a54c7`；完整命令、清单和边界见
-[Docs/STATUS.md](Docs/STATUS.md)。G0/G1 已有 A 环境 `PASS` 证据，但 `compile_status=not-run`、
+catalog 为 16 个 component、2 个 tool。历史 Kit 标识和 hash 只作 receipt 摘要，实际 bytes 当前不可取得，不能作为
+active artifact；完整边界见 [Docs/STATUS.md](Docs/STATUS.md)。当前 operator bundle 仍在 preparation，active
+bundle/Kit/handoff 均为 null。G0/G1 只有 A 环境离线 `PASS` 证据，`compile_status=not-run`、
 `release_eligible=false`，30 个目标 case 全部 `not-run`；G2–G7 仍 `BLOCKED`。

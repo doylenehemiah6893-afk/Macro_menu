@@ -56,8 +56,10 @@ Macro_menu/
 ├─ Docs/
 │  ├─ STATUS.md
 │  ├─ CATVBA重构调查与决策记录.md
-│  ├─ runbooks/                       # B28 顺序操作、停止和脱敏边界
+│  ├─ runbooks/                       # B28 原生 Windows 顺序操作、停止和脱敏边界
 │  └─ superpowers/specs/
+├─ RESUME.md / resume/state.json      # fresh clone 人工入口与严格机器状态
+├─ scripts/run-discovery.cmd          # 目标 bundle 的原生 cmd.exe 薄 wrapper
 ├─ CATIA_V5_SimpleMacroMenu.catvba   # legacy evidence only
 ├─ CAT_menu.catvba                   # legacy evidence only
 ├─ LicenseReset.catvbs               # quarantine

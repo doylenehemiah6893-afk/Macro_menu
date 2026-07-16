@@ -17,10 +17,12 @@
 ## 当前入口
 
 - [当前状态与唯一下一动作](STATUS.md)
+- [新环境唯一续作入口](../RESUME.md)
 - [项目结构、所有权与分支规划](PROJECT_STRUCTURE.md)
 - [CATVBA 重构调查与决策记录](CATVBA重构调查与决策记录.md)
 - [R2018 恢复、依赖与安全交付指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
-- [B28 discovery、G2 与 Core-only G3-C 操作手册](runbooks/2026-07-14-catvba-b28-g2-g3-core.md)
+- [B28 Discovery 原生 Windows operator bundle 操作手册](runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md)
+- [历史 B28 G2/G3-C 手册（SUPERSEDED）](runbooks/2026-07-14-catvba-b28-g2-g3-core.md)
 
 ## 已批准规格
 
@@ -30,10 +32,12 @@
 - [B28 验证、许可证与交付](superpowers/specs/2026-07-13-catvba-b28-validation-delivery-design.md)
 - [上游 intake 与 fork 同步](superpowers/specs/2026-07-13-catvba-upstream-intake-design.md)
 - [B28 G2/G3 证据工具链](superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md)
+- [B28 Discovery operator bundle](superpowers/specs/2026-07-15-b28-discovery-operator-bundle-design.md)
 
 用户已书面确认上述规格。实施计划：
 [离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)、
 [B28 G2/G3 证据工具链实施计划](superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md)。
+[B28 Discovery operator bundle 实施计划](superpowers/plans/2026-07-15-b28-discovery-operator-bundle.md)。
 
 ## 当前许可证模型
 

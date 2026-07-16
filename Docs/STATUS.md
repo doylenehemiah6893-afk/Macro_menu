@@ -2,7 +2,7 @@
 
 > 状态：CURRENT
 >
-> 更新日期：2026-07-14
+> 更新日期：2026-07-15
 >
 > 分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 >
@@ -11,6 +11,9 @@
 > `release_eligible=false`
 
 本文是当前状态与上下文恢复入口。详细事实以 Git 文件、固定哈希和目标机证据为准。
+
+开发续作唯一入口为仓库根 `RESUME.md` 与 `resume/state.json`。当前唯一下一动作是
+`complete-evidence-implementation`；active bundle/Kit/handoff 均为 null，revocation 为 preparation。
 
 ## 1. 立即停止条件
 
@@ -59,7 +62,8 @@
 - [离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)
 - [B28 G2/G3 证据工具链规格](superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md)
 - [B28 G2/G3 证据工具链实施计划](superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md)
-- [B28 discovery、G2 与 Core-only G3-C 操作手册](runbooks/2026-07-14-catvba-b28-g2-g3-core.md)
+- [B28 Discovery 原生 Windows operator bundle 操作手册](runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md)
+- [历史 G2/G3-C 手册（SUPERSEDED）](runbooks/2026-07-14-catvba-b28-g2-g3-core.md)
 - [项目结构](PROJECT_STRUCTURE.md)
 - [调查与决策台账](CATVBA重构调查与决策记录.md)
 
@@ -67,8 +71,8 @@
 
 | Gate | 状态 | 原因 |
 |---|---|---|
-| G0 INPUT-FROZEN | `PASS` | 当前 discovery 证据绑定 Git `2c3d501eaf017a41d838bf2ce39214fd1291802c`、tree `42447cc3ae72d657f76be39355fa134230b1ff28`；源码/manifest/blob/SHA 闭合 |
-| G1 KIT-READY | `PASS` | `kit-feb504676720445f729c` 两次独立构建字节一致，两目录+两 ZIP 均通过 `verify-kit`；仅表示 A 环境离线 discovery Kit 就绪 |
+| G0 INPUT-FROZEN | `PASS` | 仅表示批准 cutoff 与 A 环境离线输入合同已冻结；当前 operator bundle 尚在 preparation |
+| G1 KIT-READY | `PASS` | 仅表示 A 环境离线构建/验证工具链历史证据；当前无可取得的 active Kit bytes，Task 11 必须重建 |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -79,12 +83,15 @@
 此处 G0/G1 `PASS` 仅由固定 Git 输入、生成收据和可复算的离线 Kit 支撑。它们不是 CATIA
 Compile、References、许可证 checkout、UI 或运行通过。
 
-## 6. 当前 discovery Kit/handoff A 环境证据
+## 6. 历史 discovery Kit/handoff A 环境证据（bytes unavailable / withdrawn）
 
 本节精确绑定 clean evidence commit
 `2c3d501eaf017a41d838bf2ce39214fd1291802c` 和 tree
 `42447cc3ae72d657f76be39355fa134230b1ff28`。本次状态文档提交发生在构建之后，不是被构建的输入；Kit、handoff、
-revocation snapshot 和 session skeleton 均在仓库外的隔离临时根中，未进入 Git。
+revocation snapshot 和 session skeleton 均在仓库外的隔离临时根中，未进入 Git，实际 bytes 当前不可取得。
+因此本节只作为历史 receipt 摘要，不是 active artifact。`handoff-6ed312ee18b254cb3c13` 在本轮 preparation 中
+按 withdrawn 处理，不能因历史 expiry 尚未到达而恢复。当前 active bundle/Kit/handoff 以 `resume/state.json` 的 null
+为准；Task 11 将创建全新的可追踪 bundle 与 handoff。
 
 ### 6.1 离线 Gate 与 Build Kit
 
@@ -107,7 +114,7 @@ Core contract 为 `discovery-required`，allowlist 为空；Kit 中 `catvba_arti
 独立复核者实际检查了四份 verifier 报告、完整目录比较、ZIP/sidecar 和 Git object，结论无
 Critical/Important，复核记录 ID 为 `record.a-env-review.2c3d501`。
 
-### 6.2 唯一 discovery handoff
+### 6.2 历史签发时唯一的 discovery handoff
 
 签发前 canonical revocation snapshot 的 SHA-256 为
 `05de64cfc8e35e4f3aa5cd1fccf9e9e9571196cb8630c8b7241c783d7e51ddb8`，`active_handoff_ids=[]`、
@@ -118,7 +125,7 @@ Critical/Important，复核记录 ID 为 `record.a-env-review.2c3d501`。
 |---|---|
 | handoff ID | `handoff-6ed312ee18b254cb3c13` |
 | handoff SHA-256 | `a27b0a0ae1ff0e0ac819c0458c040fa0788437ac44a2c7ce61fe86861ef0f0f5` |
-| purpose/status | `discovery` / `active`；没有 `supersedes_handoff_id` |
+| purpose/status | 历史签发时为 `discovery` / `active`；当前 bytes unavailable，按 `withdrawn` 处理 |
 | created/expires UTC | `2026-07-15T09:00:00Z` / `2026-07-22T09:00:00Z` |
 | binding | 上述 Kit ID、ZIP SHA、commit/tree/branch、Core `discovery-required` contract 全部一致 |
 | target truth | `compile_status=not-run`、`release_eligible=false` |
@@ -234,11 +241,11 @@ Python PASS 或已验证 Kit 推导 CATIA Compile、References、许可证、UI�
 
 ## 9. 当前下一动作
 
-新的 `discovery-required` Kit 已从 clean evidence commit 双重构建并验证，唯一 discovery handoff 已签发。
-下一动作是在其 `2026-07-22T09:00:00Z` 到期前，按 B28 操作手册在批准的干净 VM snapshot 上执行真实
-discovery；若到期、撤回、hash 或环境不符则停止并重新签发。只有回传并封存真实五点 Reference observation 后，
-才可在 A 环境批准 formal contract、重建不同的 Kit/handoff 并进入 G2/G3-C；不得预填未来 formal Kit/handoff
-哈希，也不得在本工作区把目标步骤标记为完成。
+唯一下一动作是 `complete-evidence-implementation`：完成原生 Windows collector/operator bundle、一键复现、
+Linux/Windows CI 与独立复核，形成 clean evidence commit。随后才能双构建新的 `discovery-required` Kit、签发新的
+handoff、生成仓库可取得的 immutable bundle 和 fresh active ledger。旧 handoff bytes 不可取得并按 withdrawn
+处理，禁止安排现场执行。只有新 bundle 全量验证后才能按 2026-07-15 手册在批准的 blank VM 上执行 Discovery；
+只有回传并封存真实五点 Reference observation 后，才可在 A 环境批准 formal contract 并进入 G2/G3-C。
 
 ## 10. 外部阻塞
 

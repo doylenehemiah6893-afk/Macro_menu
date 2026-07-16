@@ -52,4 +52,9 @@ uv run macro-menu-build pack-target-evidence --help
 目标机要求至少一项 AB3/HD2/MD2，并额外具备 SPA 和 FTA；这些权益和隔离行为仍待 B28 证据。
 Evidence harness 已可生成/验证 discovery、G2、Core-only G3-C 的 session、Gate receipt、detached approval
 和确定性 sealed directory/ZIP；本地 synthetic E2E 只证明工具链，不证明 CATIA。详细哈希、清单、命令和
-证据上限见 `Docs/STATUS.md`，现场顺序见 `Docs/runbooks/2026-07-14-catvba-b28-g2-g3-core.md`。
+证据上限见 `Docs/STATUS.md`；旧 `Docs/runbooks/2026-07-14-catvba-b28-g2-g3-core.md` 仅作历史合同。
+
+新环境从仓库根 `RESUME.md` 续作。B28 目标机只使用原生 Windows CPython 3.12 operator bundle；完整命令、
+安全边界、五点 Reference、双人脱敏、raw/untrusted 回传见
+`Docs/runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md`。旧 2026-07-14 手册已 SUPERSEDED，旧
+Kit/handoff bytes 不可取得，不得用于目标机。

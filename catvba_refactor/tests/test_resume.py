@@ -292,6 +292,30 @@ def test_doctor_reports_dirty_governed_paths_but_ignores_egg_info(
     assert [item.code for item in report.diagnostics] == ["RESUME_GOVERNED_TREE_DIRTY"]
 
 
+def test_doctor_accepts_clean_preparation_state_without_evidence_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    clone, state_path = _fresh_clone(tmp_path)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    for field in ("evidence_commit", "evidence_tree", "delivery_parent_commit"):
+        state[field] = None
+    state["last_full_test_count"] = None
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    monkeypatch.setattr(resume, "_frozen_sync", lambda root: None)
+
+    assert bootstrap_repository(clone, state_path).ok
+    report = doctor_repository(
+        clone,
+        state_path,
+        now=datetime.fromisoformat(UTC.replace("Z", "+00:00")),
+    )
+
+    assert report.ok
+    assert "RESUME_GOVERNED_HISTORY_CHANGED" not in {
+        item.code for item in report.diagnostics
+    }
+
+
 def test_doctor_rejects_dirty_tracked_non_governed_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

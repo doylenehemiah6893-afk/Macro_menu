@@ -1,7 +1,12 @@
 # CATVBA B28 Core Discovery、G2 与 G3-C 现场操作手册
 
 日期：2026-07-14
-状态：已批准规格的人工执行手册；尚无真实 B28 执行结果
+状态：SUPERSEDED；尚无真实 B28 执行结果
+
+> 本手册保留为 evidence harness 历史合同，不可直接用于目标机。旧 Kit/handoff bytes 不在仓库，旧 handoff
+> `handoff-6ed312ee18b254cb3c13` 按 withdrawn 处理。当前原生 Windows Python 3.12 Discovery 唯一手册为
+> [2026-07-15 operator bundle 手册](2026-07-15-catvba-b28-discovery-operator-bundle.md)。在新 Discovery 完成并由
+> A 环境批准 clean Reference contract 前，G2/G3-C 不得执行。
 
 本手册只覆盖 `package_id=core`，目标为 CATIA R2018/VBA7 64（B28）。正式 session 的最低许可条件固定为：
 
@@ -15,7 +20,10 @@
 [evidence harness 设计](../superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md)和
 [实施计划](../superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md)。
 
-## 0. 角色、目录和硬边界
+## 0. 历史角色、目录和硬边界（不可执行）
+
+本节以下所有祈使句、占位符和命令均是 2026-07-14 规格的历史假设引用，不是当前操作指令；其中所称
+“当前”“active”“未到期”“必须”只描述当时拟议前提，已被 2026-07-15 状态撤销。
 
 至少使用三个不同角色：隔离构建操作员、隔离标准用户、独立复核者。独立复核者的 `review_record_id` 不得复用
 capture 内任何 record、handoff prepared/review record、Reference contract approval record，也不得复用嵌套
@@ -25,7 +33,7 @@ G2 的 approval record。G3-C 外层必须创建新的 review ID。
 
 | 占位符 | 含义 |
 |---|---|
-| `<KIT_ZIP>` | 当前唯一 active handoff 指定的 Kit ZIP |
+| `<KIT_ZIP>` | 历史假设中唯一 active handoff 指定的 Kit ZIP；当前不存在 |
 | `<KIT_SHA256>` | handoff/sidecar 记录的 Kit ZIP SHA-256 |
 | `<HANDOFF_JSON>` | detached handoff JSON |
 | `<CAPTURE_DIR>` | `init-target-session` 返回的 session 目录 |
@@ -35,7 +43,8 @@ G2 的 approval record。G3-C 外层必须创建新的 review ID。
 | `<SCHEMA_ROOT>` | 仓库的 `catvba_refactor/schemas` 目录 |
 | `<PROFILE>` | `P-AB3`、`P-HD2` 或 `P-MD2`，与实际基线许可一致 |
 
-所有命令在普通 `cmd.exe` 中运行，不依赖 PowerShell、WSH、COM、SendKeys 或 GUI 自动化。禁止脚本勾选
+以下历史命令原拟在普通 `cmd.exe` 中运行，但现在全部不可执行；其设计不依赖 PowerShell、WSH、COM、SendKeys
+或 GUI 自动化。历史边界禁止脚本勾选
 Reference、调用 `SetLicense`、修改 DSLS/Licensing Repository、写 Production 宏库或自动驱动 CATIA/VBE。
 不得将一次性 CATVBA 注册到 Production macro library；不得 Save As 旧工程或客户工程。
 
@@ -52,7 +61,7 @@ operator-records/record-<session-short-id>-<category>-<ordinal>.txt
 两人脱敏复核；原始含客户数据的截图不得进入 capture。每次人工更新 JSON 后，必须保持 schema 要求的 exact
 字段、ASCII portable path、UTC、canonical JSON，并立即执行 capture validator；validator 非零时不得继续 Gate。
 
-## 阶段 1：确认唯一 handoff、Kit、撤回状态和干净快照
+## 历史假设阶段 1（不可执行）：确认唯一 handoff、Kit、撤回状态和干净快照
 
 本阶段在 A 环境签发 handoff，在目标机核对。A 环境必须从两个独立输出根中各取且只取一个同 ID 的 completed
 Kit directory/ZIP/sidecar，不能由操作员在多个候选中手选。
@@ -80,7 +89,7 @@ certutil -hashfile "<KIT_ZIP>" SHA256
 完整性 UI 显示 SHA-256，并人工记录 UI 名称、文件字节数、SHA-256 和见证 record；Windows Explorer“属性”可用于
 记录字节数和只读状态，但不能代替 SHA-256。若现场没有任何获准的 SHA-256 UI，结论只能 `blocked`，必须停止。
 
-逐项确认：handoff ID 唯一且 active、未撤回、未过期；Kit ID/ZIP/sidecar/catalog/manifest/branch/commit/tree 与
+历史假设原要求逐项确认 handoff ID 唯一且 active、未撤回、未过期；这些前提当前均不成立。其余拟议检查为：Kit ID/ZIP/sidecar/catalog/manifest/branch/commit/tree 与
 handoff 一致；目标机时钟可解释；CATIA 完全关闭；已恢复批准的干净 VM snapshot；Production 宏库未注册本次
 工程；输出根不在 Kit、handoff、capture 或 prerequisite 内。初始化命令会再次认证 Kit 与 handoff；任何不一致都
 停止，不允许手改 handoff。
@@ -89,7 +98,7 @@ handoff 一致；目标机时钟可解释；CATIA 完全关闭；已恢复批准
 `P-AB3`/`P-HD2`/`P-MD2`；SPA 与 FTA 还必须同时可用。仅“已安装”不等于本 session 已观察到 checkout。
 缺少任一 SPA/FTA 或三个基线均不可用时，本轮正式 Gate 必须 `blocked`，不得调用 `SetLicense` 补齐。
 
-## 阶段 2：初始化 discovery，记录环境和 entitlement
+## 历史假设阶段 2（不可执行）：初始化 discovery，记录环境和 entitlement
 
 Discovery 使用一次性标准用户 session，不选正式 profile：
 
@@ -118,7 +127,7 @@ macro-menu-build validate-target-evidence "<DISCOVERY_CAPTURE_DIR>" ^
 
 只有 `ok=true` 才可进入下一阶段。结构有效不代表 Gate PASS。
 
-## 阶段 3：新建一次性空白 CATVBA，采集 blank Reference
+## 历史假设阶段 3（不可执行）：新建一次性空白 CATVBA，采集 blank Reference
 
 1. 从已批准的干净 snapshot 启动 CATIA，使用标准用户创建全新的空 CATVBA/VBA project。
 2. 不从客户文档、旧 CATVBA、个人宏目录或 Production 宏库复制；不执行 Save As，不注册为 Production 宏库。
@@ -130,7 +139,7 @@ macro-menu-build validate-target-evidence "<DISCOVERY_CAPTURE_DIR>" ^
 
 再次运行 discovery capture validator。此时仍不得 Compile、运行 target cases 或把 discovery 标为 eligible。
 
-## 阶段 4：严格导入 Core，并采集五个 Reference 点
+## 历史假设阶段 4（不可执行）：严格导入 Core，并采集五个 Reference 点
 
 只读取 Kit 中的 `import-order/core.txt`，逐行人工导入，不自行排序、不跳项、不混入 Fleet/optional 模块：
 
@@ -145,7 +154,7 @@ macro-menu-build validate-target-evidence "<DISCOVERY_CAPTURE_DIR>" ^
 Discovery 中不执行 30 个 target cases，不把 compile/test status 写成 `passed`，不批准 Reference contract，不生成
 Gate PASS。若导入顺序、FRM/FRX、文件 hash 或 Reference 集合有任何异常，转阶段 8。
 
-## 阶段 5：回传并封存 discovery observation，恢复快照
+## 历史假设阶段 5（不可执行）：回传并封存 discovery observation，恢复快照
 
 将 `session.json` 标为完整并填写真实 ended UTC 后先验证，再计算 discovery Gate：
 
@@ -202,7 +211,7 @@ certutil -hashfile "<DISCOVERY_EVIDENCE_ZIP>" SHA256
 随后完全关闭 CATIA，隔离并标记一次性 discovery CATVBA 为“不得复用”，恢复阶段 1 的干净 snapshot。即使回传了
 CATVBA，它也只能作为 observation，不得用于正式 G2/G3-C。
 
-## 阶段 6：A 环境只批准干净五点事实，重建 formal Kit/handoff
+## 历史假设阶段 6（不可执行）：A 环境只批准干净五点事实，重建 formal Kit/handoff
 
 A 环境复核 sealed discovery bundle、receipt、observation approval 和五点集合。只在五点 identity/path policy/
 transition 都干净、脱敏充分且 provenance 闭合时，修改 `catvba_refactor/config/packages.json` 中 Core 的结构化
@@ -231,11 +240,11 @@ macro-menu-build create-target-handoff "<FORMAL_BUILD_ROOT_1>" ^
   --output-root "<FORMAL_HANDOFF_ROOT>" --format json
 ```
 
-目标机必须恢复干净 snapshot 后重新接收 formal Kit/handoff；不能在 discovery 工程上继续。
+历史假设原要求目标机恢复干净 snapshot 后重新接收 formal Kit/handoff；当前没有可接收的 active bytes，本步骤不可执行。
 
-## 阶段 7：正式 G2，然后以已封存 G2 执行 G3-C
+## 历史假设阶段 7（不可执行）：正式 G2，然后以已封存 G2 执行 G3-C
 
-### 7.1 G2：只记录 blank environment/Reference
+### 历史假设 7.1（不可执行）：G2 blank environment/Reference
 
 按实际可用的单一基线选择 `<PROFILE>`，同时真实观察 SPA、FTA；不得用 `P-ALL` 假装完成三个最小 profile
 矩阵。初始化：
@@ -291,7 +300,7 @@ macro-menu-build validate-target-evidence "<G2_SEALED_ZIP>" ^
   --schema-dir "<SCHEMA_ROOT>" --format json
 ```
 
-### 7.2 G3-C：从空白导入、Compile、重启和唯一 smoke
+### 历史假设 7.2（不可执行）：G3-C 导入、Compile、重启和 smoke
 
 G3-C 必须使用同一 formal Kit/handoff、同一 `<PROFILE>`、相同匿名 host/VM/snapshot lineage，并把已验证的 eligible+
 approved G2 ZIP 作为 prerequisite。`created-at` 不得早于 G2 `sealed_at`：
@@ -372,7 +381,7 @@ macro-menu-build audit-catvba "<RETURNED_CORE_CATVBA>" ^
   --format json
 ```
 
-## 阶段 8：停止、隔离、封存历史和恢复
+## 历史假设阶段 8（不可执行）：停止、隔离、封存历史和恢复
 
 下列任一情况立即停止后续 CATIA 操作：handoff/Kit/hash/expiry/revocation 不符；许可不足；出现 B30/x86/VBA6/
 Temp/user/MISSING/unknown Reference；客户数据泄露；导入顺序或 FRM/FRX 异常；Compile/test 失败；CATVBA 或证据
@@ -393,7 +402,7 @@ hash 不闭合；Production 宏库被触及；机器/快照/环境漂移。
 任何恢复都不能覆盖失败历史。SP/HF、Windows、Reference、profile、Kit、CATVBA 或源码变化时，按新输入重新执行
 受影响 Gate。
 
-## 许可风险、隔离与无额外许可替代
+## 历史许可风险假设（不可执行）
 
 本轮只验证 Core。SPA、FTA 是现场资格要求，不表示 Fleet-SPA/Fleet-FTA 已实现或获准导入。
 
@@ -407,7 +416,9 @@ hash 不闭合；Production 宏库被触及；机器/快照/环境漂移。
 “替代”只保留 Core 安全边界，不证明扩展功能。缺少额外许可时，不允许用 UI 点击、错误吞掉或 mock 数据制造
 positive result。
 
-## 最终交接清单
+## 历史交接清单（不可执行）
+
+下列清单没有任何当前 active Kit/handoff/bundle 可供填写，仅保留为旧规格审计材料。
 
 - Kit/handoff/sidecar/revocation/snapshot 身份已记录且互相匹配；
 - discovery、G2、G3-C 各自使用不同 session ID；所有 detached review ID 独立；
