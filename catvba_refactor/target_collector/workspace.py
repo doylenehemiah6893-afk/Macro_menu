@@ -895,6 +895,7 @@ def status(capture: Path) -> CollectorResult:
             POINT_ORDER,
             validate_entitlements_document,
             validate_environment_document,
+            validate_operator_index_files,
             validate_references_document,
         )
 
@@ -925,10 +926,41 @@ def status(capture: Path) -> CollectorResult:
             )
             if reference_points != POINT_ORDER[:len(reference_points)]:
                 raise CollectorError("COLLECTOR_REFERENCES_INVALID")
+        operator_root = capture / "operator-records"
+        index_path = operator_root / "index.json"
+        operator_record_count = 0
+        operator_records_valid = False
+        if index_path.exists():
+            operator_root = _safe_absolute_path(operator_root)
+            files: dict[str, bytes] = {}
+            try:
+                candidates = sorted(
+                    operator_root.rglob("*"),
+                    key=lambda item: item.relative_to(capture).as_posix().encode("ascii"),
+                )
+            except (OSError, UnicodeError) as error:
+                raise CollectorError("COLLECTOR_OPERATOR_INDEX_INVALID") from error
+            for candidate in candidates:
+                info = candidate.lstat()
+                if stat.S_ISLNK(info.st_mode) or _path_has_reparse(info):
+                    raise CollectorError("COLLECTOR_OPERATOR_INDEX_INVALID", str(candidate))
+                if stat.S_ISDIR(info.st_mode):
+                    continue
+                if not stat.S_ISREG(info.st_mode):
+                    raise CollectorError("COLLECTOR_OPERATOR_INDEX_INVALID", str(candidate))
+                relative = candidate.relative_to(capture).as_posix()
+                files[relative], _digest = _stable_read(candidate, max_bytes=MAX_MEMBER_BYTES)
+            validate_operator_index_files(files)
+            document = parse_canonical_json_bytes(files["operator-records/index.json"])
+            if type(document) is not dict or type(document.get("records")) is not list:
+                raise CollectorError("COLLECTOR_OPERATOR_INDEX_INVALID")
+            operator_record_count = len(document["records"])
+            operator_records_valid = True
         required = {
             "environment": environment is not None,
             "entitlements": entitlements is not None,
             "reference_points": reference_points,
+            "operator_records_valid": operator_records_valid,
         }
         if environment is None:
             next_action = "record-environment"
@@ -936,6 +968,8 @@ def status(capture: Path) -> CollectorResult:
             next_action = "record-entitlements"
         elif len(reference_points) < len(POINT_ORDER):
             next_action = f"import-reference-csv:{POINT_ORDER[len(reference_points)]}"
+        elif not operator_records_valid:
+            next_action = "add-operator-record"
         else:
             next_action = "finalize-raw"
     except CollectorError as error:
@@ -949,6 +983,8 @@ def status(capture: Path) -> CollectorResult:
             "entitlements_recorded": required["entitlements"],
             "reference_points_recorded": list(required["reference_points"]),
             "reference_points_required": list(POINT_ORDER),
+            "operator_records_valid": required["operator_records_valid"],
+            "operator_record_count": operator_record_count,
             "ready_to_finalize_raw": next_action == "finalize-raw",
             "next_action": next_action,
             "gate_evaluated": False,

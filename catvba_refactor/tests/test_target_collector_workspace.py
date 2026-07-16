@@ -297,6 +297,8 @@ def test_init_capture_never_modifies_bundle(tmp_path: Path, monkeypatch: pytest.
     assert current.facts["environment_recorded"] is False
     assert current.facts["entitlements_recorded"] is False
     assert current.facts["reference_points_recorded"] == []
+    assert current.facts["operator_records_valid"] is False
+    assert current.facts["operator_record_count"] == 0
     assert current.facts["ready_to_finalize_raw"] is False
 
 
