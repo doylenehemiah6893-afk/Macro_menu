@@ -175,8 +175,6 @@ def _build_pair(
                 "build-kit",
                 "--repo-root",
                 os.fspath(repo),
-                "--schema-dir",
-                os.fspath(_SCHEMA_ROOT),
                 "--output-root",
                 os.fspath(output_root),
             ],
@@ -446,9 +444,9 @@ def _create_fixture_repository(tmp_path: Path) -> tuple[Path, Path, bytes]:
         {
             "schema_version": 1,
             "upstream_repository": "fixture/upstream",
-            "upstream_ref": "dev",
+            "upstream_ref": "refs/heads/dev",
             "fork_repository": "fixture/fork",
-            "fork_dev_ref": "dev",
+            "fork_dev_ref": "refs/heads/dev",
             "work_repository": "fixture/work",
             "work_branch": "codex/dev-review-report",
             "governed_paths": [

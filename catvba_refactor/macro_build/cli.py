@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import stat
 import sys
+import tempfile
 from dataclasses import replace
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -13,6 +15,7 @@ from .audit import AuditReport, audit_catvba
 from .canonical import canonical_json_bytes
 from .errors import (
     BuildKitError,
+    ConfigError,
     ExitCode,
     InfrastructureError,
     VerificationError,
@@ -38,6 +41,7 @@ from .model import (
 )
 from .policy import validate_catalog
 from .resolver import resolve_sources
+from .resume import doctor_repository
 from .target_evidence.approval import record_target_approval
 from .target_evidence.gate import evaluate_target_gate
 from .target_evidence.model import (
@@ -88,6 +92,7 @@ _SCALAR_OPTIONS = frozenset(
         "--reviewer-role",
         "--approved-at",
         "--approval",
+        "--state",
     }
 )
 
@@ -145,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
         help="stage a deterministic candidate Kit",
     )
+
+    doctor = commands.add_parser(
+        "doctor",
+        parents=[common],
+        allow_abbrev=False,
+        help="diagnose a fresh-clone resume environment without changing it",
+    )
+    doctor.add_argument("--state", required=True, type=Path)
 
     verify = commands.add_parser(
         "verify-kit",
@@ -289,6 +302,127 @@ def _locations(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
     return repo_root, config_dir, schema_dir, output_root
 
 
+def _reject_external_candidate_configuration(args: argparse.Namespace) -> None:
+    if args.command != "build-kit":
+        return
+    repo_root = Path(getattr(args, "repo_root", _REPOSITORY_ROOT)).absolute()
+    expected_config = repo_root / "catvba_refactor" / "config"
+    expected_schema = repo_root / "catvba_refactor" / "schemas"
+    if hasattr(args, "config_dir") and args.config_dir != expected_config:
+        raise ConfigError("CONFIG_DIRECTORY_EXTERNAL")
+    if hasattr(args, "schema_dir") and args.schema_dir != expected_schema:
+        raise ConfigError("SCHEMA_DIRECTORY_EXTERNAL")
+
+
+_FORMAL_CONFIG_FILES = (
+    "components.json",
+    "packages.json",
+    "project.json",
+    "tools.json",
+)
+_FORMAL_SCHEMA_FILES = tuple(
+    f"{name}.schema.json" for name in ("components", "packages", "project", "tools")
+)
+
+
+def _is_reparse_or_symlink(path: Path) -> bool:
+    metadata = path.lstat()
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return stat.S_ISLNK(metadata.st_mode) or bool(
+        getattr(metadata, "st_file_attributes", 0) & reparse_flag
+    )
+
+
+def _authenticate_formal_inputs(
+    repo_root: Path,
+    config_dir: Path,
+    schema_dir: Path,
+    pinned_commit: str | None = None,
+) -> str:
+    """Bind formal manifest/schema reads to clean regular blobs in HEAD."""
+    root = Path(repo_root).absolute()
+    expected_config = root / "catvba_refactor" / "config"
+    expected_schema = root / "catvba_refactor" / "schemas"
+    if (
+        Path(config_dir).absolute() != expected_config
+        or Path(schema_dir).absolute() != expected_schema
+    ):
+        raise ConfigError("FORMAL_INPUTS_UNTRUSTED")
+    files = tuple(expected_config / name for name in _FORMAL_CONFIG_FILES) + tuple(
+        expected_schema / name for name in _FORMAL_SCHEMA_FILES
+    )
+    chain = (
+        root,
+        root / "catvba_refactor",
+        expected_config,
+        expected_schema,
+        *files,
+    )
+    try:
+        if any(_is_reparse_or_symlink(path) for path in chain):
+            raise ConfigError("FORMAL_INPUTS_UNTRUSTED")
+        if not all(path.is_dir() for path in chain[:4]):
+            raise ConfigError("FORMAL_INPUTS_UNTRUSTED")
+        if not all(stat.S_ISREG(path.lstat().st_mode) for path in files):
+            raise ConfigError("FORMAL_INPUTS_UNTRUSTED")
+    except OSError as error:
+        raise ConfigError("FORMAL_INPUTS_UNTRUSTED") from error
+    repository = GitRepository(root)
+    current_head = repository.resolve_commit("HEAD")
+    if pinned_commit is None:
+        pinned_commit = current_head
+    elif current_head != pinned_commit:
+        raise ConfigError("FORMAL_INPUT_HEAD_CHANGED")
+    if repository.status_for(
+        ("catvba_refactor/config", "catvba_refactor/schemas")
+    ):
+        raise ConfigError("FORMAL_INPUTS_UNTRUSTED")
+    for path in files:
+        relative = path.relative_to(root).as_posix()
+        record = repository._run("ls-tree", "-z", pinned_commit, "--", relative)
+        expected_suffix = f"\t{relative}\0".encode("utf-8")
+        if not record.startswith(b"100") or b" blob " not in record or not record.endswith(expected_suffix):
+            raise ConfigError("FORMAL_INPUTS_UNTRUSTED")
+        try:
+            if path.read_bytes() != repository.read_blob(pinned_commit, relative):
+                raise ConfigError("FORMAL_INPUTS_UNTRUSTED")
+        except OSError as error:
+            raise ConfigError("FORMAL_INPUTS_UNTRUSTED") from error
+    if repository.resolve_commit("HEAD") != pinned_commit:
+        raise ConfigError("FORMAL_INPUT_HEAD_CHANGED")
+    return pinned_commit
+
+
+def _load_authenticated_formal_config(
+    repo_root: Path, config_dir: Path, schema_dir: Path
+) -> tuple[ManifestSet, str]:
+    pinned_commit = _authenticate_formal_inputs(repo_root, config_dir, schema_dir)
+    root = Path(repo_root).absolute()
+    repository = GitRepository(root)
+    with tempfile.TemporaryDirectory(prefix="macro-menu-formal-config-") as temporary:
+        snapshot = Path(temporary)
+        snapshot.chmod(0o700)
+        snapshot_config = snapshot / "config"
+        snapshot_schema = snapshot / "schemas"
+        snapshot_config.mkdir(mode=0o700)
+        snapshot_schema.mkdir(mode=0o700)
+        for directory, prefix, names in (
+            (snapshot_config, "catvba_refactor/config", _FORMAL_CONFIG_FILES),
+            (snapshot_schema, "catvba_refactor/schemas", _FORMAL_SCHEMA_FILES),
+        ):
+            for name in names:
+                target = directory / name
+                target.write_bytes(
+                    repository.read_blob(pinned_commit, f"{prefix}/{name}")
+                )
+                target.chmod(0o600)
+        manifests = load_and_validate_config(snapshot_config, snapshot_schema)
+    _authenticate_formal_inputs(
+        repo_root, config_dir, schema_dir, pinned_commit=pinned_commit
+    )
+    return manifests, pinned_commit
+
+
 def _target_schema_dir(args: argparse.Namespace) -> Path:
     return _locations(args)[2] / "target_evidence"
 
@@ -397,19 +531,28 @@ def _load_source_context(
     args: argparse.Namespace, *, worktree: bool
 ) -> tuple[ManifestSet, Any, Any, Inventory] | int:
     repo_root, config_dir, schema_dir, _output_root = _locations(args)
-    manifests = load_and_validate_config(config_dir, schema_dir)
+    pinned_commit: str | None = None
+    if worktree:
+        manifests = load_and_validate_config(config_dir, schema_dir)
+    else:
+        manifests, pinned_commit = _load_authenticated_formal_config(
+            repo_root, config_dir, schema_dir
+        )
     failed = _manifest_failure(
         args, manifests, formal_eligible=False, mode="unavailable"
     )
     if failed is not None:
         return failed
     repository = GitRepository(repo_root)
+    if pinned_commit is not None and repository.resolve_commit("HEAD") != pinned_commit:
+        raise ConfigError("FORMAL_INPUT_HEAD_CHANGED")
     snapshot = freeze_snapshot(
         repository,
         manifests.project,
         manifests.digest,
         __version__,
         worktree=worktree,
+        expected_work_commit=pinned_commit,
     )
     inventory = scan_inputs(snapshot, manifests, repository)
     return manifests, repository, snapshot, inventory
@@ -784,13 +927,35 @@ def _pack_target_evidence_command(args: argparse.Namespace) -> int:
     return int(ExitCode.SUCCESS)
 
 
+def _doctor_command(args: argparse.Namespace) -> int:
+    repo_root = Path(getattr(args, "repo_root", _REPOSITORY_ROOT)).resolve()
+    state_path = args.state
+    if not state_path.is_absolute():
+        state_path = repo_root / state_path
+    report = doctor_repository(repo_root, state_path, now=datetime.now(UTC))
+    document = {
+        "command": args.command,
+        "ok": report.ok,
+        **dict(report.facts),
+        "diagnostics": [
+            {"code": item.code, "path": item.path, "message": item.message, "details": {}}
+            for item in report.diagnostics
+        ],
+    }
+    _emit(document, _format(args))
+    return int(ExitCode.SUCCESS if report.ok else ExitCode.INFRASTRUCTURE)
+
+
 def dispatch(args: argparse.Namespace) -> int:
+    _reject_external_candidate_configuration(args)
     if args.command == "inventory":
         return _inventory_command(args)
     if args.command == "check":
         return _check_command(args)
     if args.command == "build-kit":
         return _build_command(args)
+    if args.command == "doctor":
+        return _doctor_command(args)
     if args.command == "verify-kit":
         return _verify_command(args)
     if args.command == "audit-catvba":

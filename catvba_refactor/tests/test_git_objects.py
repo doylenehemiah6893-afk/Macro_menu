@@ -12,9 +12,9 @@ from catvba_refactor.macro_build.model import SnapshotMode
 
 PROJECT = {
     "upstream_repository": "verysolecd/Macro_menu",
-    "upstream_ref": "dev",
+    "upstream_ref": "refs/heads/dev",
     "fork_repository": "doylenehemiah6893-afk/Macro_menu",
-    "fork_dev_ref": "dev",
+    "fork_dev_ref": "refs/heads/dev",
     "work_repository": "doylenehemiah6893-afk/Macro_menu",
     "work_branch": "codex/dev-review-report",
     "governed_paths": ["Src", "catvba_refactor"],
@@ -79,7 +79,7 @@ def test_candidate_snapshot_records_exact_commits_and_tree_once(
     monkeypatch.setattr(repo, "resolve_commit", record_resolve)
     snapshot = freeze_snapshot(repo, PROJECT, "b" * 64, "0.1.0")
 
-    assert calls == ["HEAD", "dev"]
+    assert calls == ["HEAD", "refs/heads/dev"]
     assert snapshot.mode is SnapshotMode.CANDIDATE
     assert snapshot.formal_eligible is True
     assert snapshot.upstream_repository == PROJECT["upstream_repository"]
@@ -92,6 +92,26 @@ def test_candidate_snapshot_records_exact_commits_and_tree_once(
     assert snapshot.work_tree == repo.tree_oid(dev_oid)
     assert snapshot.manifest_digest == "b" * 64
     assert snapshot.tool_version == "0.1.0"
+
+
+def test_snapshot_rejects_head_that_moved_after_formal_manifest_load(
+    git_repo: tuple[Path, str],
+) -> None:
+    repo_path, pinned_commit = git_repo
+    (repo_path / "README.md").write_text("head moved\n", encoding="utf-8")
+    _git(repo_path, "add", "README.md")
+    _git(repo_path, "commit", "-m", "fixture: move head after manifest load")
+
+    with pytest.raises(
+        SourceError, match="^formal input HEAD changed before snapshot freeze$"
+    ):
+        freeze_snapshot(
+            GitRepository(repo_path),
+            PROJECT,
+            "b" * 64,
+            "0.1.0",
+            expected_work_commit=pinned_commit,
+        )
 
 
 def test_snapshot_rejects_fork_dev_that_differs_from_upstream_cutoff(
@@ -210,9 +230,31 @@ def test_every_git_subprocess_uses_minimal_read_only_offline_environment(
     } | {
         "GIT_OPTIONAL_LOCKS": "0",
         "GIT_NO_LAZY_FETCH": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_LITERAL_PATHSPECS": "1",
     }
     assert commit == dev_oid
     assert observed_environments == [expected_environment] * 5
+
+
+def test_git_environment_disables_replace_refs_and_pathspec_magic(
+    git_repo: tuple[Path, str],
+) -> None:
+    repo_path, _ = git_repo
+    environment = GitRepository(repo_path).command_environment()
+
+    assert environment["GIT_NO_REPLACE_OBJECTS"] == "1"
+    assert environment["GIT_LITERAL_PATHSPECS"] == "1"
+
+
+def test_candidate_snapshot_rejects_replace_refs(
+    git_repo: tuple[Path, str],
+) -> None:
+    repo_path, dev_oid = git_repo
+    _git(repo_path, "update-ref", f"refs/replace/{dev_oid}", dev_oid)
+
+    with pytest.raises(SourceError, match="replace refs are forbidden"):
+        freeze_snapshot(GitRepository(repo_path), PROJECT, "a" * 64, "0.1.0")
 
 
 def test_git_failure_reports_subcommand_and_return_code_without_environment(

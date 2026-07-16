@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,7 @@ import pytest
 from catvba_refactor.macro_build import cli
 from catvba_refactor.macro_build.audit import AuditReport, PCodeSignal
 from catvba_refactor.macro_build.errors import (
+    ConfigError,
     EvidenceError,
     ExitCode,
     GateError,
@@ -115,9 +118,14 @@ def _install_pipeline(
         calls.append(("load", config_dir, schema_dir))
         return manifests
 
+    class Repository:
+        def resolve_commit(self, ref: str) -> str:
+            assert ref == "HEAD"
+            return snapshot.work_commit
+
     def repository(root: Path) -> object:
         calls.append(("repo", root))
-        return object()
+        return Repository()
 
     def freeze(
         repo: object,
@@ -125,7 +133,9 @@ def _install_pipeline(
         digest: str,
         version: str,
         worktree: bool = False,
+        expected_work_commit: str | None = None,
     ) -> InputSnapshot:
+        assert expected_work_commit == (None if worktree else snapshot.work_commit)
         calls.append(("freeze", worktree, version))
         return replace(snapshot, mode=SnapshotMode.WORKTREE if worktree else snapshot.mode)
 
@@ -141,6 +151,15 @@ def _install_pipeline(
         return generated
 
     monkeypatch.setattr(cli, "load_and_validate_config", load, raising=False)
+    monkeypatch.setattr(
+        cli,
+        "_load_authenticated_formal_config",
+        lambda repo_root, config_dir, schema_dir: (
+            load(config_dir, schema_dir),
+            snapshot.work_commit,
+        ),
+        raising=False,
+    )
     monkeypatch.setattr(cli, "GitRepository", repository, raising=False)
     monkeypatch.setattr(cli, "freeze_snapshot", freeze, raising=False)
     monkeypatch.setattr(
@@ -184,9 +203,191 @@ def test_console_help_lists_all_commands() -> None:
         "build-kit",
         "verify-kit",
         "audit-catvba",
+        "doctor",
         *_TARGET_COMMANDS,
     ):
         assert command in help_text
+
+
+def test_candidate_build_rejects_external_config_directory(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = cli.main(
+        ["build-kit", "--config-dir", os.fspath(tmp_path / "config"), "--format", "json"]
+    )
+
+    assert result == ExitCode.CONFIG
+    assert "CONFIG_DIRECTORY_EXTERNAL" in capsys.readouterr().err
+
+
+def test_candidate_build_rejects_external_schema_directory(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = cli.main(
+        ["build-kit", "--schema-dir", os.fspath(tmp_path / "schemas"), "--format", "json"]
+    )
+
+    assert result == ExitCode.CONFIG
+    assert "SCHEMA_DIRECTORY_EXTERNAL" in capsys.readouterr().err
+
+
+def _formal_input_clone(tmp_path: Path) -> Path:
+    source = Path(__file__).parents[2]
+    clone = tmp_path / "formal input clone"
+    subprocess.run(
+        ("git", "clone", "--no-local", str(source), str(clone)),
+        check=True,
+        capture_output=True,
+    )
+    return clone
+
+
+def _same_tree_alternate_commit(clone: Path) -> tuple[str, str]:
+    base = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        (
+            "git",
+            "-c",
+            "user.name=Formal Input Test",
+            "-c",
+            "user.email=formal-input@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "same tree alternate",
+        ),
+        cwd=clone,
+        check=True,
+        capture_output=True,
+    )
+    alternate = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ("git", "reset", "--hard", base),
+        cwd=clone,
+        check=True,
+        capture_output=True,
+    )
+    return base, alternate
+
+
+def test_formal_inputs_accept_clean_head_blobs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    clone = _formal_input_clone(tmp_path)
+    cli._authenticate_formal_inputs(
+        clone,
+        clone / "catvba_refactor/config",
+        clone / "catvba_refactor/schemas",
+    )
+    monkeypatch.chdir(clone)
+    cli._authenticate_formal_inputs(
+        Path("."), Path("catvba_refactor/config"), Path("catvba_refactor/schemas")
+    )
+
+
+def test_formal_config_pins_one_commit_across_successive_blob_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    clone = _formal_input_clone(tmp_path)
+    base, alternate = _same_tree_alternate_commit(clone)
+    original = cli.GitRepository.read_blob
+    commits: list[str] = []
+
+    def move_head_during_reads(repository, commit: str, path: str) -> bytes:
+        commits.append(commit)
+        result = original(repository, commit, path)
+        if len(commits) == 2:
+            subprocess.run(
+                ("git", "update-ref", "HEAD", alternate),
+                cwd=clone,
+                check=True,
+                capture_output=True,
+            )
+        return result
+
+    monkeypatch.setattr(cli.GitRepository, "read_blob", move_head_during_reads)
+    with pytest.raises(ConfigError, match="FORMAL_INPUT_HEAD_CHANGED"):
+        cli._load_authenticated_formal_config(
+            clone,
+            clone / "catvba_refactor/config",
+            clone / "catvba_refactor/schemas",
+        )
+
+    assert commits
+    assert set(commits) == {base}
+
+
+def test_formal_config_rejects_head_move_after_load_before_freeze(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    clone = _formal_input_clone(tmp_path)
+    _base, alternate = _same_tree_alternate_commit(clone)
+    original = cli._load_authenticated_formal_config
+
+    def load_then_move(repo_root: Path, config_dir: Path, schema_dir: Path):
+        result = original(repo_root, config_dir, schema_dir)
+        subprocess.run(
+            ("git", "update-ref", "HEAD", alternate),
+            cwd=clone,
+            check=True,
+            capture_output=True,
+        )
+        return result
+
+    monkeypatch.setattr(cli, "_load_authenticated_formal_config", load_then_move)
+    args = cli.build_parser().parse_args(
+        ["--repo-root", os.fspath(clone), "inventory"]
+    )
+    with pytest.raises(ConfigError, match="FORMAL_INPUT_HEAD_CHANGED"):
+        cli._load_source_context(args, worktree=False)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["directory-symlink", "file-symlink", "dirty-file", "untracked-file"],
+)
+def test_formal_inputs_reject_links_and_dirty_namespaces(
+    tmp_path: Path, mutation: str
+):
+    clone = _formal_input_clone(tmp_path)
+    config = clone / "catvba_refactor/config"
+    schemas = clone / "catvba_refactor/schemas"
+    if mutation == "directory-symlink":
+        moved = tmp_path / "moved config"
+        config.rename(moved)
+        try:
+            config.symlink_to(moved, target_is_directory=True)
+        except OSError:
+            pytest.skip("directory symlinks are unavailable")
+    elif mutation == "file-symlink":
+        target = tmp_path / "project.json"
+        shutil.copyfile(config / "project.json", target)
+        (config / "project.json").unlink()
+        try:
+            (config / "project.json").symlink_to(target)
+        except OSError:
+            pytest.skip("file symlinks are unavailable")
+    elif mutation == "dirty-file":
+        (config / "project.json").write_text("{}\n", encoding="utf-8")
+    else:
+        (schemas / "unexpected.schema.json").write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="FORMAL_INPUTS_UNTRUSTED"):
+        cli._authenticate_formal_inputs(clone, config, schemas)
 
 
 def _target_command_arguments(

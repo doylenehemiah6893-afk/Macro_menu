@@ -104,9 +104,9 @@ def test_committed_core_manifests_are_first_cycle_only_and_valid() -> None:
     assert manifest_set.project == {
         "schema_version": 1,
         "upstream_repository": "verysolecd/Macro_menu",
-        "upstream_ref": "dev",
+        "upstream_ref": "refs/heads/dev",
         "fork_repository": "doylenehemiah6893-afk/Macro_menu",
-        "fork_dev_ref": "dev",
+        "fork_dev_ref": "refs/heads/dev",
         "work_repository": "doylenehemiah6893-afk/Macro_menu",
         "work_branch": "codex/dev-review-report",
         "governed_paths": [

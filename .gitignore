@@ -4,5 +4,6 @@
 __pycache__/
 .pytest_cache/
 *.py[cod]
+*.egg-info/
 /catvba_refactor/build/
 /catvba_refactor/dist/
