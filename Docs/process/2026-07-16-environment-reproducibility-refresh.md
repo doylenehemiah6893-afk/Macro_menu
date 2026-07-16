@@ -1,6 +1,6 @@
 # 环境复刻与仓库治理修订记录
 
-状态：EVIDENCE IMPLEMENTATION RECORD
+状态：LOCAL EVIDENCE AND DELIVERY RECORD / REMOTE PUBLICATION BLOCKED
 
 日期：2026-07-16
 
@@ -65,3 +65,43 @@ inventory/check、双 Kit/四 verifier 和 delivery 构建结果必须在后续 
 
 B28 已有原生 CPython 3.12，但不能使用 WSL、PowerShell、uv 或 CATIA/VBE/DSLS 自动化。重新签发并推送 fresh
 delivery control 前不得执行旧 QUICKSTART；Compile、30 target cases、CATVBA 生成和 G2–G7 全部保持 not-run/BLOCKED。
+
+## 6. Clean evidence、fresh clone 与新 delivery
+
+最终 evidence commit 为 `f2c9d8d8cd1e448444dd43aadb5e4fa57b5c86d0`，tree 为
+`6d9e36b85b5f8d1294c9934dff625497bc2441c9`。它没有采用浮动 `origin/dev`。从该精确 commit 运行
+`verify_resume.py` 的 receipt 为 `ok=true`：
+
+| 项目 | 结果 |
+|---|---|
+| lock / Development doctor | PASS / PASS |
+| 完整 pytest | `1664 passed, 19 warnings in 223.71s` |
+| inventory / check | 90 records、零 diagnostics / 16 components、2 tools、零 diagnostics；均 `formal_eligible=true` |
+| 双 Kit | `kit-a09bfd3dcb7264c8bc0e`；目录、ZIP、sidecar 逐字节一致 |
+| Kit ZIP SHA-256 | `87a0e4f283ee46d220a2e4d297f6de62a31c70a845af48ededacdab3723f8333` |
+| 四 verifier | directory/ZIP × primary/comparison 全部 `ok=true` |
+| collector smoke | pyz help PASS；synthetic fixture expected-fail-closed PASS；target/compile 均 not-run |
+
+另以 `git clone -c core.autocrlf=true --no-local` 真实检出 `f2c9d8d`：工作树 clean，lock、state、intake、
+撤回 ledger 与历史 provenance bytes 与源 clone 相同；从空 `.venv` frozen bootstrap 和 Development doctor 均 PASS。
+此前同代码提交 `9990b4f` 的 autocrlf clone 还完整执行 `verify_resume.py`：1664 tests、双 Kit、四 verifier 与 collector
+smoke 全部 PASS。两次都没有复制本地 `.venv`。
+
+在签发前 canonical snapshot 中，`active_handoff_ids=[]`，旧 `handoff-6ed312ee18b254cb3c13` 与
+`handoff-b8d9d535604e78551423` 均为 withdrawn。新 handoff/bundle 结果：
+
+| 项目 | 固定值 |
+|---|---|
+| handoff / SHA-256 | `handoff-56097be57a37a63c7644` / `ad6ca230bab403077f0fba8ea6ae11157b555d6605613fb862fe9c0818c4a141` |
+| created / expires | `2026-07-16T15:20:31Z` / `2026-07-23T15:19:09Z` |
+| active ledger captured | `2026-07-16T15:20:36Z`；只激活新 handoff，SHA-256 `f48e03b8ec77b3d18ad1596e3a2be0ea3dce06ad424f8572a19f473b004a4721` |
+| operator bundle | `bundle-6b7518a2e3c969d2383fcb60`；两次构建完整目录相同 |
+| provenance SHA-256 | `6b7518a2e3c969d2383fcb60429cb0c584389e06fada95b6342b70736abcd1ac` |
+| authenticated content SHA-256 | `0b9c0d4bd45513657304632a4b091a1ea502931954c30262039a4dfdd264b93f` |
+| collector pyz SHA-256 | `e11da8de8147fbbaab5217f56dde7eea7636cacf8993230c85484b1ef6358301` |
+| CI selector snapshot ZIP SHA-256 | `83a06dac4a159a57f35a4426cb7526bf0ab5a7affe3e52c661184e694a6072fb`；`available=true` |
+| public tree | 61 regular files，约 700 KiB；不含 raw capture、客户数据或 CATVBA |
+
+本地 Delivery doctor 在 current state/CURRENT/bundle/fresh ledger 上必须 PASS。远端仍停在 `037ab406...`，所以这份
+local delivery 在 fast-forward push、GitHub CI 和 GitHub fresh clone 完成前不得交给 B28。签发不改变
+`compile_status=not-run`、30 cases=`not-run`、CATVBA=`not-produced`、G2–G7=`BLOCKED`、`release_eligible=false`。

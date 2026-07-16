@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/active-handoff-ledger.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "captured_at", "source", "active_handoff_ids", "withdrawn_handoff_ids"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "captured_at": {
+      "type": "string", "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "source": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{2,127}$"},
+    "active_handoff_ids": {"$ref": "#/$defs/handoff_ids"},
+    "withdrawn_handoff_ids": {"$ref": "#/$defs/handoff_ids"}
+  },
+  "$defs": {
+    "handoff_ids": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^handoff-[a-z0-9][a-z0-9-]{2,94}$"}
+    }
+  }
+}

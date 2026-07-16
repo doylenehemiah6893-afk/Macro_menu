@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：CURRENT IMPLEMENTATION / PREPARATION — 离线工具、Core、evidence harness 与 operator bundle builder 已实现；当前无 active bundle，CATIA/目标机测试未运行
+> 状态：CURRENT IMPLEMENTATION / LOCAL DELIVERY ISSUED — 离线工具、Core、evidence harness 与 active operator bundle 已实现；远端尚未同步，CATIA/目标机测试未运行
 >
 > 更新日期：2026-07-16
 >
@@ -14,8 +14,8 @@
 - 所有本地 VBA、Python、配置、schema、测试和派生输出进入 `catvba_refactor/`；
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
 - 离线 Python、manifest/schema、Build Kit/evidence/operator CLI、target collector 和 pytest 已实现；首轮 Core Runtime
-  源码已固定为候选输入。上一份 Discovery bundle 保留为历史制品，当前 state 已回到 preparation，等待从新 evidence
-  commit 重新签发；尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
+  源码已固定为候选输入。新 Discovery bundle 已从 `f2c9d8d` 双构建并在本地签发，上一份 bundle/handoff 已撤回；
+  远端同步前外部机器仍不能从 GitHub 取得。尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
 
 ## 2. 仓库拓扑
 
@@ -66,7 +66,7 @@ Macro_menu/
 │  ├─ reviews/                        # 日期化只读审查
 │  └─ superpowers/{specs,plans}/      # 历史目录名；不代表外部 skill 依赖
 ├─ RESUME.md / resume/state.json      # fresh clone 人工入口与严格机器状态
-├─ artifacts/b28-discovery/           # sanitized 历史/未来 public operator bundle、control 与 receipts；是否 active 由 state 决定
+├─ artifacts/b28-discovery/           # sanitized 历史/当前 public operator bundle、control 与 receipts；是否 active 由 state 决定
 ├─ scripts/bootstrap_resume.py        # Development 环境认证与 frozen sync
 ├─ scripts/verify_resume.py           # Development 测试与确定性双构建
 ├─ scripts/run-discovery.cmd          # 目标 bundle 的原生 cmd.exe 薄 wrapper

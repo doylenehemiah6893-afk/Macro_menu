@@ -4,9 +4,9 @@
 
 唯一仓库：`doylenehemiah6893-afk/Macro_menu`
 唯一工作分支：`codex/dev-review-report`
-当前开发动作：完成 evidence refresh、重新签发并推送
+当前开发动作：提交本地 delivery record、fast-forward 推送并验证 GitHub
 
-当前目标机动作：BLOCKED，等待新的 fresh delivery control
+当前目标机动作：BLOCKED，等待当前本地 fresh delivery control 推送并从 GitHub 重新取得
 
 机器状态首先以 `resume/state.json` 为准；只有 `active_bundle_path` 非空时，CURRENT 与 bundle provenance 才能
 共同选择活动制品。本文件不把 A 环境验证说成 CATIA 验证。
@@ -14,19 +14,21 @@
 > 当前 GitHub 远端分支仍停在 `037ab40696744678a57781d5197c152687520d84`，尚不包含本地已完成的
 > implementation/delivery 提交。本节制品当前只能从本地工作副本取得；完成 fast-forward push 前，不能用 GitHub fresh clone 复刻现状。
 
-## 1. 当前 preparation 状态
+## 1. 当前本地已签发制品
 
 | 项目 | 固定值 |
 |---|---|
-| evidence commit / tree | `null` / `null`，等待本轮实现提交 |
-| active bundle / Kit / handoff | 全部 `null`；CURRENT 已移除，ledger active 集为空，旧 handoff 已 withdrawn |
-| revocation status | `preparation` |
-| Gate | G0=`PASS`，G1–G7=`BLOCKED` |
-| next action | `complete-evidence-implementation` |
-| A 环境完整测试 | 本轮工作树 `1664 passed, 19 warnings`；提交后继续做 fresh-clone 验证，且不是 CATIA 证据 |
+| evidence commit / tree | `f2c9d8d8cd1e448444dd43aadb5e4fa57b5c86d0` / `6d9e36b85b5f8d1294c9934dff625497bc2441c9` |
+| active bundle | `artifacts/b28-discovery/bundles/bundle-6b7518a2e3c969d2383fcb60/` |
+| provenance SHA-256 | `6b7518a2e3c969d2383fcb60429cb0c584389e06fada95b6342b70736abcd1ac` |
+| Kit / ZIP SHA-256 | `kit-a09bfd3dcb7264c8bc0e` / `87a0e4f283ee46d220a2e4d297f6de62a31c70a845af48ededacdab3723f8333` |
+| active handoff / expiry | `handoff-56097be57a37a63c7644` / `2026-07-23T15:19:09Z` |
+| active ledger | captured `2026-07-16T15:20:36Z`；两份旧 handoff 均 withdrawn |
+| Gate / next action | G0/G1=`PASS`，G2–G7=`BLOCKED`；`run-b28-discovery` |
+| A 环境完整测试 | evidence 1664 passed；autocrlf fresh clone 1664 passed；19 个第三方 warnings，均非 CATIA 证据 |
 
-仓库仍保留上一份 bundle 供审计；历史 CURRENT 已移除，ledger 已明确撤回上一 handoff。不得因历史 handoff
-尚未到名义 expiry 就直接复用，也不得手改 JSON 延期或恢复。
+上一份 `bundle-ab5205...` 仍保留供审计，但其 handoff 已撤回；更早的 `handoff-6ed312...` 也保持 withdrawn。
+不得因历史 expiry 尚未到达就直接复用，也不得手改 JSON 延期或恢复。
 
 所有 target truth 仍为：`compile_status=not-run`、30 个 target case 全部 `not-run`、
 `artifact_status=not-produced`、`release_eligible=false`。G2–G7 全部 `BLOCKED`。
@@ -62,12 +64,14 @@ Development 验证不因 ledger/handoff 过期而失败。准备转运到 B28 �
 
 ## 3. B28 目标机唯一入口
 
-目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。当前没有 active
-bundle，不能执行旧 QUICKSTART。只有新的
-evidence refresh 和 delivery record 完成、Delivery doctor 通过后，才可在批准的
-blank VM、标准用户、原生 `cmd.exe` 中将 active bundle、`CURRENT.json` 和 fresh ledger 放入互不重叠的本地 NTFS
-目录，然后严格执行新 state 指向的 bundle 内 `QUICKSTART_B28.md`、`README_TARGET_B28.md` 和
-`SECURITY_AND_REDACTION.md`。
+目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。当前 active
+bundle 还没有推送到 GitHub，因此不能从旧远端执行。只有远端同步、GitHub fresh clone 与 Delivery doctor 全部通过后，
+才可在批准的 blank VM、标准用户、原生 `cmd.exe` 中将 active bundle、`CURRENT.json` 和 fresh ledger 放入互不重叠的
+本地 NTFS 目录，然后严格执行：
+
+- `artifacts/b28-discovery/bundles/bundle-6b7518a2e3c969d2383fcb60/QUICKSTART_B28.md`
+- `artifacts/b28-discovery/bundles/bundle-6b7518a2e3c969d2383fcb60/README_TARGET_B28.md`
+- `artifacts/b28-discovery/bundles/bundle-6b7518a2e3c969d2383fcb60/SECURITY_AND_REDACTION.md`
 
 仓库中的 `Docs/runbooks/b28-target/README_TARGET_B28.md` 仅保留为源教程/审查入口；目标机执行时以已签发 bundle
 内同名文件为准，避免把源工作树、控制文件与现场 capture 混在一起。
@@ -91,7 +95,7 @@ raw/untrusted 当作 PASS 或 sealed evidence。完成后只通过批准通道�
 - 试图在 B28 使用非原生 Python 3.12、WSL/PowerShell、脚本控制 CATIA/VBE/DSLS；
 - 试图 Compile、运行 30 cases、生成 CATVBA，或把 raw/untrusted 当 sealed/PASS；
 - 试图记录/提交客户路径、主机/用户标识、DSLS server 或未脱敏数据；
-- 试图把 G2–G7 或 `release_eligible` 改为通过，或复活旧 handoff `handoff-6ed312ee18b254cb3c13`。
+- 试图把 G2–G7 或 `release_eligible` 改为通过，或复活旧 handoff `handoff-6ed312ee18b254cb3c13` / `handoff-b8d9d535604e78551423`。
 - 试图从尚未同步的 GitHub 远端声称已取得本地 bundle，或用 API 重建提交 SHA。
 
 发生任一项时保留现有日志和 hash，停止并回到本文件与 `resume/state.json`，不要自行扩大授权。

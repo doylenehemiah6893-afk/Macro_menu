@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/state-diff.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["binding", "overall_status", "records"],
+  "properties": {
+    "binding": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"},
+    "overall_status": {"enum": ["not-run", "observed", "blocked", "failed"]},
+    "records": {
+      "type": "array",
+      "maxItems": 1,
+      "items": {"$ref": "#/$defs/record"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "binding": {"properties": {"session_mode": {"enum": ["discovery", "g2"]}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "overall_status": {"const": "not-run"},
+          "records": {"maxItems": 0}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "active_document_generic_type", "saved", "read_only", "dirty",
+        "selection_count", "alerts", "refresh", "interactivity",
+        "opened_document_count", "closed_document_count", "recovered_after_error",
+        "recovered_after_cancel", "recovered_after_restart", "scalar_state_sha256"
+      ],
+      "properties": {
+        "active_document_generic_type": {"enum": ["none", "part", "product", "drawing", "other"]},
+        "saved": {"type": ["boolean", "null"]},
+        "read_only": {"type": ["boolean", "null"]},
+        "dirty": {"type": ["boolean", "null"]},
+        "selection_count": {"type": "integer", "minimum": 0},
+        "alerts": {"enum": ["enabled", "disabled", "unknown"]},
+        "refresh": {"enum": ["enabled", "disabled", "unknown"]},
+        "interactivity": {"enum": ["enabled", "disabled", "unknown"]},
+        "opened_document_count": {"type": "integer", "minimum": 0},
+        "closed_document_count": {"type": "integer", "minimum": 0},
+        "recovered_after_error": {"type": ["boolean", "null"]},
+        "recovered_after_cancel": {"type": ["boolean", "null"]},
+        "recovered_after_restart": {"type": ["boolean", "null"]},
+        "scalar_state_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"}
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "case_id", "execution_point", "status", "operator_record_id", "before", "after"],
+      "properties": {
+        "record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+        "case_id": {"const": "context.core.healthcheck.none"},
+        "execution_point": {"const": "post-restart"},
+        "status": {"enum": ["observed", "blocked", "failed"]},
+        "operator_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+        "before": {"$ref": "#/$defs/snapshot"},
+        "after": {"$ref": "#/$defs/snapshot"}
+      }
+    }
+  }
+}

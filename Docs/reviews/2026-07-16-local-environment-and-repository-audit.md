@@ -8,7 +8,7 @@
 
 现有离线工具与 bundle 架构可保留，但审查时还不能从 GitHub 复刻当前本地环境：远端分支停在 `037ab40696744678a57781d5197c152687520d84`，本地交付 HEAD 为 `2e3be7442734c57af6cde39f5f6f51025095de4f`，本地领先 22 个提交，且当前执行环境没有 HTTPS/SSH/gh 推送凭据。
 
-另有两个已复现的代码级 P0：Windows `core.autocrlf=true` 会在 clean clone 中改写 lock、intake 和 bundle 控制 bytes；Development doctor 又被 24 小时 ledger 与七天 handoff 时效阻断。两者都会使外部 fresh clone 随平台或时间失败。本轮已实现修复，正在由新 evidence cycle 验证。
+另有两个已复现的代码级 P0：Windows `core.autocrlf=true` 会在 clean clone 中改写 lock、intake 和 bundle 控制 bytes；Development doctor 又被 24 小时 ledger 与七天 handoff 时效阻断。两者都会使外部 fresh clone 随平台或时间失败。本轮已由 `f2c9d8d` 的新 evidence cycle 和实际 autocrlf clone 关闭。
 
 ## 审查事实
 
@@ -31,10 +31,9 @@
 
 ## 当前状态与仍未关闭
 
-本轮代码与文档回归已达到 `1664 passed, 19 warnings`；warnings 仅来自 oletools/pyparsing 的第三方 deprecation。机器状态已回到 preparation，旧 bundle/handoff 不再 active。
+本轮代码与文档回归达到 `1664 passed, 19 warnings`；warnings 仅来自 oletools/pyparsing 的第三方 deprecation。机器状态曾安全回到 preparation 并撤回旧 handoff，随后从 `f2c9d8d` 重新双构建并签发 `bundle-6b7518a2e3c969d2383fcb60`。
 
-1. 上述实现变更需要新 evidence commit，并从该提交重新双构建/签发 delivery record；不能沿用旧 evidence 身份解释新代码。
-2. 本地所有提交仍需 GitHub 认证后 fast-forward 推送；在此之前，远端 fresh clone 仍无法取得当前工作。
-3. 推送后必须取得真实 Linux/Windows Actions 结果，并从 GitHub 第二次 clone 验证。
-4. 仓库没有离线 wheelhouse；依赖复刻仍需网络、批准镜像或预热 cache。
-5. B28 人工 Discovery 尚未执行，G2–G7 与 release 状态完全不变。
+1. 本地所有提交仍需 GitHub 认证后 fast-forward 推送；在此之前，远端 fresh clone 仍无法取得当前工作。
+2. 推送后必须取得真实 Linux/Windows Actions 结果，并从 GitHub 第二次 clone 验证。
+3. 仓库没有离线 wheelhouse；依赖复刻仍需网络、批准镜像或预热 cache。
+4. B28 人工 Discovery 尚未执行，G2–G7 与 release 状态完全不变。

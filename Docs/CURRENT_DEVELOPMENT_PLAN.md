@@ -1,6 +1,6 @@
 # Macro_menu 当前开发计划
 
-状态：CURRENT / evidence refresh in progress / remote publication blocked
+状态：CURRENT / local evidence and delivery complete / remote publication blocked
 
 日期：2026-07-16
 
@@ -14,7 +14,7 @@
 | Task 10 | 本地完成 | 实施审查与回归关闭记录已提交 |
 | Task 11 | 本地完成 | 已构建并提交 public discovery bundle；不是 B28 执行完成 |
 | Task 12 | BLOCKED | 远端仍落后；缺 Git 推送凭据，远端 CI 与 GitHub fresh-clone 未验证 |
-| B28 Discovery | BLOCKED | 需要 fresh delivery control 与目标机人工操作 |
+| B28 Discovery | BLOCKED | fresh delivery control 已在本地签发；需先推送并由目标机从仓库重新取得，再人工操作 |
 | G2–G7 | BLOCKED | Compile、References、权益、profile、试点和发布证据均未取得 |
 
 ## 2. 当前复刻与文档治理工作包
@@ -26,21 +26,18 @@
 | R3 | 修复跨平台环境合同 | DONE | Python 范围与 bootstrap 一致；uv 前置校验；LF/不可变 bundle 属性；root build ignored |
 | R4 | 拆分 Development 与 Delivery doctor | DONE | stale/expired 只阻止 delivery；bootstrap/verify/CI 使用 development scope；默认 doctor 仍 fail-closed |
 | R5 | 同步当前规格、计划、状态和各层 README | DONE | 当前入口唯一；旧计划加历史状态；无不存在的 skill 引用；不再声称远端已发布 |
-| R6 | 完整本地验证并形成新 evidence commit | IN PROGRESS | focused/full tests、autocrlf clone、inventory/check、diff/secret scan 全通过；工作树提交后干净 |
-| R7 | 重新构建、签发并提交新 delivery record | PENDING | 双 Kit/bundle 字节一致；旧 handoff 撤回；CURRENT/state/process 绑定新 evidence |
+| R6 | 完整本地验证并形成新 evidence commit | DONE | `f2c9d8d`、1664 tests、autocrlf fresh clone、inventory/check、双 Kit/四 verifier 全通过 |
+| R7 | 重新构建、签发并提交新 delivery record | DONE | `bundle-6b7518...` 双构建一致；旧 handoff 撤回；CURRENT/state/process 绑定新 evidence |
 | R8 | 推送并验证 GitHub | BLOCKED | 需要外部 HTTPS/SSH/gh 认证；仅 fast-forward 本分支；远端 HEAD=本地 HEAD |
 | R9 | Linux/Windows CI 与第二 fresh clone | BLOCKED BY R8 | 两平台 Development 复刻通过；Delivery selector 对过期控制只标 unavailable |
-| R10 | 原生 B28 Discovery | BLOCKED BY R7/R8 | 新鲜 ledger + 未过期 handoff + 人工五点 Reference observation；仍禁止 Compile |
+| R10 | 原生 B28 Discovery | BLOCKED BY R8 | 推送后取得 fresh ledger + 未过期 handoff，再人工完成五点 Reference observation；仍禁止 Compile |
 
 ## 3. 当前执行顺序
 
-1. 完成 R3–R5 的代码、测试和文档一致性修订。
-2. 运行 focused tests、完整 pytest、lock、inventory/check、Development/Delivery doctor、Git diff 与敏感信息扫描。
-3. 提交新的 evidence implementation commit；记录 commit/tree、工具版本、测试数和已知第三方 warnings。
-4. 从该 evidence commit 双构建 Kit 和 operator bundle，签发新 handoff/ledger，更新 state、STATUS、RESUME 与过程记录后提交 delivery record。
-5. 取得 GitHub 认证后只 fast-forward 推送 `codex/dev-review-report`；不使用 API 重建提交。
-6. 监控 Linux/Windows CI，并从 GitHub 新目录 clone 复核。
-7. 仅在新的 delivery control 仍有效时，按 bundle 内 quick-start 在 B28 人工执行 Discovery。
+1. 取得 GitHub 认证后只 fast-forward 推送 `codex/dev-review-report`；不使用 API 重建提交。
+2. 验证远端 HEAD、监控 Linux/Windows CI，并从 GitHub 新目录 clone 复核。
+3. 仅在新 clone 的 Delivery doctor 仍通过时，把 active bundle/CURRENT/fresh ledger 转运到 B28。
+4. 按 bundle 内 quick-start 在原生 Windows `cmd.exe` 人工执行 Discovery，并回传 raw/untrusted 证据。
 
 ## 4. 停止条件
 
