@@ -1,6 +1,6 @@
 # Macro_menu 当前开发计划
 
-状态：CURRENT / corrective evidence and delivery rebuilt / final clone pending / remote publication blocked
+状态：CURRENT / corrective evidence and local delivery verified / remote publication blocked
 
 日期：2026-07-16
 
@@ -28,18 +28,17 @@
 | R5 | 同步当前规格、计划、状态和各层 README | DONE | 当前入口唯一；旧计划加历史状态；无不存在的 skill 引用；不再声称远端已发布 |
 | R6 | 完整本地验证并形成新 evidence commit | HISTORICAL DONE | `f2c9d8d`、1664 tests、autocrlf evidence clone、inventory/check、双 Kit/四 verifier 全通过 |
 | R7 | 重新构建、签发并提交新 delivery record | WITHDRAWN AFTER CLONE QA | `bundle-6b7518...` 本身双构建一致；最终 delivery clone 因 Git quoted path 误判不能 bootstrap，handoff 已撤回 |
-| R7A | 修复非 ASCII delivery 路径验证并形成新 evidence/delivery | FINAL CLONE PENDING | `4327491`、1665 tests、新 Kit/bundle/handoff 已闭合；等待 delivery commit 的 autocrlf/quotepath fresh clone |
+| R7A | 修复非 ASCII delivery 路径验证并形成新 evidence/delivery | DONE | `4327491`、1665 tests、新 Kit/bundle/handoff；`29e9d49` 的 autocrlf/quotepath final clone、两种 doctor 与 selector 全通过 |
 | R8 | 推送并验证 GitHub | BLOCKED | 需要外部 HTTPS/SSH/gh 认证；仅 fast-forward 本分支；远端 HEAD=本地 HEAD |
 | R9 | Linux/Windows CI 与第二 fresh clone | BLOCKED BY R8 | 两平台 Development 复刻通过；Delivery selector 对过期控制只标 unavailable |
 | R10 | 原生 B28 Discovery | BLOCKED BY R8 | 推送后取得 fresh ledger + 未过期 handoff，再人工完成五点 Reference observation；仍禁止 Compile |
 
 ## 3. 当前执行顺序
 
-1. 提交第二周期 delivery record，并以 `core.autocrlf=true` / `core.quotepath=true` 做最终 local fresh clone。
-2. 取得 GitHub 认证后只 fast-forward 推送 `codex/dev-review-report`；不使用 API 重建提交。
-3. 验证远端 HEAD、监控 Linux/Windows CI，并从 GitHub 新目录 clone 复核。
-4. 仅在新 clone 的 Delivery doctor 仍通过时，把 active bundle/CURRENT/fresh ledger 转运到 B28。
-5. 按 bundle 内 quick-start 在原生 Windows `cmd.exe` 人工执行 Discovery，并回传 raw/untrusted 证据。
+1. 取得 GitHub 认证后只 fast-forward 推送 `codex/dev-review-report`；不使用 API 重建提交。
+2. 验证远端 HEAD、监控 Linux/Windows CI，并从 GitHub 新目录 clone 复核。
+3. 仅在新 clone 的 Delivery doctor 仍通过时，把 active bundle/CURRENT/fresh ledger 转运到 B28。
+4. 按 bundle 内 quick-start 在原生 Windows `cmd.exe` 人工执行 Discovery，并回传 raw/untrusted 证据。
 
 ## 4. 停止条件
 

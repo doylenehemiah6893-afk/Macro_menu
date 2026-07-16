@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：CURRENT IMPLEMENTATION / LOCAL DELIVERY REBUILT — 离线工具、Core、evidence harness 与 active operator bundle 已实现；最终 local clone 与远端同步待完成，CATIA/目标机测试未运行
+> 状态：CURRENT IMPLEMENTATION / LOCAL DELIVERY VERIFIED — 离线工具、Core、evidence harness 与 active operator bundle 已实现；最终 local clone 已通过，远端同步待完成，CATIA/目标机测试未运行
 >
 > 更新日期：2026-07-16
 >

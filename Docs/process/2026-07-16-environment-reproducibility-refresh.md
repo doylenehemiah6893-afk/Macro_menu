@@ -142,5 +142,10 @@ CURRENT、ledger 和 bundle provenance bytes 均正确，但 bootstrap 返回 `d
 | provenance / content SHA-256 | `95bce28983237f5d84d0cbfd1aadc762f93948a84f16364359f2ebd002f170ba` / `ba089f0859bdcac85185423f861b0c57f3d08e544b694ec26cc836dfb737e00b` |
 | collector pyz / selector ZIP SHA-256 | `e11da8de8147fbbaab5217f56dde7eea7636cacf8993230c85484b1ef6358301` / `ab9fc80cd5cdadcbc2c01318804ebd38b2af2329faaeba43d6de0d94299aca6c` |
 
-delivery record 提交后还必须在 `core.autocrlf=true`、`core.quotepath=true` 的最终 clone 中运行 bootstrap、两种 doctor
-和 selector。该 clone 通过前不交给 B28；远端推送、GitHub Actions 与 GitHub fresh clone 继续受外部认证阻塞。
+artifact delivery commit `29e9d492b31d45f5b7f48360ecabc9b0538a7c04`（tree
+`715651c3c779b6d83f1ff15477836b8be045dee5`）已在 `core.autocrlf=true`、`core.quotepath=true` 的全新 clone 中验证：
+所有上表关键 bytes 不变，空 `.venv` frozen bootstrap、Development doctor、Delivery doctor 与 selector 均通过；selector
+仍选择同一 bundle，ZIP SHA-256 为 `ab9fc80cd5cdadcbc2c01318804ebd38b2af2329faaeba43d6de0d94299aca6c`。
+模拟远端 `origin/dev=688911522f88e2283231fb59232ea43edd3174a5` 时，本地 `dev` 仍为批准 cutoff，未采用浮动 dev。
+
+因此 local final-clone 阻断已关闭。远端推送、GitHub Actions 与真正 GitHub fresh clone 继续受外部认证阻塞；这些完成前仍不交给 B28。

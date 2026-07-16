@@ -13,8 +13,8 @@
 本文是当前状态与上下文恢复入口。详细事实以 Git 文件、固定哈希和目标机证据为准。
 
 开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。中文 Git quoted-path
-问题已形成新 clean evidence 并重新签发；当前等待提交 delivery record 及最终 fresh clone。机器状态为
-`next_action=run-b28-discovery` / `revocation_status=active`，但远端未同步，目标机仍不得开始。
+问题已形成新 clean evidence、重新签发并通过最终 local fresh clone。当前优先动作是 fast-forward 推送并验证远端
+CI/GitHub fresh clone。机器状态为 `next_action=run-b28-discovery` / `revocation_status=active`，但远端未同步，目标机仍不得开始。
 
 ## 1. 立即停止条件
 
@@ -37,7 +37,7 @@
 | SPA/FTA | 目标机保证权益；物理隔离为默认部署 Fleet Extensions |
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
-| 本地/远端 | 新 evidence=`4327491`；第二周期 delivery record 正在本地形成；remote=`037ab406` 仍落后 |
+| 本地/远端 | 新 evidence=`4327491`；artifact delivery=`29e9d49`，收尾文档为当前 HEAD；remote=`037ab406` 仍落后 |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
@@ -46,7 +46,7 @@
 | 离线测试 | `4327491` 精确验证为 1665 passed、19 条第三方 warnings；双 Kit、四 verifier、collector smoke 全通过；均非 CATIA 证据 |
 | active discovery bundle | 本地 `bundle-95bce28983237f5d84d0cbfd`；provenance SHA-256 `95bce28983237f5d84d0cbfd1aadc762f93948a84f16364359f2ebd002f170ba` |
 | active Kit / handoff | `kit-87ecc7bcf3d8f9deaf99` / `handoff-07bbe55bc7552489cd55`；expires `2026-07-23T15:51:52Z` |
-| 环境复刻修订 | autocrlf/scope/uv/配置漂移与 Git quoted-path 回归均已关闭；等待最终 delivery commit clone 和远端验证 |
+| 环境复刻修订 | autocrlf/scope/uv/配置漂移与 Git quoted-path 回归均已关闭；`29e9d49` final clone 两种 doctor/selector 全通过，等待远端验证 |
 | 当前仓库 CLI | 离线 Build Kit/audit/handoff 命令与 target evidence 命令均已具备；已生成确定性 discovery raw skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 

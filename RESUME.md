@@ -4,7 +4,7 @@
 
 唯一仓库：`doylenehemiah6893-afk/Macro_menu`
 唯一工作分支：`codex/dev-review-report`
-当前开发动作：提交第二周期 delivery record、完成最终 fresh clone，再 fast-forward 推送并验证 GitHub
+当前开发动作：fast-forward 推送当前分支并验证 GitHub HEAD、Linux/Windows CI 与 GitHub fresh clone
 
 当前目标机动作：BLOCKED，等待当前本地 fresh delivery control 完成最终 clone、推送并从 GitHub 重新取得
 
@@ -25,7 +25,7 @@
 | active handoff / expiry | `handoff-07bbe55bc7552489cd55` / `2026-07-23T15:51:52Z` |
 | active ledger | captured `2026-07-16T15:52:25Z`；三份旧 handoff 均 withdrawn |
 | Gate / next action | G0/G1=`PASS`，G2–G7=`BLOCKED`；`run-b28-discovery` |
-| A 环境完整测试 | evidence 1665 passed、19 个第三方 warnings；均非 CATIA 证据 |
+| A 环境完整测试 | evidence 1665 passed、19 个第三方 warnings；`29e9d49` autocrlf/quotepath final clone 的 bootstrap、两种 doctor、selector 全通过；均非 CATIA 证据 |
 
 `bundle-6b7518...` 与 `bundle-ab5205...` 仍保留供审计，但其 handoff 已撤回；更早的 `handoff-6ed312...` 也保持 withdrawn。
 不得因历史 expiry 尚未到达就直接复用，也不得手改 JSON 延期或恢复。
