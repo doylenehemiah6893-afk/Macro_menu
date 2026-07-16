@@ -180,3 +180,50 @@ def test_quickstart_creates_each_reference_input_only_after_human_observation() 
     assert "references-blank-project.csv" not in text[:first_marker]
     assert "一次性预填五点" not in text
     assert "不得复制上一点" in text
+
+
+def test_repro_workflow_is_pinned_native_and_never_publishes_catvba() -> None:
+    workflow = (ROOT / ".github/workflows/repro.yml").read_text("utf-8")
+    action_refs = re.findall(r"uses:\s*([^\s]+)", workflow)
+    assert action_refs
+    assert all(re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", ref) for ref in action_refs)
+    for action in ("actions/checkout", "actions/setup-python", "astral-sh/setup-uv"):
+        assert any(ref.startswith(action + "@") for ref in action_refs)
+    assert "windows-latest" in workflow
+    assert "pull_request:" not in workflow
+    assert "python-version: '3.12'" in workflow
+    assert "bootstrap_resume.py" in workflow and " doctor " in workflow
+    assert "git branch dev" not in workflow
+    assert "py -3.12 scripts\\bootstrap_resume.py --repo-root . --state resume\\state.json" in workflow
+    assert ".venv\\Scripts\\python.exe -m catvba_refactor.macro_build.cli doctor" in workflow
+    assert "run-discovery.cmd --help" in workflow
+    assert "target-discovery.pyz --help" in workflow
+    assert "wsl" not in workflow.lower()
+    assert "powershell" not in workflow.lower()
+    assert "*.catvba" not in workflow.lower()
+    uploads = re.findall(r"(?ms)uses:\s*actions/upload-artifact@[0-9a-f]{40}.*?(?=\n\s*- uses:|\n\s*- name:|\Z)", workflow)
+    assert len(uploads) == 4
+    assert all("**" not in block and "*.catvba" not in block.lower() for block in uploads)
+    assert "linux-reproducibility-receipt" in workflow
+    assert "windows-collector-smoke-receipt" in workflow
+    assert "if-no-files-found: ignore" not in workflow
+    assert "operator-bundle-candidate" not in workflow
+    assert workflow.count("id: bundle") == 2
+    assert workflow.count("steps.bundle.outputs.path") == 2
+    assert workflow.count("steps.bundle.outputs.available == 'true'") == 2
+    assert workflow.count("--snapshot-root") == 2
+    assert "operator-bundle-upload.zip" not in workflow
+
+
+def test_release_workflow_cannot_trigger_on_tags() -> None:
+    workflows = list((ROOT / ".github/workflows").glob("*.yml"))
+    assert workflows
+    assert all("tags:" not in path.read_text("utf-8") for path in workflows)
+    assert "历史" in (ROOT / "Docs/发版.md").read_text("utf-8")
+
+
+def test_resume_documents_the_available_fail_closed_verifier() -> None:
+    resume = (ROOT / "RESUME.md").read_text("utf-8")
+    assert "verify_resume.py` 由下一实现任务加入" not in resume
+    assert "python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root" in resume
+    assert "fail-closed" in resume

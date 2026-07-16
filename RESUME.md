@@ -38,7 +38,7 @@ delivery parent 与本轮计数一次性写入。当前 checkout 不得被预填
 ```bash
 python3.12 scripts/bootstrap_resume.py --repo-root . --state resume/state.json
 uv run macro-menu-build doctor --state resume/state.json
-uv run python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root build/resume-verification
+python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root build/resume-verification
 ```
 
 Windows 开发机等价入口（不是 B28 采集入口）：
@@ -46,12 +46,14 @@ Windows 开发机等价入口（不是 B28 采集入口）：
 ```bat
 scripts\bootstrap-resume.cmd
 uv run macro-menu-build doctor --state resume\state.json
-uv run python scripts\verify_resume.py --repo-root . --state resume\state.json --output-root build\resume-verification
+python scripts\verify_resume.py --repo-root . --state resume\state.json --output-root build\resume-verification
 ```
 
-`verify_resume.py` 由下一实现任务加入；在其尚不存在时，唯一下一动作仍是完成 evidence implementation，不能跳到
-签发或目标机执行。任何 bootstrap/doctor diagnostic、replace ref、shallow clone、仓库/分支不符、cutoff object 缺失、
-governed path 脏、state/schema/hash 不符均停止。
+`scripts/verify_resume.py` 已存在；它在新输出根依次执行 lock、完整测试、inventory/check、双 Kit、四次 Kit 验证、
+全树/ZIP/sidecar 比较和 collector pyz/fixture smoke，并生成 canonical receipt。任一阶段非零、输出异常、pyz 漂移或
+fixture 行为变化都 fail-closed，receipt 保持 `release_eligible=false`，不得跳到签发或目标机执行。任何
+bootstrap/doctor diagnostic、replace ref、shallow clone、仓库/分支不符、cutoff object 缺失、governed path 脏、
+state/schema/hash 不符均停止。
 
 ## 3. 当前 Gate 与制品真相
 

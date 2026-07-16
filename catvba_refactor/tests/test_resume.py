@@ -316,6 +316,17 @@ def test_doctor_accepts_clean_preparation_state_without_evidence_baseline(
     }
 
 
+def test_stdlib_bootstrap_accepts_clean_preparation_state(tmp_path: Path) -> None:
+    clone, state_path = _fresh_clone(tmp_path)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    for field in ("evidence_commit", "evidence_tree", "delivery_parent_commit"):
+        state[field] = None
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    module = _bootstrap_script_module()
+    module._stdlib_preflight(clone.resolve(), state_path.resolve())
+
+
 def test_doctor_rejects_dirty_tracked_non_governed_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

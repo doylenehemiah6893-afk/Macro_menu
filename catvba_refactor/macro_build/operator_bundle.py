@@ -706,6 +706,28 @@ def _collector_imports(files: tuple[tuple[str, bytes], ...]) -> tuple[str, ...]:
     return tuple(sorted(imports))
 
 
+def build_target_collector_pyz(
+    repo_root: Path, commit: str,
+) -> tuple[bytes, tuple[tuple[str, bytes], ...]]:
+    """Build the pinned stdlib-only target collector pyz and return its sources."""
+
+    collector = _pinned_collector_files(Path(repo_root), commit)
+    _collector_imports(collector)
+    pyz_files = (
+        (
+            "__main__.py",
+            b"from catvba_refactor.target_collector.cli import main\n"
+            b"raise SystemExit(main())\n",
+        ),
+        ("catvba_refactor/__init__.py", b""),
+        *((f"catvba_refactor/target_collector/{path}", data) for path, data in collector),
+    )
+    pyz_bytes = _zip_bytes(pyz_files, shebang=b"#!/usr/bin/env python3\n")
+    if len(pyz_bytes) > _MAX_PYZ_BYTES:
+        raise VerificationError("OPERATOR_BUNDLE_PYZ_SIZE_LIMIT")
+    return pyz_bytes, collector
+
+
 def _write_file(root: Path, relative: str, data: bytes) -> None:
     destination = root / relative
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -827,7 +849,7 @@ def build_operator_bundle(
 
     schemas_root = request.repo_root / "catvba_refactor" / "schemas"
     templates_root = request.repo_root / "catvba_refactor" / "templates" / "target_operator"
-    collector = _pinned_collector_files(request.repo_root, commit)
+    pyz_bytes, collector = build_target_collector_pyz(request.repo_root, commit)
     collector_imports = _collector_imports(collector)
     schemas = _pinned_worktree_files(
         request.repo_root, commit, schemas_root, "OPERATOR_BUNDLE_SCHEMAS_INVALID"
@@ -856,21 +878,6 @@ def build_operator_bundle(
     )):
         raise VerificationError("OPERATOR_BUNDLE_FORBIDDEN_PAYLOAD")
 
-    pyz_files = (
-        (
-            "__main__.py",
-            b"from catvba_refactor.target_collector.cli import main\n"
-            b"raise SystemExit(main())\n",
-        ),
-        ("catvba_refactor/__init__.py", b""),
-        *((f"catvba_refactor/target_collector/{path}", data) for path, data in collector),
-    )
-    pyz_bytes = _zip_bytes(
-        pyz_files,
-        shebang=b"#!/usr/bin/env python3\n",
-    )
-    if len(pyz_bytes) > _MAX_PYZ_BYTES:
-        raise VerificationError("OPERATOR_BUNDLE_PYZ_SIZE_LIMIT")
     pyz_sha = _sha(pyz_bytes)
     skeleton_zip = _zip_bytes(skeleton)
 

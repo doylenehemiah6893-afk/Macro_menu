@@ -1,0 +1,93 @@
+name: Fresh-clone reproducibility
+
+on:
+  push:
+    branches: [codex/dev-review-report]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-reproducibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc
+        with:
+          version: '0.9.25'
+      - name: Authenticate clone and install the frozen project
+        run: python3.12 scripts/bootstrap_resume.py --repo-root . --state resume/state.json
+      - name: Run full suite and deterministic double build
+        run: python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root repro-output
+      - name: Select authenticated operator bundle
+        id: bundle
+        run: python scripts/select_operator_bundle.py --repo-root . --github-output "$GITHUB_OUTPUT" --snapshot-root repro-output/operator-upload
+      - name: Upload JSON reproducibility receipt only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-reproducibility-receipt
+          path: repro-output/reproducibility-receipt.json
+          if-no-files-found: error
+      - name: Upload fixed-path operator candidate when issued
+        if: steps.bundle.outputs.available == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-authenticated-operator-bundle
+          path: ${{ steps.bundle.outputs.path }}
+          if-no-files-found: error
+
+  windows-native-collector:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc
+        with:
+          version: '0.9.25'
+      - name: Bootstrap, doctor and immutable-ref checks
+        shell: cmd
+        run: |
+          for /f "delims=" %%I in ('git rev-parse refs/remotes/origin/dev') do set "ORIGIN_DEV_BEFORE=%%I"
+          py -3.12 scripts\bootstrap_resume.py --repo-root . --state resume\state.json
+          .venv\Scripts\python.exe -m catvba_refactor.macro_build.cli doctor --state resume\state.json --format json
+          for /f "delims=" %%I in ('git rev-parse refs/remotes/origin/dev') do set "ORIGIN_DEV_AFTER=%%I"
+          if not "%ORIGIN_DEV_BEFORE%"=="%ORIGIN_DEV_AFTER%" exit /b 1
+          for /f "delims=" %%I in ('git rev-parse refs/heads/dev') do set "LOCAL_DEV=%%I"
+          if not "%LOCAL_DEV%"=="abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad" exit /b 1
+      - name: Native collector tests
+        shell: cmd
+        run: uv run pytest -q catvba_refactor\tests\test_target_collector_workspace.py catvba_refactor\tests\test_target_collector_records.py catvba_refactor\tests\test_target_collector_finalize.py
+      - name: Build smoke pyz and exercise cmd wrapper
+        shell: cmd
+        run: |
+          mkdir windows-output
+          .venv\Scripts\python.exe scripts\collector_smoke.py --repo-root . --output windows-output\collector-smoke-receipt.json --pyz-output scripts\target-discovery.pyz
+          scripts\run-discovery.cmd --help
+          .venv\Scripts\python.exe scripts\target-discovery.pyz --help
+      - name: Select authenticated operator bundle
+        id: bundle
+        shell: cmd
+        run: .venv\Scripts\python.exe scripts\select_operator_bundle.py --repo-root . --github-output "%GITHUB_OUTPUT%" --snapshot-root windows-output\operator-upload
+      - name: Upload Windows collector smoke JSON receipt only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-collector-smoke-receipt
+          path: windows-output/collector-smoke-receipt.json
+          if-no-files-found: error
+      - name: Upload fixed-path operator candidate when issued
+        if: steps.bundle.outputs.available == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-authenticated-operator-bundle
+          path: ${{ steps.bundle.outputs.path }}
+          if-no-files-found: error

@@ -172,19 +172,23 @@ def _stdlib_git_preflight(
         raise SystemExit("bootstrap cutoff trees do not match the intake")
     evidence = state.get("evidence_commit")
     evidence_tree = state.get("evidence_tree")
-    if not isinstance(evidence, str) or not isinstance(evidence_tree, str):
-        raise SystemExit("bootstrap state does not identify evidence objects")
-    if _git(repo_root, "rev-parse", f"{evidence}^{{tree}}") != evidence_tree:
-        raise SystemExit("bootstrap evidence tree does not match state")
     head = _git(repo_root, "rev-parse", "HEAD")
-    _git(repo_root, "merge-base", "--is-ancestor", evidence, head)
-    if head != evidence:
-        changed = _git(repo_root, "diff", "--name-only", evidence, head).splitlines()
-        if any(
-            not path.startswith(("Docs/", "artifacts/", "resume/"))
-            for path in changed
-        ):
-            raise SystemExit("bootstrap delivery commits changed implementation inputs")
+    if evidence is None and evidence_tree is None:
+        if state.get("revocation_status") != "preparation":
+            raise SystemExit("bootstrap state does not identify evidence objects")
+    elif isinstance(evidence, str) and isinstance(evidence_tree, str):
+        if _git(repo_root, "rev-parse", f"{evidence}^{{tree}}") != evidence_tree:
+            raise SystemExit("bootstrap evidence tree does not match state")
+        _git(repo_root, "merge-base", "--is-ancestor", evidence, head)
+        if head != evidence:
+            changed = _git(repo_root, "diff", "--name-only", evidence, head).splitlines()
+            if any(
+                not path.startswith(("Docs/", "artifacts/", "resume/"))
+                for path in changed
+            ):
+                raise SystemExit("bootstrap delivery commits changed implementation inputs")
+    else:
+        raise SystemExit("bootstrap state evidence objects are incomplete")
     intake = repo_root / "catvba_refactor/intake/records/2026-07-13-initial-baseline.json"
     try:
         intake_digest = hashlib.sha256(intake.read_bytes()).hexdigest()
