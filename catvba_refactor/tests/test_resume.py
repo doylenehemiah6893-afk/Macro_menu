@@ -2,6 +2,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import shutil
 from datetime import datetime
@@ -550,7 +551,7 @@ def test_locked_interpreter_sync_failure_never_imports_project(
     assert events == ["preflight", "sync"]
 
 
-def test_bootstrap_expiry_after_sync_never_creates_dev(
+def test_bootstrap_rejects_partial_expiry_state_never_creates_dev(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     clone, state_path = _fresh_clone(tmp_path)
@@ -567,7 +568,7 @@ def test_bootstrap_expiry_after_sync_never_creates_dev(
 
     report = bootstrap_repository(clone, state_path, clock=lambda: next(times))
 
-    assert [item.code for item in report.diagnostics] == ["RESUME_HANDOFF_EXPIRED"]
+    assert [item.code for item in report.diagnostics] == ["RESUME_STATE_INVALID"]
     assert _git(clone, "for-each-ref", "--format=%(refname)", "refs/heads/dev") == ""
 
 
