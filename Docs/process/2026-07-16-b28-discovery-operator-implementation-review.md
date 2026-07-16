@@ -1,8 +1,8 @@
 # B28 Discovery Operator Bundle 实施审查记录
 
 日期：2026-07-16  
-记录：`record.task10-implementation-review.96a2c07`  
-范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..96a2c078e046ace2c8b2c726db1510680dfdcf9a`
+记录：`record.task10-implementation-review.c1d0706`  
+范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..c1d070636c52235ea5a546487b7f91815b968daf`
 
 ## 结论
 
@@ -31,10 +31,13 @@ Task 1–9 的实现、回归修复与 Task 10 审查已完成到可构建交付
    大小、content digest、全量 checksum、Kit ZIP/sidecar、collector pyz/sidecar、skeleton、handoff 与外部 ledger。
 3. resume state schema 拒绝半激活状态；doctor 要求 state、CURRENT、provenance、handoff、ledger 和 bundle 内 receipt
    交叉绑定。CI selector 也拒绝缺失、future、stale、withdrawn 或 inactive ledger 以及 expired handoff。
-4. `status` 不再始终建议 `record-environment`，而是报告 environment、entitlements、Reference observation points 和
-   `ready_to_finalize_raw`；它不推导任何 Gate。
+4. `status` 不再始终建议 `record-environment`，而是报告 environment、entitlements、Reference observation points、
+   operator-record index 与 `ready_to_finalize_raw`；它不推导任何 Gate。
 5. bootstrap Git 子进程已禁用 global/system Git configuration 与 replace objects。历史 2026-07-15 操作手册已明确
    `SUPERSEDED`，所有入口改为 bundle 内 `b28-target/README_TARGET_B28.md` 与 fail-closed `QUICKSTART_B28.md`。
+6. 最终复审还确认：`status` 以与 finalizer 相同的完整 raw validator 判定 readiness，已签发 state 能如实保留
+   `active`/`withdrawn`/`expired`/`unavailable`，且 doctor/verify-resume 会重算 active bundle content digest、完整
+   `SHA256SUMS`、Kit/pyz sidecar；后续撤回或到期不能被误记为 preparation。
 
 ## 验证记录
 
@@ -56,8 +59,9 @@ test_project_layout.py + test_cli.py      122 passed
 ## 独立复审
 
 两项独立只读审查覆盖 Windows 文件安全、collector 状态机、bundle/ledger 控制、state/CI、文档和 bootstrap Git 环境。
-初审发现 1 个 Critical 与多项 Important，均已在 `96a2c07` 关闭；最终复审记录将与该提交的完整测试结果一起检查，任何
-新增 Critical/Important 都会阻止 Task 11。
+初审发现 1 个 Critical 与多项 Important，已在 `96a2c07` 关闭；最终复审额外发现 operator-record index、raw skeleton
+完整性、issued state 生命周期和 doctor bundle integrity 的缺口，已在 `686d98a` 与 `c1d0706` 关闭。任何新增
+Critical/Important 都会阻止 Task 11。
 
 ## 仍然禁止与下一步
 
