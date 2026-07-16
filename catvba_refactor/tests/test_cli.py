@@ -206,6 +206,7 @@ def test_console_help_lists_all_commands() -> None:
         "audit-catvba",
         "doctor",
         "build-operator-bundle",
+        "create-discovery-skeleton",
         *_TARGET_COMMANDS,
     ):
         assert command in help_text
@@ -228,6 +229,30 @@ def test_build_operator_bundle_cli_accepts_the_documented_inputs(tmp_path: Path)
     assert args.primary_build_root == tmp_path / "primary"
     assert args.compare_build_root == tmp_path / "comparison"
     assert args.output_root == tmp_path / "output"
+
+
+def test_create_discovery_skeleton_cli_writes_one_exact_static_tree(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "skeleton"
+
+    assert cli.main([
+        "create-discovery-skeleton", "--output-root", str(output), "--format", "json"
+    ]) == 0
+
+    document = json.loads(capsys.readouterr().out)
+    assert document["command"] == "create-discovery-skeleton"
+    assert document["ok"] is True
+    assert document["skeleton_dir"] == str(output)
+    assert {path.name for path in output.iterdir()} == {
+        "compile-result.json", "test-results.json", "artifact-manifest.json"
+    }
+
+    assert cli.main([
+        "create-discovery-skeleton", "--output-root", str(output), "--format", "json"
+    ]) == ExitCode.INFRASTRUCTURE
+    assert json.loads(capsys.readouterr().err)["error"]["message"] == "DISCOVERY_SKELETON_OUTPUT_EXISTS"
 
 
 def test_build_operator_bundle_dispatch_uses_exact_repository_defaults(

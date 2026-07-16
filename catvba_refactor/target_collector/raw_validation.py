@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from .canonical import CollectorError, parse_canonical_json_bytes
+from .canonical import CollectorError, canonical_json_bytes, parse_canonical_json_bytes
 from .records import (
     POINT_ORDER,
     validate_entitlements_document,
@@ -48,6 +48,54 @@ ENVELOPE = {
 DISCOVERY_SKELETON_MEMBERS = frozenset({
     "compile-result.json", "test-results.json", "artifact-manifest.json",
 })
+
+
+def discovery_skeleton_files() -> dict[str, bytes]:
+    """Build the exact bundle-independent raw Discovery skeleton.
+
+    This is intentionally separate from ``init-target-session``.  The latter
+    is a trusted target-evidence record and includes a real session identity
+    and timestamp; the operator bundle must instead ship only the three
+    static, raw/untrusted documents which ``init-capture`` will copy into a
+    new target-local session.
+    """
+
+    files = {
+        "compile-result.json": canonical_json_bytes({
+            **ENVELOPE,
+            "records": [{
+                "record_id": f"record-compile-{point}",
+                "point": point,
+                "status": "not-run",
+                "started_at": None,
+                "ended_at": None,
+                "catia_operator_record_id": None,
+                "vbe_operator_record_id": None,
+                "error_stage": None,
+                "error_module": None,
+                "redacted_error_summary": None,
+            } for point in COMPILE_POINTS],
+        }),
+        "test-results.json": canonical_json_bytes({
+            **ENVELOPE,
+            "records": [{
+                "case_id": case_id,
+                "status": "not-run",
+                "execution_point": "not-run",
+                "observations": [],
+                "started_at": None,
+                "ended_at": None,
+                "operator_record_id": None,
+            } for case_id in TARGET_CASE_IDS],
+        }),
+        "artifact-manifest.json": canonical_json_bytes({
+            **ENVELOPE,
+            "artifact": None,
+            "files": [],
+        }),
+    }
+    validate_discovery_skeleton_files(files)
+    return files
 
 
 def _document(files: Mapping[str, bytes], path: str) -> dict[str, object]:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -54,6 +56,7 @@ from .target_evidence.model import (
 from .target_evidence.packer import pack_target_evidence
 from .target_evidence.session import init_target_session
 from .target_evidence.validator import validate_target_evidence
+from catvba_refactor.target_collector.raw_validation import discovery_skeleton_files
 
 
 try:
@@ -190,6 +193,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     operator_bundle.add_argument(
         "--bundle-review-record-id", default="record-bundle-independent-review"
+    )
+
+    commands.add_parser(
+        "create-discovery-skeleton",
+        parents=[common],
+        allow_abbrev=False,
+        help="write the exact raw Discovery skeleton required by an operator bundle",
     )
 
     verify = commands.add_parser(
@@ -1033,6 +1043,45 @@ def _build_operator_bundle_command(args: argparse.Namespace) -> int:
     return int(ExitCode.SUCCESS)
 
 
+def _create_discovery_skeleton_command(args: argparse.Namespace) -> int:
+    output = getattr(args, "output_root", None)
+    if output is None:
+        raise ConfigError("DISCOVERY_SKELETON_OUTPUT_ROOT_REQUIRED")
+    root = Path(output)
+    try:
+        root.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise InfrastructureError("DISCOVERY_SKELETON_OUTPUT_EXISTS") from error
+    except OSError as error:
+        raise InfrastructureError("DISCOVERY_SKELETON_OUTPUT_CREATE_FAILED") from error
+    try:
+        files = discovery_skeleton_files()
+        for name, data in sorted(files.items()):
+            with (root / name).open("xb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+        members = [
+            {"path": name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+            for name, data in sorted(files.items())
+        ]
+    except OSError as error:
+        shutil.rmtree(root, ignore_errors=True)
+        raise InfrastructureError("DISCOVERY_SKELETON_OUTPUT_WRITE_FAILED") from error
+    _emit(
+        {
+            "command": args.command,
+            "ok": True,
+            "skeleton_dir": os.fspath(root),
+            "members": members,
+            "skeleton_sha256": hashlib.sha256(canonical_json_bytes(members)).hexdigest(),
+            "diagnostics": [],
+        },
+        _format(args),
+    )
+    return int(ExitCode.SUCCESS)
+
+
 def dispatch(args: argparse.Namespace) -> int:
     _reject_external_candidate_configuration(args)
     if args.command == "inventory":
@@ -1043,6 +1092,8 @@ def dispatch(args: argparse.Namespace) -> int:
         return _build_command(args)
     if args.command == "build-operator-bundle":
         return _build_operator_bundle_command(args)
+    if args.command == "create-discovery-skeleton":
+        return _create_discovery_skeleton_command(args)
     if args.command == "doctor":
         return _doctor_command(args)
     if args.command == "verify-kit":

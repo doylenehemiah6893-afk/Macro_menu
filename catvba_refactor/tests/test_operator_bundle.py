@@ -29,9 +29,8 @@ from catvba_refactor.macro_build.operator_bundle import (
 from catvba_refactor.tests.test_handoff import issue_target_handoff
 from catvba_refactor.tests.test_kit import _catalog
 from catvba_refactor.target_collector.raw_validation import (
-    COMPILE_POINTS,
-    ENVELOPE,
-    TARGET_CASE_IDS,
+    discovery_skeleton_files,
+    validate_discovery_skeleton_files,
 )
 from catvba_refactor.target_collector import workspace as collector_workspace
 from catvba_refactor.target_collector.workspace import preflight
@@ -76,27 +75,17 @@ def _rewrite_sums(bundle: Path) -> None:
 
 def _write_valid_skeleton(root: Path) -> None:
     root.mkdir()
-    _write_json(root / "compile-result.json", {
-        **ENVELOPE,
-        "records": [{
-            "record_id": f"record-compile-{point}", "point": point,
-            "status": "not-run", "started_at": None, "ended_at": None,
-            "catia_operator_record_id": None, "vbe_operator_record_id": None,
-            "error_stage": None, "error_module": None,
-            "redacted_error_summary": None,
-        } for point in COMPILE_POINTS],
-    })
-    _write_json(root / "test-results.json", {
-        **ENVELOPE,
-        "records": [{
-            "case_id": case_id, "status": "not-run", "execution_point": "not-run",
-            "observations": [], "started_at": None, "ended_at": None,
-            "operator_record_id": None,
-        } for case_id in TARGET_CASE_IDS],
-    })
-    _write_json(root / "artifact-manifest.json", {
-        **ENVELOPE, "artifact": None, "files": [],
-    })
+    for name, data in discovery_skeleton_files().items():
+        (root / name).write_bytes(data)
+
+
+def test_discovery_skeleton_factory_is_exact_and_deterministic() -> None:
+    first = discovery_skeleton_files()
+    second = discovery_skeleton_files()
+
+    assert first == second
+    assert frozenset(first) == {"compile-result.json", "test-results.json", "artifact-manifest.json"}
+    validate_discovery_skeleton_files(first)
 
 
 @pytest.fixture
