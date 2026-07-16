@@ -1,7 +1,7 @@
 > [!CAUTION]
 > **文档状态：SUPERSEDED（历史实施计划）**
 > **核对基线：** 2026-07-13，Git `b0085868`
-> **当前 Authority：** 链接的 `Src/` 文件只表示 upstream evidence；当前实现边界以 [`PROJECT_STRUCTURE.md`](../Docs/PROJECT_STRUCTURE.md)、决策台账和详细 DRAFT spec 为准，未来替代组件位于 `catvba_refactor/vba/overrides/`
+> **当前 Authority：** 链接的 `Src/` 文件只表示 upstream evidence；当前实现边界以 [`CURRENT_DEVELOPMENT_SPEC.md`](../Docs/CURRENT_DEVELOPMENT_SPEC.md)、[`PROJECT_STRUCTURE.md`](../Docs/PROJECT_STRUCTURE.md)、决策台账和已批准日期化规格为准，未来替代组件位于 `catvba_refactor/vba/overrides/`
 > **执行策略：** DO NOT EXECUTE。不得按正文步骤再次删除、迁移或复制方法；不得直接修改 `Src/`，应以 namespaced 整组件 override 和构建期静态目录设计为准。
 > **许可证/安全边界：** 本计划未处理运行时 `VBProject` / `CodeModule` 自省、VBE 信任策略或可选能力隔离，不能作为生产安全或许可证证明。
 

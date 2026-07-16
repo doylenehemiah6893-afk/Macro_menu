@@ -27,12 +27,14 @@ build/                  可再生目录输出，不入 Git
 dist/                   可再生归档，不入 Git
 ```
 
-任何文件进入实现前都必须符合 `Docs/superpowers/specs/` 中获批的对应子规格和后续实施计划。
+任何文件进入实现前都必须符合 `Docs/CURRENT_DEVELOPMENT_SPEC.md`、对应已批准日期化规格和
+`Docs/CURRENT_DEVELOPMENT_PLAN.md`。仓库不依赖外部命名 skill。
 
 ## 快速检查
 
 ```bash
-uv sync --frozen
+python3.12 scripts/bootstrap_resume.py --repo-root . --state resume/state.json
+uv run macro-menu-build doctor --state resume/state.json --scope development --format json
 uv run pytest -q
 uv run macro-menu-build --help
 uv run macro-menu-build inventory --format json
@@ -46,15 +48,15 @@ uv run macro-menu-build record-target-approval --help
 uv run macro-menu-build pack-target-evidence --help
 ```
 
-命令必须从仓库根项目运行。当前固定证据提交 `2645033a` 生成
-`kit-134ecc68d131cdff743b`：16 个 component、2 个 tool，目录/ZIP verifier 均通过，双构建字节一致。
-该 Kit 只包含 Core 源码；`fleet-spa`/`fleet-fta` 是隔离的 package 政策记录，当前 import-order 为空。
+命令必须从仓库根项目运行。当前 active evidence/Kit/bundle 身份只在 `resume/state.json`、`CURRENT.json` 和
+`Docs/STATUS.md` 展示，避免 README 固化过期 hash。Kit 只包含 Core 源码；`fleet-spa`/`fleet-fta` 是隔离的 package
+政策记录，当前 import-order 为空。
 目标机要求至少一项 AB3/HD2/MD2，并额外具备 SPA 和 FTA；这些权益和隔离行为仍待 B28 证据。
 Evidence harness 已可生成/验证 discovery、G2、Core-only G3-C 的 session、Gate receipt、detached approval
 和确定性 sealed directory/ZIP；本地 synthetic E2E 只证明工具链，不证明 CATIA。详细哈希、清单、命令和
 证据上限见 `Docs/STATUS.md`；旧 `Docs/runbooks/2026-07-14-catvba-b28-g2-g3-core.md` 仅作历史合同。
 
-新环境从仓库根 `RESUME.md` 续作。B28 目标机只使用原生 Windows CPython 3.12 operator bundle；完整命令、
+新环境从仓库根 `RESUME.md` 和 `Docs/ENVIRONMENT_REPRODUCTION.md` 续作。B28 目标机只使用原生 Windows CPython 3.12 operator bundle；完整命令、
 安全边界、五点 Reference、双人脱敏、raw/untrusted 回传见
-`Docs/runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md`。旧 2026-07-14 手册已 SUPERSEDED，旧
+`Docs/runbooks/b28-target/README_TARGET_B28.md`。旧日期化手册已 SUPERSEDED，旧
 Kit/handoff bytes 不可取得，不得用于目标机。

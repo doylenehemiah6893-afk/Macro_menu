@@ -1,7 +1,11 @@
-# B28 Discovery Operator Bundle 构建记录
+# B28 Discovery Operator Bundle 构建记录（HISTORICAL / SUPERSEDED FOR USE）
 
 日期：2026-07-16
 范围：Task 11 public delivery；仅 A 环境离线构建，不是 B28/CATIA 执行记录。
+
+后续 2026-07-16 环境复刻修订改变了受管输入，`resume/state.json` 已回到 preparation，历史 CURRENT 已移除，
+ledger 已清空 active 集并撤回本记录的 handoff。本记录及其 bundle 仍可审计原 evidence commit，但不再构成当前
+B28 授权，也不能解释修订后的代码。
 
 ## 证据输入与边界
 
@@ -26,7 +30,7 @@ CATIA、VBE、DSLS、References、Compile、UI、运行或发布。
 | Kit ZIP SHA-256 | `d763b3e1a1a2e33d994a5c030e0fa3b541e8a46648f11378870c6a86711cf012` |
 | handoff | `handoff-b8d9d535604e78551423` |
 | handoff SHA-256 | `6d889446c62e0de338e6469784166f4d72dd3144618969a2b286748e10e44192` |
-| active ledger capture | `2026-07-16T11:12:07Z` |
+| issuance-time active ledger capture | `2026-07-16T11:12:07Z` |
 | expiry | `2026-07-23T11:11:06Z` |
 
 签发前 snapshot 的 active 集为空，withdrawn 集固定包含旧的不可取得 handoff
@@ -45,12 +49,13 @@ CATIA、VBE、DSLS、References、Compile、UI、运行或发布。
 | collector pyz SHA-256 | `e11da8de8147fbbaab5217f56dde7eea7636cacf8993230c85484b1ef6358301` |
 | `SHA256SUMS` SHA-256 | `5c78ea12626544e8e329be865b22d5de967aa33e8737ab17944f59a1734d8c33` |
 
-公开 Git 仅包含 immutable bundle、canonical `CURRENT.json` 和 active ledger。它不包含临时 raw skeleton、空 target
+该次提交的公开 Git 仅包含 immutable bundle、canonical `CURRENT.json` 和签发时 active ledger。它不包含临时 raw skeleton、空 target
 session、合成 host/DSLS/Reference fixture 或任何现场数据。bundle 内的 `target-collector-tests.json` 仅记录
 offline test scope 与 `target_execution=not-run`。
 
 ## 交付结论
 
-bundle 内 collector 的 `--help` smoke 成功，且其 pyz 摘要与 provenance 相同。目标机执行仍必须由 B28 操作员在
-原生 Windows `cmd.exe` 按 bundle 内 `QUICKSTART_B28.md` 人工完成；不可使用 WSL。当前仍为
+bundle 内 collector 的 `--help` smoke 成功，且其 pyz 摘要与 provenance 相同。该 bundle 现已被 preparation 状态暂停，
+不得再送往 B28；未来重新签发的目标机执行仍必须由操作员在原生 Windows `cmd.exe` 按新 bundle 内
+`QUICKSTART_B28.md` 人工完成，不可使用 WSL。当前仍为
 `compile_status=not-run`、30 case=`not-run`、CATVBA=`not-produced`、`release_eligible=false`，G2–G7=`BLOCKED`。

@@ -222,7 +222,7 @@ def verify_resume(
             "doctor",
             [
                 "uv", "run", "macro-menu-build", "doctor", "--state",
-                os.fspath(state_file), "--format", "json",
+                os.fspath(state_file), "--scope", "development", "--format", "json",
             ],
         ),
         ("pytest", ["uv", "run", "pytest", "-q"]),

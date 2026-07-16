@@ -212,6 +212,22 @@ def test_console_help_lists_all_commands() -> None:
         assert command in help_text
 
 
+def test_doctor_defaults_fail_closed_and_accepts_development_scope() -> None:
+    default = cli.build_parser().parse_args(["doctor", "--state", "resume/state.json"])
+    development = cli.build_parser().parse_args(
+        [
+            "doctor",
+            "--state",
+            "resume/state.json",
+            "--scope",
+            "development",
+        ]
+    )
+
+    assert default.scope == "delivery"
+    assert development.scope == "development"
+
+
 def test_build_operator_bundle_cli_accepts_the_documented_inputs(tmp_path: Path) -> None:
     args = cli.build_parser().parse_args([
         "build-operator-bundle", str(tmp_path / "primary"),

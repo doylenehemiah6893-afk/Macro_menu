@@ -1,6 +1,6 @@
 # B28 Discovery Operator Bundle Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **执行状态（2026-07-16）：** Task 1–11 已在本地完成；Task 12 因 GitHub 推送认证缺失而 BLOCKED。未勾选框保留原始 RED/GREEN 设计，不代表当前未完成。执行只依赖仓库内命令和测试，不依赖外部命名 skill；唯一当前计划为 `Docs/CURRENT_DEVELOPMENT_PLAN.md`。
 
 **Goal:** 交付一个可在原生 Windows CATIA B28 + Python 3.12 目标机采集 Discovery 证据、可由 A 环境严格验证封存、并能从完整 Git clone 恢复工作的仓库内操作包。
 
@@ -999,9 +999,9 @@ Preferred when authenticated:
 git push origin codex/dev-review-report
 ```
 
-If the environment still lacks HTTPS/SSH credentials, use the connected GitHub application to create the same ordered commits on
-`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`, fast-forward the ref only after verifying its old SHA, fetch the remote,
-confirm tree equality, and align the local branch with `git update-ref`. Never write `main/dev`.
+If the environment lacks HTTPS/SSH/gh credentials, stop and configure authentication outside the repository. Do not recreate local
+commits through a contents/commit API: different author/committer metadata changes commit SHA and invalidates evidence bindings. After
+authentication, push the existing Git objects as a fast-forward and never write `main/dev`.
 
 - [ ] **Step 3: Monitor and fix CI scientifically**
 
@@ -1018,12 +1018,14 @@ git clone --branch codex/dev-review-report --single-branch https://github.com/do
 cd macro-menu-final
 python scripts/bootstrap_resume.py --repo-root . --state resume/state.json
 uv sync --frozen
-uv run macro-menu-build doctor --state resume/state.json --format json
-python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root /tmp/macro-menu-final-repro
+uv run macro-menu-build doctor --state resume/state.json --scope development --format json
+python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root catvba_refactor/build/macro-menu-final-repro
 ```
 
-Expected: bootstrap/doctor/verify PASS, local `dev=abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`, working tree clean, bundle hash valid, handoff active and unexpired,
-all CATIA target cases still `not-run`, G2-G7 BLOCKED.
+Expected: Development bootstrap/doctor/verify PASS independent of ledger age, local
+`dev=abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`, working tree clean and immutable bundle hash valid. Run
+`doctor --scope delivery` separately; B28 use requires it to report active/fresh/unexpired. All CATIA target cases remain `not-run`,
+G2-G7 BLOCKED.
 
 - [ ] **Step 5: Final handoff summary**
 

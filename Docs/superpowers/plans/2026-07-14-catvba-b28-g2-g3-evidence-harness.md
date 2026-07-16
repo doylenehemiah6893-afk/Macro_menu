@@ -1,6 +1,6 @@
 # CATVBA B28 G2/G3 Evidence Harness Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **历史执行状态：** A 环境 evidence harness 已实施；旧 handoff 已撤回，B28/G2/G3-C 仍未执行。未勾选框不代表当前未完成。执行只依赖仓库内命令和测试，不依赖外部命名 skill；当前进度见 `Docs/CURRENT_DEVELOPMENT_PLAN.md`。
 
 **Goal:** 在无 CATIA 的 A 环境实现可复算的 B28 discovery、G2、Core-only G3-C 会话初始化、证据验证、Reference 审计、Gate 计算、审批记录、确定性封包和唯一 handoff 工具链。
 
@@ -26,7 +26,7 @@
 - 所有 JSON 使用 canonical ASCII bytes、拒绝 duplicate key/NaN/Infinity/unknown field；所有诊断按 `(code,path,message,details)` 稳定排序。
 - Evidence ZIP 固定 `ZIP_STORED`、1980 UTC 元数据、POSIX `0644`、无目录项/extra/comment；相同显式输入必须 byte-identical。
 - 不把当前 ignored temp Kit 或历史 `kit-134ecc68d131cdff743b` 直接签发为新 handoff；实现完成后必须在 clean governed tree 上重新双构建。
-- 每个功能/修复任务在实现前使用 `superpowers:test-driven-development`；Task 1 还必须先使用 `superpowers:systematic-debugging`，不得用放宽 timeout 掩盖原因。
+- 每个功能/修复任务在实现前先写失败测试并观察预期失败；Task 1 还必须先记录可复现根因，不得用放宽 timeout 掩盖原因。
 
 ---
 
@@ -1049,7 +1049,7 @@ git commit -m "docs: add b28 evidence operator runbook"
 
 - [ ] **Step 1: Invoke completion verification and establish a clean evidence commit**
 
-Use `superpowers:verification-before-completion`. Confirm `git status --short` is empty before building; record exact `HEAD^{commit}` and `HEAD^{tree}` as the evidence identity.
+Run the repository-native final verification commands. Confirm `git status --short` is empty before building; record exact `HEAD^{commit}` and `HEAD^{tree}` as the evidence identity.
 
 - [ ] **Step 2: Run the complete offline gate**
 
@@ -1109,7 +1109,7 @@ Expected: only the two evidence/status documents are in the final commit; the br
 
 ## Final Verification Gate
 
-Before reporting implementation complete, invoke `superpowers:verification-before-completion` and freshly run:
+Before reporting implementation complete, freshly run the repository-native verification commands below:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv sync --frozen

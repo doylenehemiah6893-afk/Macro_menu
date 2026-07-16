@@ -1,3 +1,4 @@
+* text=auto eol=lf
 *.bas     -text diff=vb
 *.cls     -text diff=vb
 *.frm     -text diff=vb
@@ -5,3 +6,4 @@
 *.catvba  binary
 *.pyz     binary
 *.zip     binary
+/artifacts/b28-discovery/** -text

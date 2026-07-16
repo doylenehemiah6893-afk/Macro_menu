@@ -13,6 +13,9 @@
 > current_delivery_status：**NO-GO。现有 CATVBA 不能作为 R2018 正式产物继续安装或分发。**
 >
 > 决策叠加：正式资格为 `(AB3 OR HD2 OR MD2) AND SPA AND FTA`。Core 取 P-AB3/P-HD2/P-MD2 的严格实测交集且不早绑定 SPA/FTA；SPA、FTA 作为默认 Fleet 包独立构建和隔离。详细过程见 [CATVBA 重构调查与设计决策记录](CATVBA重构调查与决策记录.md)。
+>
+> 当前操作叠加（2026-07-16）：本文件第 15 节是历史恢复诊断草案，不能用于当前 Discovery。目标机唯一源教程为
+> [`runbooks/b28-target/README_TARGET_B28.md`](runbooks/b28-target/README_TARGET_B28.md)，并以新签发 bundle 内同名文件为执行真源。
 
 本文是针对“CATIA 中编译报错、CATVBA 工程保护、R2018 可用性与安全性存疑、当前无法使用”的专项恢复文档。通用分支审查见 [dev 分支审查报告](dev分支审查报告.md)。本文没有修改业务源码，也没有声称已经在 R2018 中完成编译；它给出已核实的根因、依赖、许可证边界、恢复架构、实机步骤和验收门槛。
 
@@ -729,6 +732,9 @@ MVP 粗估 20-35 人日；完整恢复 77 个模块约 50-90 人日。估算取�
 ---
 
 ## 15. R2018 实机首轮操作单
+
+> **SUPERSEDED / DO NOT EXECUTE：** 本节包含加载旧 CATVBA、Compile 和 APC probe，与当前 raw Discovery 明令禁止
+> Compile/运行/自动化的合同冲突。只保留为历史诊断设计；当前必须使用签发 bundle 内 quick-start。
 
 ### 15.1 先记录，不修改
 

@@ -6,10 +6,10 @@
 
 ## 权威顺序
 
-1. 目标机原始证据、Git/tree/制品 SHA；
-2. [调查与决策台账](CATVBA重构调查与决策记录.md)中明确批准的 DR；
-3. 状态为 APPROVED 的日期化规格；
-4. 当前状态、结构、runbook；
+1. `resume/state.json`；仅当其 `active_bundle_path` 非空时，再联合 `CURRENT.json`、bundle provenance 与目标机原始证据；
+2. [当前状态](STATUS.md)、[当前开发规格](CURRENT_DEVELOPMENT_SPEC.md)和[当前开发计划](CURRENT_DEVELOPMENT_PLAN.md)；
+3. [调查与决策台账](CATVBA重构调查与决策记录.md)中明确批准的 DR；
+4. 状态为 APPROVED 的日期化规格与 process records；
 5. 历史、参考、superseded 和 quarantine 材料。
 
 写入仓库不等于批准；目录存在不等于实现；离线测试不等于 CATIA Compile。
@@ -18,6 +18,9 @@
 
 - [当前状态与唯一下一动作](STATUS.md)
 - [新环境唯一续作入口](../RESUME.md)
+- [当前开发规格](CURRENT_DEVELOPMENT_SPEC.md)
+- [当前开发计划与任务状态](CURRENT_DEVELOPMENT_PLAN.md)
+- [开发环境复刻与仓库同步指南](ENVIRONMENT_REPRODUCTION.md)
 - [项目结构、所有权与分支规划](PROJECT_STRUCTURE.md)
 - [CATVBA 重构调查与决策记录](CATVBA重构调查与决策记录.md)
 - [R2018 恢复、依赖与安全交付指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
@@ -34,10 +37,18 @@
 - [B28 G2/G3 证据工具链](superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md)
 - [B28 Discovery operator bundle](superpowers/specs/2026-07-15-b28-discovery-operator-bundle-design.md)
 
-用户已书面确认上述规格。实施计划：
+用户已书面确认上述规格。`superpowers/` 是历史目录名，不代表仓库依赖任何同名外部 skill；
+所有当前执行只使用仓库内命令和 [当前开发计划](CURRENT_DEVELOPMENT_PLAN.md)。历史实施计划：
 [离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)、
 [B28 G2/G3 证据工具链实施计划](superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md)。
 [B28 Discovery operator bundle 实施计划](superpowers/plans/2026-07-15-b28-discovery-operator-bundle.md)。
+
+## 审查与过程记录
+
+- [2026-07-16 本地环境、代码与仓库同步审查](reviews/2026-07-16-local-environment-and-repository-audit.md)
+- [2026-07-16 环境复刻与仓库治理修订](process/2026-07-16-environment-reproducibility-refresh.md)
+- [B28 operator 实施审查](process/2026-07-16-b28-discovery-operator-implementation-review.md)
+- [B28 operator bundle 构建记录](process/2026-07-16-b28-discovery-operator-bundle-build.md)
 
 ## 当前许可证模型
 

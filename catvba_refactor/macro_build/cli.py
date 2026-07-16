@@ -170,6 +170,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="diagnose a fresh-clone resume environment without changing it",
     )
     doctor.add_argument("--state", required=True, type=Path)
+    doctor.add_argument(
+        "--scope",
+        choices=("development", "delivery"),
+        default="delivery",
+        help="verify stable development state or live B28 delivery authorization",
+    )
 
     operator_bundle = commands.add_parser(
         "build-operator-bundle",
@@ -974,7 +980,12 @@ def _doctor_command(args: argparse.Namespace) -> int:
     state_path = args.state
     if not state_path.is_absolute():
         state_path = repo_root / state_path
-    report = doctor_repository(repo_root, state_path, now=datetime.now(UTC))
+    report = doctor_repository(
+        repo_root,
+        state_path,
+        now=datetime.now(UTC),
+        scope=args.scope,
+    )
     document = {
         "command": args.command,
         "ok": report.ok,

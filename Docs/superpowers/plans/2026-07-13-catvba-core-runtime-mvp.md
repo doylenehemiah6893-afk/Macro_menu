@@ -1,6 +1,6 @@
 # CATVBA Core Runtime MVP Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **历史执行状态：** Core Runtime MVP 的 A 环境源码/静态/Kit 切片已实施；B28 目标验证未执行。未勾选框不代表当前未完成。执行只依赖仓库内命令和测试，不依赖外部命名 skill；当前进度见 `Docs/CURRENT_DEVELOPMENT_PLAN.md`。
 
 **Goal:** Build the A-environment source, deterministic generation, manifest bindings, and offline G0/G1 evidence for the first Core Runtime containing only `core.healthcheck` and `core.document-summary`.
 
@@ -463,7 +463,7 @@ Expected: full PASS, clean tree, only local/remote work branch divergence, and n
 
 ## Final Verification Gate
 
-Before claiming the Core MVP A-environment slice complete, invoke `superpowers:verification-before-completion` and freshly run:
+Before claiming the Core MVP A-environment slice complete, freshly run the repository-native verification commands below:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv sync --frozen

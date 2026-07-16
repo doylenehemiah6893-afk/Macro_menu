@@ -59,7 +59,7 @@ jobs:
         run: |
           for /f "delims=" %%I in ('git rev-parse refs/remotes/origin/dev') do set "ORIGIN_DEV_BEFORE=%%I"
           py -3.12 scripts\bootstrap_resume.py --repo-root . --state resume\state.json
-          .venv\Scripts\python.exe -m catvba_refactor.macro_build.cli doctor --state resume\state.json --format json
+          .venv\Scripts\macro-menu-build.exe doctor --state resume\state.json --scope development --format json
           for /f "delims=" %%I in ('git rev-parse refs/remotes/origin/dev') do set "ORIGIN_DEV_AFTER=%%I"
           if not "%ORIGIN_DEV_BEFORE%"=="%ORIGIN_DEV_AFTER%" exit /b 1
           for /f "delims=" %%I in ('git rev-parse refs/heads/dev') do set "LOCAL_DEV=%%I"

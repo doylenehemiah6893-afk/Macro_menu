@@ -1,7 +1,7 @@
 > [!CAUTION]
 > **文档状态：SUPERSEDED（历史架构快照）**
 > **核对基线：** 2026-07-13，Git `b0085868`
-> **当前 Authority：** [`Src/`](../Src/) 仅作为 upstream evidence；当前实现边界由 [`PROJECT_STRUCTURE.md`](../Docs/PROJECT_STRUCTURE.md)、[`CATVBA重构调查与决策记录.md`](../Docs/CATVBA重构调查与决策记录.md) 与 [详细 DRAFT spec](../Docs/superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md) 定义，未来本地源码只进入 `catvba_refactor/`
+> **当前 Authority：** [`Src/`](../Src/) 仅作为 upstream evidence；当前实现边界由 [`CURRENT_DEVELOPMENT_SPEC.md`](../Docs/CURRENT_DEVELOPMENT_SPEC.md)、[`PROJECT_STRUCTURE.md`](../Docs/PROJECT_STRUCTURE.md)、[`CATVBA重构调查与决策记录.md`](../Docs/CATVBA重构调查与决策记录.md) 与已批准日期化规格定义，未来本地源码只进入 `catvba_refactor/`
 > **执行策略：** DO NOT EXECUTE。正文仅保留历史分析语境，不应用作当前文件清单、实施计划或发布/许可证证明。
 > **许可证边界：** 本文未验证 AB3、MD2、HD2、KWA、Office 或其他能力；实际包归属和授权以当前 Authority 及目标机验证为准。
 

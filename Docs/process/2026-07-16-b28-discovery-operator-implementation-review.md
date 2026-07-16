@@ -1,6 +1,7 @@
 # B28 Discovery Operator Bundle 实施审查记录
 
-日期：2026-07-16  
+日期：2026-07-16
+
 记录：`record.task10-implementation-review.381bf7c`、`record.task11-skeleton-contract.760896d`
 范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..760896da2b0a2e0c5c4928480f5a37ed1e0e1331`
 
@@ -92,3 +93,10 @@ identity、expiry、ledger 与收据路径由 `resume/state.json`、`artifacts/b
 `compile_status=not-run`、30 个 target case=`not-run`、CATVBA=`not-produced`、`release_eligible=false`，G2–G7
 仍为 `BLOCKED`。Task 12 只能推送本分支、监控 CI 并以新 clone 复核；现场操作仍必须在 fresh active ledger 与未到期
 handoff 下由人按 bundle 内 Windows `cmd.exe` 快速表执行。
+
+## 2026-07-16 环境复刻复审叠加
+
+后续全面环境审查实际复现两个 P0：Git for Windows `core.autocrlf=true` 会改写 lock/intake/bundle 控制 bytes；
+Development bootstrap/CI 又会在 ledger 超过 24 小时或 handoff 到期后失败。另发现无效 agent/IDE 配置、uv 前置版本
+校验和 Windows CI doctor 调用缺口。因此 Task 12 在推送前新增一个 evidence refresh cycle；旧 evidence/bundle 仍是其
+原提交的有效历史产物，但不能解释修订后的代码。当前任务与状态见 `Docs/CURRENT_DEVELOPMENT_PLAN.md`。

@@ -1,8 +1,8 @@
 # 项目结构、所有权与分支规划
 
-> 状态：IMPLEMENTED CORE SOURCE CANDIDATE — 离线工具与首轮 Core 源码绑定已实现；CATIA/目标机测试未运行
+> 状态：CURRENT IMPLEMENTATION / PREPARATION — 离线工具、Core、evidence harness 与 operator bundle builder 已实现；当前无 active bundle，CATIA/目标机测试未运行
 >
-> 更新日期：2026-07-14
+> 更新日期：2026-07-16
 >
 > 适用分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 
@@ -13,8 +13,9 @@
 - `codex/dev-review-report` 是唯一重构写分支；
 - 所有本地 VBA、Python、配置、schema、测试和派生输出进入 `catvba_refactor/`；
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
-- 离线 Python、manifest/schema、11 个 CLI 命令、target evidence harness 和 pytest 已实现；首轮 Core Runtime
-  源码已固定为候选输入，但尚未生成或验证 CATVBA，也没有 CATIA/目标机通过证据。
+- 离线 Python、manifest/schema、Build Kit/evidence/operator CLI、target collector 和 pytest 已实现；首轮 Core Runtime
+  源码已固定为候选输入。上一份 Discovery bundle 保留为历史制品，当前 state 已回到 preparation，等待从新 evidence
+  commit 重新签发；尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
 
 ## 2. 仓库拓扑
 
@@ -48,17 +49,26 @@ Macro_menu/
 │  ├─ schemas/target_evidence/        # discovery/G2/G3-C 严格证据 schema family
 │  ├─ intake/
 │  │  ├─ README.md                    # 首次 no-content baseline 的证据边界
-│  │  └─ records/                     # 经批准的 intake records；当前不创建 baseline record
-│  ├─ macro_build/*.py                # snapshot/inventory/resolver/policy/Kit/audit/evidence/CLI
+│  │  └─ records/                     # 经批准的 intake records；已有 initial baseline record
+│  ├─ macro_build/*.py                # snapshot/inventory/resolver/policy/Kit/audit/evidence/resume/bundle/CLI
+│  ├─ target_collector/*.py           # B28 原生 Python 3.12 raw/untrusted collector
 │  ├─ tests/test_*.py                 # A 环境单元、攻击面和端到端测试
 │  ├─ build/                          # 按需生成、Git ignored
 │  └─ dist/                           # 按需生成、Git ignored
 ├─ Docs/
 │  ├─ STATUS.md
+│  ├─ CURRENT_DEVELOPMENT_SPEC.md
+│  ├─ CURRENT_DEVELOPMENT_PLAN.md
+│  ├─ ENVIRONMENT_REPRODUCTION.md
 │  ├─ CATVBA重构调查与决策记录.md
 │  ├─ runbooks/                       # B28 原生 Windows 顺序操作、停止和脱敏边界
-│  └─ superpowers/specs/
+│  ├─ process/                        # 不可变实施/构建记录
+│  ├─ reviews/                        # 日期化只读审查
+│  └─ superpowers/{specs,plans}/      # 历史目录名；不代表外部 skill 依赖
 ├─ RESUME.md / resume/state.json      # fresh clone 人工入口与严格机器状态
+├─ artifacts/b28-discovery/           # sanitized 历史/未来 public operator bundle、control 与 receipts；是否 active 由 state 决定
+├─ scripts/bootstrap_resume.py        # Development 环境认证与 frozen sync
+├─ scripts/verify_resume.py           # Development 测试与确定性双构建
 ├─ scripts/run-discovery.cmd          # 目标 bundle 的原生 cmd.exe 薄 wrapper
 ├─ CATIA_V5_SimpleMacroMenu.catvba   # legacy evidence only
 ├─ CAT_menu.catvba                   # legacy evidence only
@@ -66,7 +76,8 @@ Macro_menu/
 └─ ref_project/ DrawFunc/ artifacts/ # reference/history, release=false
 ```
 
-`catvba_refactor/intake/records/` 只存放经批准的 intake evidence；定义合同本身不创建 baseline record。
+`catvba_refactor/intake/records/` 只存放经批准的 intake evidence；当前已存在并认证
+`2026-07-13-initial-baseline.json`。
 
 Git 不保存空目录，所以 `build/`、`dist/` 不通过 `.gitkeep` 伪装成当前制品目录；根 `.gitignore` 已覆盖
 两者，工具只在完整 preflight 通过后按需创建。
@@ -84,6 +95,7 @@ Git 不保存空目录，所以 `build/`、`dist/` 不通过 `.gitkeep` 伪装�
 | `macro_build/tests` | 离线 Python 和 pytest | 假装执行 CATIA Compile |
 | `build/dist` | 全新可再生输出 | 人工维护为真源、入 Git |
 | `Docs` | 规格、状态、证据和历史 | 产品二进制、客户模型 |
+| `artifacts/b28-discovery` | 脱敏、确定性、可验证的公开操作包与收据 | raw capture、客户数据、工作/Production CATVBA |
 
 ## 5. 真源模型
 
@@ -98,8 +110,8 @@ candidate 只接受干净、已提交的工作分支 tree，并固定上游仓�
 commit/tree 和 manifest/tool digest。`inventory/check --worktree` 只提供开发诊断；即使 dirty overlay 能形成
 synthetic digest，也不得生成正式 snapshot、Build Kit 或 candidate。
 
-首个 Kit 不强制依赖复杂的 accepted-record 链；上游 intake 记录按独立规格建立。任何 upstream/fork
-cutoff 不一致都会阻断新的 candidate，但不会使旧 Kit 的历史证据消失。
+当前 bootstrap、snapshot 和 state 精确绑定 accepted initial-baseline record。任何 upstream/fork cutoff 或 record
+digest 不一致都会阻断新的 candidate，但不会使旧 Kit 的历史证据消失。
 
 当前 clone 的只读本地 `dev` 固定在审定 cutoff `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；工作分支
 通过 manifest 将 12 个 `vba/new` 固定组件和一组完整 Form override 绑定到已提交 Git object。临时端到端
@@ -147,7 +159,8 @@ QUARANTINE
 3. 已建立最小 Core Form override、12 个固定模块/类和两个首轮工具，并精确绑定已提交 Git object；
 4. 当前 candidate 仅含 `core.healthcheck` 与 `core.document-summary`，不含 Fleet、Optional 或第二回合审计；
 5. 已实现 discovery/G2/G3-C session、validator、Gate、approval、确定性 seal 和 CLI；synthetic E2E 不升级状态；
-6. 下一步从当前提交生成新的 discovery Kit/handoff，在 B28 完成真实 discovery，再顺序进入 G2/G3-C；
-7. 后续仍需三个最小 profile、SPA/FTA、安装和回滚门禁。
+6. 已生成并提交本地 Discovery Kit/handoff/operator bundle；当前正在修复跨平台 fresh-clone 环境合同，修复后必须从新 evidence commit 重新签发；
+7. 远端推送、Linux/Windows CI 与 GitHub fresh clone 尚被认证阻断；完成后才恢复 B28 Discovery；
+8. 后续仍需三个最小 profile、SPA/FTA、安装和回滚门禁。
 
 离线实现不会创建已验证 CATVBA。B28 与交付工作必须分别按已批准子规格继续。

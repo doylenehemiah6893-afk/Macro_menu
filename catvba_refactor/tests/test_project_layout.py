@@ -19,6 +19,7 @@ def test_root_project_is_the_only_python_project() -> None:
     )
     assert not (ROOT / "catvba_refactor/pyproject.toml").exists()
     assert not (ROOT / "catvba_refactor/uv.lock").exists()
+    assert project["project"]["requires-python"] == ">=3.12,<3.13"
 
 
 def test_generated_paths_are_ignored() -> None:
@@ -28,6 +29,80 @@ def test_generated_paths_are_ignored() -> None:
         check=False,
     )
     assert result.returncode == 0
+
+
+def test_local_environment_and_agent_files_cannot_reenter_git() -> None:
+    for relative in (
+        ".context/system_prompt.md",
+        ".context/coding_style.md",
+        ".antigravity/rules.md",
+        ".cursorrules",
+        ".vscode/settings.json",
+        "user_data.json",
+    ):
+        assert not (ROOT / relative).exists(), relative
+    for relative in (
+        ".context/probe",
+        ".antigravity/probe",
+        ".cursorrules",
+        ".vscode/settings.json",
+        "user_data.json",
+        "build/resume-verification/receipt.json",
+    ):
+        result = subprocess.run(
+                ["git", "check-ignore", "--no-index", "-q", relative],
+            cwd=ROOT,
+            check=False,
+        )
+        assert result.returncode == 0, relative
+
+
+def test_windows_checkout_preserves_hashed_control_bytes() -> None:
+    result = subprocess.run(
+        [
+            "git",
+            "check-attr",
+            "text",
+            "eol",
+            "--",
+            "uv.lock",
+            "resume/state.json",
+            "catvba_refactor/intake/records/2026-07-13-initial-baseline.json",
+            "artifacts/b28-discovery/CURRENT.json",
+            "artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/provenance.json",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout
+    for path in (
+        "uv.lock",
+        "resume/state.json",
+        "catvba_refactor/intake/records/2026-07-13-initial-baseline.json",
+    ):
+        assert f"{path}: eol: lf" in result
+    for path in (
+        "artifacts/b28-discovery/CURRENT.json",
+        "artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/provenance.json",
+    ):
+        assert f"{path}: text: unset" in result
+
+
+def test_current_documentation_has_no_external_skill_dependency() -> None:
+    for relative in (
+        "Docs/CURRENT_DEVELOPMENT_SPEC.md",
+        "Docs/CURRENT_DEVELOPMENT_PLAN.md",
+        "Docs/ENVIRONMENT_REPRODUCTION.md",
+        "Docs/reviews/2026-07-16-local-environment-and-repository-audit.md",
+    ):
+        assert (ROOT / relative).is_file(), relative
+    for path in ROOT.joinpath("Docs").rglob("*.md"):
+        text = path.read_text("utf-8")
+        assert "superpowers:" not in text, path
+        assert "REQUIRED SUB-SKILL" not in text, path
+    example = (ROOT / "user_data.example.json").read_text("utf-8")
+    assert not re.search(r"[A-Za-z]:[\\/]", example)
 
 
 def test_vba_attributes_preserve_bytes() -> None:
@@ -247,7 +322,8 @@ def test_repro_workflow_is_pinned_native_and_never_publishes_catvba() -> None:
     assert "bootstrap_resume.py" in workflow and " doctor " in workflow
     assert "git branch dev" not in workflow
     assert "py -3.12 scripts\\bootstrap_resume.py --repo-root . --state resume\\state.json" in workflow
-    assert ".venv\\Scripts\\python.exe -m catvba_refactor.macro_build.cli doctor" in workflow
+    assert ".venv\\Scripts\\macro-menu-build.exe doctor" in workflow
+    assert workflow.count("--scope development") >= 1
     assert "run-discovery.cmd --help" in workflow
     assert "target-discovery.pyz --help" in workflow
     assert "wsl" not in workflow.lower()

@@ -1,5 +1,0 @@
-{
-    "files.encoding": "gbk",  // 全局默认编码设为GBK
-    "files.autoGuessEncoding": true,  // 启用自动编码猜测
-    "files.encodingDetectionConfidence": 0.8  // 识别置信度阈值（0-1）
-}

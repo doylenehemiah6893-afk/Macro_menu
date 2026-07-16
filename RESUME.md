@@ -1,29 +1,32 @@
 # Macro_menu 新环境续作入口
 
-状态：CURRENT / issued discovery bundle / **NO-GO for release**
+状态：CURRENT LOCAL / remote publication blocked / **NO-GO for release**
 
 唯一仓库：`doylenehemiah6893-afk/Macro_menu`
 唯一工作分支：`codex/dev-review-report`
-唯一下一动作：`run-b28-discovery`
+当前开发动作：完成 evidence refresh、重新签发并推送
 
-机器可读事实以 `resume/state.json`、`artifacts/b28-discovery/CURRENT.json` 和 bundle 内
-`provenance.json` 为准。本文件不把 A 环境验证说成 CATIA 验证。
+当前目标机动作：BLOCKED，等待新的 fresh delivery control
 
-## 1. 当前已签发制品
+机器状态首先以 `resume/state.json` 为准；只有 `active_bundle_path` 非空时，CURRENT 与 bundle provenance 才能
+共同选择活动制品。本文件不把 A 环境验证说成 CATIA 验证。
+
+> 当前 GitHub 远端分支仍停在 `037ab40696744678a57781d5197c152687520d84`，尚不包含本地已完成的
+> implementation/delivery 提交。本节制品当前只能从本地工作副本取得；完成 fast-forward push 前，不能用 GitHub fresh clone 复刻现状。
+
+## 1. 当前 preparation 状态
 
 | 项目 | 固定值 |
 |---|---|
-| evidence commit / tree | `68022541bf8cacd1db012128daf4cdef1048af8d` / `405f24751ddabecced9b547680e6dbdefdeb80be` |
-| active bundle | `artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/` |
-| provenance SHA-256 | `ab5205f4f37e8ec467a9800afb986bc2290ae7235820d38423cfde2b7c89d895` |
-| Kit / ZIP SHA-256 | `kit-e93a2e7f48c3f4d2f179` / `d763b3e1a1a2e33d994a5c030e0fa3b541e8a46648f11378870c6a86711cf012` |
-| active handoff / expiry | `handoff-b8d9d535604e78551423` / `2026-07-23T11:11:06Z` |
-| active ledger | `artifacts/b28-discovery/active-handoff-ledger.json`；captured `2026-07-16T11:12:07Z` |
-| A 环境完整测试 | `1659 passed, 19 warnings`；非 CATIA 证据 |
+| evidence commit / tree | `null` / `null`，等待本轮实现提交 |
+| active bundle / Kit / handoff | 全部 `null`；CURRENT 已移除，ledger active 集为空，旧 handoff 已 withdrawn |
+| revocation status | `preparation` |
+| Gate | G0=`PASS`，G1–G7=`BLOCKED` |
+| next action | `complete-evidence-implementation` |
+| A 环境完整测试 | 本轮工作树 `1664 passed, 19 warnings`；提交后继续做 fresh-clone 验证，且不是 CATIA 证据 |
 
-该 handoff 仅可在未过期、未撤回且外部 ledger 不超过 24 小时时使用。离线包只能证明取得时的
-ledger 状态；不能证明之后没有撤回。若已过期、撤回、缺失、摘要不符或 ledger 过期，立即停止并从本分支取得新的
-控制文件；不得手改 JSON 延期或恢复。
+仓库仍保留上一份 bundle 供审计；历史 CURRENT 已移除，ledger 已明确撤回上一 handoff。不得因历史 handoff
+尚未到名义 expiry 就直接复用，也不得手改 JSON 延期或恢复。
 
 所有 target truth 仍为：`compile_status=not-run`、30 个 target case 全部 `not-run`、
 `artifact_status=not-produced`、`release_eligible=false`。G2–G7 全部 `BLOCKED`。
@@ -31,14 +34,15 @@ ledger 状态；不能证明之后没有撤回。若已过期、撤回、缺失�
 ## 2. 取得与开发续作
 
 开发续作必须完整 clone，不能使用 GitHub Download ZIP；后者没有 object/ref 历史，无法验证 approved cutoff 与
-intake baseline。Download ZIP 仅可用于获取已发布的目标机 bundle，不能作为开发工作树。
+intake baseline。下列 GitHub clone 命令只在远端同步完成后成立；同步前使用当前本地完整 clone 继续工作。
 
 ```bash
 git clone --branch codex/dev-review-report --single-branch https://github.com/doylenehemiah6893-afk/Macro_menu.git
 cd Macro_menu
+export UV_CACHE_DIR="${TMPDIR:-/tmp}/macro-menu-uv-cache"
 python3.12 scripts/bootstrap_resume.py --repo-root . --state resume/state.json
-uv run macro-menu-build doctor --state resume/state.json --format json
-python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root build/resume-verification
+uv run macro-menu-build doctor --state resume/state.json --scope development --format json
+python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root catvba_refactor/build/resume-verification
 ```
 
 只写 `codex/dev-review-report`；不得 merge/rebase/cherry-pick `main` 或 `dev`、force-push、创建 tag/Release、或写
@@ -49,19 +53,21 @@ Production 宏库。批准 cutoff 固定为 `abce8ffe37d25cc8f189ae9e9a2a1e94227
 
 ```bat
 scripts\bootstrap-resume.cmd
-uv run macro-menu-build doctor --state resume\state.json --format json
-python scripts\verify_resume.py --repo-root . --state resume\state.json --output-root build\resume-verification
+uv run macro-menu-build doctor --state resume\state.json --scope development --format json
+py -3.12 scripts\verify_resume.py --repo-root . --state resume\state.json --output-root catvba_refactor\build\resume-verification
 ```
+
+Development 验证不因 ledger/handoff 过期而失败。准备转运到 B28 前必须另跑
+`uv run macro-menu-build doctor --state resume/state.json --scope delivery --format json`；该范围继续严格检查 freshness、expiry 和 revocation。完整网络/cache、Windows 与仓库同步说明见 `Docs/ENVIRONMENT_REPRODUCTION.md`。
 
 ## 3. B28 目标机唯一入口
 
-目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。只在批准的
+目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。当前没有 active
+bundle，不能执行旧 QUICKSTART。只有新的
+evidence refresh 和 delivery record 完成、Delivery doctor 通过后，才可在批准的
 blank VM、标准用户、原生 `cmd.exe` 中将 active bundle、`CURRENT.json` 和 fresh ledger 放入互不重叠的本地 NTFS
-目录，然后严格执行 bundle 内：
-
-- `artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/QUICKSTART_B28.md`
-- `artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/README_TARGET_B28.md`
-- `artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/SECURITY_AND_REDACTION.md`
+目录，然后严格执行新 state 指向的 bundle 内 `QUICKSTART_B28.md`、`README_TARGET_B28.md` 和
+`SECURITY_AND_REDACTION.md`。
 
 仓库中的 `Docs/runbooks/b28-target/README_TARGET_B28.md` 仅保留为源教程/审查入口；目标机执行时以已签发 bundle
 内同名文件为准，避免把源工作树、控制文件与现场 capture 混在一起。
@@ -86,5 +92,6 @@ raw/untrusted 当作 PASS 或 sealed evidence。完成后只通过批准通道�
 - 试图 Compile、运行 30 cases、生成 CATVBA，或把 raw/untrusted 当 sealed/PASS；
 - 试图记录/提交客户路径、主机/用户标识、DSLS server 或未脱敏数据；
 - 试图把 G2–G7 或 `release_eligible` 改为通过，或复活旧 handoff `handoff-6ed312ee18b254cb3c13`。
+- 试图从尚未同步的 GitHub 远端声称已取得本地 bundle，或用 API 重建提交 SHA。
 
 发生任一项时保留现有日志和 hash，停止并回到本文件与 `resume/state.json`，不要自行扩大授权。

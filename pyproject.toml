@@ -3,7 +3,7 @@ name = "macro-menu"
 version = "0.1.0"
 description = "Offline CATVBA recovery, audit, and Build Kit tooling"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "jsonschema>=4.23,<5",
     "olefile>=0.47",

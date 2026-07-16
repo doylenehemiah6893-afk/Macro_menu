@@ -1,6 +1,6 @@
 # CATVBA Initial Intake Baseline Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **历史执行状态：** 首次 no-content intake baseline 已实施并提交 accepted record。未勾选框不代表当前未完成。执行只依赖仓库内命令和测试，不依赖外部命名 skill；当前进度见 `Docs/CURRENT_DEVELOPMENT_PLAN.md`。
 
 **Goal:** Establish the first accepted upstream `dev` cutoff and a local read-only-by-process `dev` ref without changing any remote branch, while leaving the repository fail-closed until real Core candidates exist.
 
@@ -404,7 +404,7 @@ Expected: frozen sync and all tests pass; `check` reports a formal zero-candidat
 
 ## Final Verification Gate
 
-Before reporting the baseline phase complete, invoke `superpowers:verification-before-completion` and freshly run:
+Before reporting the baseline phase complete, freshly run the repository-native verification commands below:
 
 ```bash
 git rev-parse HEAD refs/heads/dev

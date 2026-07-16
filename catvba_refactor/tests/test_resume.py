@@ -5,7 +5,7 @@ import json
 import os
 import subprocess
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -551,6 +551,22 @@ def test_locked_interpreter_sync_failure_never_imports_project(
     assert events == ["preflight", "sync"]
 
 
+def test_stdlib_bootstrap_rejects_wrong_uv_before_sync(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module = _bootstrap_script_module()
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout="uv 0.9.24\n", stderr=""
+        ),
+    )
+
+    with pytest.raises(SystemExit, match="pinned uv"):
+        module._stdlib_uv_preflight("uv 0.9.25")
+
+
 def test_bootstrap_rejects_partial_expiry_state_never_creates_dev(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -720,6 +736,17 @@ def test_active_delivery_controls_bind_state_and_fail_on_withdrawal(tmp_path: Pa
     })
     now = datetime.fromisoformat(UTC.replace("Z", "+00:00"))
     assert resume._active_delivery_diagnostics(root, state, now) == []
+    stale = now + timedelta(hours=25)
+    assert [
+        item.code
+        for item in resume._active_delivery_diagnostics(root, state, stale)
+    ] == ["RESUME_ACTIVE_LEDGER_STALE", "RESUME_REVOCATION_STATUS_MISMATCH"]
+    assert resume._active_delivery_diagnostics(
+        root,
+        state,
+        stale,
+        enforce_authorization=False,
+    ) == []
     (bundle / "target-discovery.pyz").write_bytes(b"tampered-pyz\n")
     assert "RESUME_ACTIVE_BUNDLE_INTEGRITY_INVALID" in {
         item.code for item in resume._active_delivery_diagnostics(root, state, now)

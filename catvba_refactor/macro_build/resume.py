@@ -372,9 +372,13 @@ def _bundle_sums(records: tuple[tuple[str, bytes], ...]) -> bytes:
 
 
 def _active_delivery_diagnostics(
-    root: Path, state: Mapping[str, Any], now: datetime
+    root: Path,
+    state: Mapping[str, Any],
+    now: datetime,
+    *,
+    enforce_authorization: bool = True,
 ) -> list[ResumeDiagnostic]:
-    """Bind issued resume state to its immutable bundle and fresh control files."""
+    """Bind issued state to immutable bytes and, optionally, live authorization."""
 
     diagnostics: list[ResumeDiagnostic] = []
     bundle = _internal_path(root, state["active_bundle_path"])
@@ -395,7 +399,9 @@ def _active_delivery_diagnostics(
     try:
         provenance_path = bundle / "provenance.json"
         handoff_path = bundle / "handoff.json"
-        paths = (provenance_path, handoff_path, current, ledger)
+        paths = (provenance_path, handoff_path, current)
+        if enforce_authorization:
+            paths = (*paths, ledger)
         if any(not path.is_file() or path.is_symlink() for path in paths):
             raise OSError("control missing or unsafe")
         provenance_bytes = provenance_path.read_bytes()
@@ -403,7 +409,7 @@ def _active_delivery_diagnostics(
         handoff_bytes = handoff_path.read_bytes()
         handoff = _canonical_control(handoff_path)
         current_document = _canonical_control(current)
-        ledger_document = _canonical_control(ledger)
+        ledger_document = _canonical_control(ledger) if enforce_authorization else None
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
         return [_diagnostic("RESUME_ACTIVE_CONTROL_INVALID", "artifacts/b28-discovery", "issued control files are missing, unsafe, or noncanonical")]
     provenance_digest = hashlib.sha256(provenance_bytes).hexdigest()
@@ -449,6 +455,9 @@ def _active_delivery_diagnostics(
             raise ValueError("bundle integrity mismatch")
     except (KeyError, TypeError, ValueError):
         diagnostics.append(_diagnostic("RESUME_ACTIVE_BUNDLE_INTEGRITY_INVALID", str(state["active_bundle_path"]), "bundle content, checksum, Kit, or collector binding is invalid"))
+    if not enforce_authorization:
+        return diagnostics
+    assert ledger_document is not None
     active = ledger_document.get("active_handoff_ids")
     withdrawn = ledger_document.get("withdrawn_handoff_ids")
     source = provenance.get("active_ledger_source")
@@ -495,6 +504,7 @@ def _inspect_repository(
     *,
     now: datetime,
     allow_missing_dev: bool,
+    scope: str,
 ) -> ResumeReport:
     root = Path(repo_root).resolve()
     diagnostics: list[ResumeDiagnostic] = []
@@ -505,7 +515,13 @@ def _inspect_repository(
         "local_dev": None,
         "origin_dev": None,
         "repository": None,
+        "scope": scope,
     }
+    if scope not in {"development", "delivery"}:
+        return _resume_report(
+            [_diagnostic("RESUME_SCOPE_INVALID", "scope", "scope must be development or delivery")],
+            facts,
+        )
     if not (root / ".git").exists():
         return _resume_report(
             [_diagnostic("RESUME_GIT_CLONE_REQUIRED", ".git", "a complete Git clone is required")],
@@ -642,17 +658,32 @@ def _inspect_repository(
             if artifact is None or not artifact.exists():
                 diagnostics.append(_diagnostic("RESUME_ACTIVE_ARTIFACT_MISSING", str(relative), "state references a missing artifact"))
     if state["active_bundle_path"] is not None:
-        diagnostics.extend(_active_delivery_diagnostics(root, state, now))
+        diagnostics.extend(
+            _active_delivery_diagnostics(
+                root,
+                state,
+                now,
+                enforce_authorization=scope == "delivery",
+            )
+        )
     facts["release_eligible"] = state["release_eligible"]
     return _resume_report(diagnostics, facts)
 
 
 def doctor_repository(
-    repo_root: Path, state_path: Path, *, now: datetime
+    repo_root: Path,
+    state_path: Path,
+    *,
+    now: datetime,
+    scope: str = "delivery",
 ) -> ResumeReport:
-    """Read-only verification of a fresh-clone resume environment."""
+    """Verify stable development state or strict live delivery authorization."""
     return _inspect_repository(
-        repo_root, state_path, now=now, allow_missing_dev=False
+        repo_root,
+        state_path,
+        now=now,
+        allow_missing_dev=False,
+        scope=scope,
     )
 
 
@@ -709,7 +740,11 @@ def bootstrap_repository(
     read_clock = clock or (lambda: datetime.now(UTC))
     now = read_clock()
     preflight = _inspect_repository(
-        root, state_path, now=now, allow_missing_dev=True
+        root,
+        state_path,
+        now=now,
+        allow_missing_dev=True,
+        scope="development",
     )
     if not preflight.ok:
         return preflight
@@ -718,7 +753,11 @@ def bootstrap_repository(
         return _resume_report([sync_error], dict(preflight.facts))
     postflight_now = read_clock()
     postflight = _inspect_repository(
-        root, state_path, now=postflight_now, allow_missing_dev=True
+        root,
+        state_path,
+        now=postflight_now,
+        allow_missing_dev=True,
+        scope="development",
     )
     if not postflight.ok:
         return postflight
@@ -732,5 +771,9 @@ def bootstrap_repository(
                 dict(postflight.facts),
             )
     return _inspect_repository(
-        root, state_path, now=postflight_now, allow_missing_dev=False
+        root,
+        state_path,
+        now=postflight_now,
+        allow_missing_dev=False,
+        scope="development",
     )

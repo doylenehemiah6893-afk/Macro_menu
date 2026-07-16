@@ -1,9 +1,13 @@
 .context/
 .antigravity/
+.cursorrules
+.vscode/
 .venv/
 __pycache__/
 .pytest_cache/
 *.py[cod]
 *.egg-info/
+/build/
 /catvba_refactor/build/
 /catvba_refactor/dist/
+/user_data.json

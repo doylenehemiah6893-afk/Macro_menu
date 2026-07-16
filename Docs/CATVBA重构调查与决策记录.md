@@ -10,7 +10,7 @@
 >
 > 目标环境：CATIA V5-6R2018（R28/B28）、VBA7 64 位 Windows
 >
-> 当前阶段：用户已书面确认恢复总架构与四份子规格；离线 Build Kit 实施计划已编写，等待选择执行方式；项目仍为 NO-GO，G0-G7 状态未因文档批准而提升
+> 当前阶段：A 环境 Build Kit、Core、evidence harness 与本地 Discovery bundle 已实施；环境复刻修订和远端发布仍在进行。项目仍为 NO-GO，G2-G7 均 BLOCKED。
 
 本文记录本轮重构开始前已经完成的调查过程、证据边界、独立复核结果和用户确认的设计决策。它不是“当前 CATVBA 已经修复”的证明，也不替代 R2018 目标机的编译、运行和许可证验收。
 
@@ -207,7 +207,9 @@ p-code 的正式结论必须来自：干净 B28 工程导入、Compile、保存�
 
 ### 3.8 离线测试现状
 
-当前仓库没有可收集的自动化测试，因此“离线可测试”仍是目标而不是现状。当前已经完成的是静态规则和二进制取证；尚未形成版本化、可在 CI 中重复执行的测试套件。
+本段原始调查时仓库没有可收集的自动化测试；该事实现已被后续实施取代。当前已有版本化 pytest、Linux/Windows
+repro workflow、双构建/verifier、resume/doctor、target collector 与 evidence harness。最新已提交测试数和 evidence
+identity 只在 `Docs/STATUS.md` 与 process record 维护；这些离线测试仍不证明 CATIA。
 
 离线工具未来至少要覆盖：
 
@@ -433,7 +435,30 @@ Eligible = (AB3 OR HD2 OR MD2) AND SPA AND FTA
 
 该批准使设计状态从 DRAFT 变为 APPROVED，并授权编写分阶段实施计划；它不等于已经执行计划、生成
 Build Kit/CATVBA、完成 CATIA Compile 或通过任何许可证/发布门禁。第一份计划只覆盖 A 环境离线
-Build Kit 工具链，见 [`2026-07-13-catvba-offline-build-kit.md`](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)；Core Runtime、B28/Fleet 验证和 intake 执行继续使用各自独立计划。开始实现前仍需选择 Subagent-Driven 或 Inline Execution。
+Build Kit 工具链，见 [`2026-07-13-catvba-offline-build-kit.md`](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)；Core Runtime、B28/Fleet 验证和 intake 执行继续使用各自独立计划。当前执行状态统一由 `CURRENT_DEVELOPMENT_PLAN.md` 跟踪，不依赖外部 agent skill 或执行模式名称。
+
+### DR-015：批准 B28 evidence harness 与 Discovery operator bundle
+
+**状态：已批准并完成 A 环境实现，2026-07-14 至 2026-07-16。**
+
+用户批准原生 Windows Python 3.12、禁止 WSL/PowerShell/GUI 自动化、raw/untrusted 回传、A 环境 Gate/approval/seal、
+确定性 Kit/bundle 与完整目标机教程。Task 1–11 已在本地完成；这不等于 B28、Compile、Reference 或发布通过。
+
+### DR-016：稳定开发环境与时效性交付授权分层
+
+**状态：已批准实施，2026-07-16。**
+
+Development bootstrap/doctor 只验证完整 Git、cutoff、Python/uv/lock、受管源码和 immutable bundle bytes；Delivery
+doctor 额外严格验证 ledger freshness、handoff expiry/revocation。时效控制失效只阻止 B28 操作，不得使长期开发环境和
+CI 假失败。Windows checkout 必须保持受哈希文件 bytes，`.venv` 与本机配置不得入库。
+
+### DR-017：仓库内不依赖外部 agent skills 或 IDE persona
+
+**状态：已批准实施，2026-07-16。**
+
+移除 tracked Antigravity/Gemini/Cursor 伪指令和全局 GBK 配置；历史计划只保留任务设计，不再要求不存在的命名 skill。
+当前规格、任务进度和复刻命令分别由 `CURRENT_DEVELOPMENT_SPEC.md`、`CURRENT_DEVELOPMENT_PLAN.md` 和
+`ENVIRONMENT_REPRODUCTION.md` 维护。
 
 ---
 
@@ -475,11 +500,12 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 
 ## 7. 已批准后仍待执行或现场确认的内容
 
-1. 离线 Build Kit 实施计划已编写，等待选择执行方式，尚未创建真实 manifest/schema/Python 实现；
-2. Core Runtime、B28/Fleet 和 upstream intake 需要各自日期化实施计划；
-3. Production 安装根、宏库注册和跨 CATVBA 调用仍由 B28 spike/现场证据确认；
-4. 危险操作事务模型、现场调试版与正式版差异继续留在后续安全计划；
-5. 在 G0-G7 对应证据完成前，不得把设计批准描述为 CATIA、许可证、试点或发布通过。
+1. Build Kit、initial intake、Core MVP、evidence harness 与本地 Discovery operator bundle 已完成 A 环境实现；
+2. 当前正在完成跨平台 fresh-clone 修订、新 evidence/delivery cycle 与文档同步；
+3. 本地分支尚未 fast-forward 推送 GitHub，Linux/Windows CI 与 GitHub fresh clone 未取得远端证据；
+4. Production 安装根、宏库注册和跨 CATVBA 调用仍由 B28 spike/现场证据确认；
+5. 危险操作事务模型、现场调试版与正式版差异继续留在后续安全计划；
+6. 在 G2-G7 对应证据完成前，不得把设计或 A 环境实现描述为 CATIA、许可证、试点或发布通过。
 
 设计批准是实施输入，不是运行证据。
 
@@ -527,3 +553,6 @@ Core 内可以按 Assembly、Part、Drawing 组织代码和菜单，但这些业
 | 2026-07-13 | 以 DR-012 固定完整仓库拓扑、唯一工作分支和唯一根 Python project/lock |
 | 2026-07-13 | 以 DR-013 确认 `(AB3 OR HD2 OR MD2) AND SPA AND FTA`，并将 SPA/FTA 改为默认但物理隔离的 Fleet 包 |
 | 2026-07-13 | 以 DR-014 记录用户批准恢复总架构和四份子规格，并进入离线 Build Kit 实施计划阶段 |
+| 2026-07-16 | 以 DR-015 记录 B28 evidence harness、Discovery operator bundle 规格批准和 Task 1–11 本地完成 |
+| 2026-07-16 | 以 DR-016 拆分稳定 Development 环境与时效性 Delivery 授权，修复跨平台 fresh clone 合同 |
+| 2026-07-16 | 以 DR-017 移除无效 agent/skill/IDE 配置，建立当前规格、计划和环境复刻唯一入口 |

@@ -1,6 +1,6 @@
 # CATVBA Offline Build Kit Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **历史执行状态：** A 环境离线 Build Kit 已实施。本文件保留原始任务/RED-GREEN 设计；未勾选框不代表当前未完成。执行只依赖仓库内命令和测试，不依赖外部命名 skill；当前进度见 `Docs/CURRENT_DEVELOPMENT_PLAN.md`。
 
 **Goal:** 在无 CATIA 的 A 环境实现可复算、fail-closed 的 CATVBA 源码清点、解析、政策检查、确定性 Build Kit 和回传 CATVBA 只读审计工具链。
 
@@ -1197,7 +1197,7 @@ git commit -m "docs: record offline build kit verification"
 
 ## Final Verification Gate
 
-Before reporting implementation complete, invoke `superpowers:verification-before-completion` and run fresh commands:
+Before reporting implementation complete, run the following repository-native verification commands from a fresh environment:
 
 ```bash
 uv sync --frozen

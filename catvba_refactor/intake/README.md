@@ -10,7 +10,7 @@
 `merge_commit=null`、`merge_reason=initial-baseline/no-content-intake`，并将 changed paths、
 override decisions 和 superseded Kit IDs 记录为空。
 
-经批准的证据 record 规划存放在 `catvba_refactor/intake/records/`；本目录当前没有 baseline
-record。此证据 schema 和未来 record 都不属于四份 Build Kit input manifest，也不得为了建立
+经批准的首次证据 record 已存放在 `catvba_refactor/intake/records/2026-07-13-initial-baseline.json`，并由
+bootstrap/state 精确绑定其 SHA-256。此证据 schema 和未来 record 都不属于四份 Build Kit input manifest，也不得为了建立
 baseline 而改动这些 manifest。未来 upstream 出现内容变化时，必须采用新的 record type/schema，
 并按 approved intake spec §7 生成两父 merge commit。

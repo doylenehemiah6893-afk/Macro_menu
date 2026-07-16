@@ -12,9 +12,9 @@
 
 本文是当前状态与上下文恢复入口。详细事实以 Git 文件、固定哈希和目标机证据为准。
 
-开发续作唯一入口为仓库根 `RESUME.md` 与 `resume/state.json`。当前唯一下一动作是
-`run-b28-discovery`；已签发的 active bundle/Kit/handoff、摘要、expiry 与 revocation 状态均由
-`resume/state.json`、`artifacts/b28-discovery/CURRENT.json` 和 fresh ledger 交叉绑定。
+开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。当前优先动作是
+完成环境复刻修复的新 evidence/delivery cycle 并同步远端；B28 Discovery 在新的 fresh delivery control 签发前暂停。
+机器状态已经回到 `next_action=complete-evidence-implementation` / `revocation_status=preparation`；旧 delivery record 只作历史审计，不能继续用于 B28。
 
 ## 1. 立即停止条件
 
@@ -37,14 +37,16 @@
 | SPA/FTA | 目标机保证权益；物理隔离为默认部署 Fleet Extensions |
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
+| 本地/远端 | 审查基线 local=`2e3be74`、remote=`037ab406`，本地领先 22 commits；本轮 preparation 修订尚未提交/推送，远端 fresh clone 不可取得当前实现 |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
 | 实施计划 | 离线 Build Kit、baseline intake、Core Runtime MVP 和 B28 evidence harness 的 A 环境实现已完成 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | 当前 evidence 提交 `68022541...` 的冻结测试为 1659 passed、19 条第三方 deprecation warnings；均非 CATIA 证据 |
-| active discovery bundle | `bundle-ab5205f4f37e8ec467a9800a`，canonical provenance SHA-256 `ab5205f4f37e8ec467a9800afb986bc2290ae7235820d38423cfde2b7c89d895` |
-| active Kit / handoff | `kit-e93a2e7f48c3f4d2f179` / `handoff-b8d9d535604e78551423`；expires `2026-07-23T11:11:06Z`，仅在 ledger fresh/active 时可用 |
+| 离线测试 | 本轮工作树已完成 1664 passed、19 条第三方 deprecation warnings；提交后还需 fresh-clone 复核；均非 CATIA 证据 |
+| active discovery bundle | 无；`resume/state.json.active_bundle_path=null`，CURRENT 已移除，旧 bundle 仅为历史记录 |
+| active Kit / handoff | 无；ledger active 集为空，上一 handoff 已列入 withdrawn；重新签发前 G1=`BLOCKED`，B28 不得执行 |
+| 环境复刻修订 | Windows autocrlf、时效性 doctor 耦合、uv 前置校验、无效 agent/IDE 配置和文档漂移已修复，正在形成新 evidence commit |
 | 当前仓库 CLI | 离线 Build Kit/audit/handoff 命令与 target evidence 命令均已具备；已生成确定性 discovery raw skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
@@ -57,6 +59,9 @@
 
 ## 4. 设计入口
 
+- [当前开发规格](CURRENT_DEVELOPMENT_SPEC.md)
+- [当前开发计划](CURRENT_DEVELOPMENT_PLAN.md)
+- [环境复刻与仓库同步](ENVIRONMENT_REPRODUCTION.md)
 - [恢复总架构](superpowers/specs/2026-07-13-catvba-r2018-recovery-design.md)
 - [离线 Build Kit](superpowers/specs/2026-07-13-catvba-offline-build-kit-design.md)
 - [Core Runtime MVP](superpowers/specs/2026-07-13-catvba-core-runtime-mvp-design.md)
@@ -74,8 +79,8 @@
 
 | Gate | 状态 | 原因 |
 |---|---|---|
-| G0 INPUT-FROZEN | `PASS` | 批准 cutoff 与 A 环境离线输入合同已冻结；active bundle 绑定其 evidence commit/tree |
-| G1 KIT-READY | `PASS` | 已取得并双构建验证的 active Kit/bundle；这仍只是 A 环境离线证据 |
+| G0 INPUT-FROZEN | `PASS` | 批准 cutoff 与 A 环境离线输入合同已冻结 |
+| G1 KIT-READY | `BLOCKED` | 当前处于 preparation；需要从新 evidence commit 双构建并重新签发 Kit/bundle |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -83,21 +88,20 @@
 | G6 SECURITY-PILOT-READY | `BLOCKED` | 缺回传审计、安全包装、试点和回滚 |
 | G7 RELEASE-APPROVED | `BLOCKED` | 缺全部上游门和正式审批 |
 
-此处 G0/G1 `PASS` 仅由固定 Git 输入、生成收据和可复算的离线 Kit 支撑。它们不是 CATIA
+G0 `PASS` 只说明固定 Git 输入仍被接受；G1 在新 bundle 完成前保持 `BLOCKED`。两者都不是 CATIA
 Compile、References、许可证 checkout、UI 或运行通过。
 
-## 6. 当前公开 Discovery bundle（可取得，但不是 CATIA PASS）
+## 6. 上一份 Discovery bundle（历史/暂停，不是 active，也不是 CATIA PASS）
 
-公开路径为
-`artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/`；`CURRENT.json` 固定指向 canonical
-provenance SHA-256 `ab5205f4f37e8ec467a9800afb986bc2290ae7235820d38423cfde2b7c89d895`，外部 active ledger 的 captured_at
-为 `2026-07-16T11:12:07Z`。bundle 内含 Kit ZIP、collector pyz、哈希、handoff、教程和 sanitized offline receipt；完整
+上一份本地 Git 路径为
+`artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/`；其已删除的历史 CURRENT 曾固定指向 canonical
+provenance SHA-256 `ab5205f4f37e8ec467a9800afb986bc2290ae7235820d38423cfde2b7c89d895`。当前 ledger 在
+`2026-07-16T14:59:50Z` 清空 active 集并将该 handoff 列入 withdrawn。bundle 内含 Kit ZIP、collector pyz、哈希、handoff、教程和 sanitized offline receipt；完整
 构建记录见 `Docs/process/2026-07-16-b28-discovery-operator-bundle-build.md`。
 
-仅当 `handoff-b8d9d535604e78551423` 未过期、未撤回、在 ledger active 集中且 ledger 不超过 24 小时，B28 才能按
-bundle 内 `QUICKSTART_B28.md` 以原生 Windows `cmd.exe` 和 CPython 3.12 进行人工 raw Discovery。不得使用 WSL、
-PowerShell、uv 或自动化 CATIA/VBE/DSLS。离线包不能证明后续没有被撤回；任何时间/摘要/状态问题都停止并从本分支
-重新取得 control 文件。
+由于当前 `resume/state.json` 已进入 preparation，CURRENT 已移除且 ledger 已撤回 handoff，该 bundle 不再是活动选择，
+B28 不得执行。即使历史 handoff 的名义 expiry 尚未到达，也不能绕过 state 或重写 ledger 复活它。新 bundle 签发后仍只允许
+原生 Windows `cmd.exe` 和 CPython 3.12；不得使用 WSL、PowerShell、uv 或自动化 CATIA/VBE/DSLS。
 
 这不是 Compile、References、DSLS checkout、运行、G2/G3 或 release 通过。bundle 固定
 `compile_status=not-run`、target cases=`not-run`、`artifact_status=not-produced`、`release_eligible=false`。
@@ -109,10 +113,10 @@ PowerShell、uv 或自动化 CATIA/VBE/DSLS。离线包不能证明后续没有�
 `42447cc3ae72d657f76be39355fa134230b1ff28`。本次状态文档提交发生在构建之后，不是被构建的输入；Kit、handoff、
 revocation snapshot 和 session skeleton 均在仓库外的隔离临时根中，未进入 Git，实际 bytes 当前不可取得。
 因此本节只作为历史 receipt 摘要，不是 active artifact。`handoff-6ed312ee18b254cb3c13` 在本轮 preparation 中
-按 withdrawn 处理，不能因历史 expiry 尚未到达而恢复。当前 active bundle/Kit/handoff 以
-`resume/state.json` 和上一节的公开控制文件为准。
+按 withdrawn 处理，不能因历史 expiry 尚未到达而恢复。当前没有 active bundle/Kit/handoff，以
+`resume/state.json` 和上一节的公开撤回控制为准。
 
-### 6.1 离线 Gate 与 Build Kit
+### 7.1 离线 Gate 与 Build Kit
 
 | 项目 | 精确结果 |
 |---|---|
@@ -133,7 +137,7 @@ Core contract 为 `discovery-required`，allowlist 为空；Kit 中 `catvba_arti
 独立复核者实际检查了四份 verifier 报告、完整目录比较、ZIP/sidecar 和 Git object，结论无
 Critical/Important，复核记录 ID 为 `record.a-env-review.2c3d501`。
 
-### 6.2 历史签发时唯一的 discovery handoff
+### 7.2 历史签发时唯一的 discovery handoff
 
 签发前 canonical revocation snapshot 的 SHA-256 为
 `05de64cfc8e35e4f3aa5cd1fccf9e9e9571196cb8630c8b7241c783d7e51ddb8`，`active_handoff_ids=[]`、
@@ -151,7 +155,7 @@ Critical/Important，复核记录 ID 为 `record.a-env-review.2c3d501`。
 
 输出根中恰好生成一份 handoff JSON；本任务没有创建 formal handoff。
 
-### 6.3 确定性 discovery session skeleton
+### 7.3 确定性 discovery session skeleton
 
 使用同一 Kit/handoff、`mode=discovery`、`package=core`、`profile=DISCOVERY`、session ID
 `session-20260715-discovery-2c3d501` 和 `created_at=2026-07-15T09:05:00Z` 在两个独立输出根初始化。
@@ -179,7 +183,7 @@ References、许可证 checkout、Compile、运行或发布。
 `2645033a25e770fe9855b67e05bdefce42bc1c6a`，而不是后续只更改文档的提交。该提交 tree 为
 `0b283db266ad7fd7ddcbaec992cea2f273f52032`。构建输出位于临时目录，不进入 Git。
 
-### 7.1 结果与身份
+### 8.1 结果与身份
 
 | 项目 | 结果 |
 |---|---|
@@ -195,7 +199,7 @@ References、许可证 checkout、Compile、运行或发布。
 | 确定性 | 双构建的 Kit ID、catalog bytes、manifest SHA、ZIP SHA 和 ZIP bytes 全部相同 |
 | verifier | 构建 1 目录/ZIP、构建 2 目录/ZIP：4/4 `ok=true`、零 diagnostics |
 
-### 7.2 精确内容
+### 8.2 精确内容
 
 manifest 精确批准 13 个固定 candidate component 和 2 个 tool；generator 再加入 3 个确定生成
 component，因而 checked/built catalog 共 16 个 component。Form 是一个 component，
@@ -213,7 +217,7 @@ Core staging 不含上游 legacy、第二回合、Fleet、Optional、Office、VB
 component。Catalog 保留物理隔离的 `fleet-spa`/`fleet-fta` package 政策记录，但它们的 import-order
 为空且没有扩展 component 进入 Core Kit。
 
-### 7.3 实际命令与临时路径
+### 8.3 实际命令与临时路径
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv sync --frozen
@@ -233,7 +237,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run macro-menu-build verify-kit /tmp/macro-menu-co
 `/tmp/macro-menu-core-2645033-receipt-2.X2CkWj.json`。另行用 `cmp --silent`/`jq -er` 比较上述五项
 确定性身份，均 exit 0。
 
-### 7.4 证据上限
+### 8.4 证据上限
 
 target-test-plan 共 30 个 case，全部 `status=not-run`；`compile_status=not-run`、
 `target_build_required=true`、`release_eligible=false`。本工作区没有 CATIA，因此不得从静态 VBA 源码、
@@ -260,11 +264,9 @@ Python PASS 或已验证 Kit 推导 CATIA Compile、References、许可证、UI�
 
 ## 10. 当前下一动作
 
-唯一下一动作是 `run-b28-discovery`：在 handoff 到期前、ledger fresh 且 active 时，B28 操作员只按
-`artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/QUICKSTART_B28.md` 在批准的 blank VM 上人工采集
-raw/untrusted Discovery。不得使用旧的 withdrawn handoff，不得运行 CATIA 自动化、Compile 或 target cases。回传后先在
-A 环境校验 hash、严格 ingest 和独立脱敏复核；只有真实五点 Reference observation 被封存后，才可评估 formal contract
-和后续 G2/G3-C，当前 Gate 不升级。
+按 `CURRENT_DEVELOPMENT_PLAN.md` 完成环境复刻修订、完整验证、新 evidence commit、新 bundle/handoff/ledger、delivery
+record 和远端 fast-forward push。推送后通过 Linux/Windows CI 和第二 GitHub fresh clone，才恢复 B28 操作窗口。不得复用
+旧 handoff、自动化 CATIA、Compile 或 target cases。当前 Gate 不升级。
 
 ## 11. 外部阻塞
 
@@ -274,3 +276,4 @@ A 环境校验 hash、严格 ingest 和独立脱敏复核；只有真实五点 R
 - 脱敏测试数据；
 - 企业签名/ACL、制品库、审批人和证据保留；
 - Production 安装根、宏库注册、试点和回滚流程。
+- GitHub HTTPS/SSH/gh 推送凭据；凭据只能配置在仓库外。

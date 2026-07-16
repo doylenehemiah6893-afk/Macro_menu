@@ -50,7 +50,31 @@ def _stdlib_preflight(repo_root: Path, state_path: Path) -> None:
         or state.get("lock_digest") != lock_digest
     ):
         raise SystemExit("bootstrap state identity or lock digest is invalid")
+    _stdlib_uv_preflight(state.get("uv_requirement"))
     _stdlib_git_preflight(repo_root, state_path, state)
+
+
+def _stdlib_uv_preflight(requirement: object) -> None:
+    """Reject an unpinned uv before it can create or mutate the project venv."""
+
+    if type(requirement) is not str:
+        raise SystemExit("bootstrap uv requirement is invalid")
+    try:
+        result = subprocess.run(
+            ["uv", "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={
+                name: os.environ[name]
+                for name in ("PATH", "SYSTEMROOT")
+                if name in os.environ
+            },
+        )
+    except OSError as error:
+        raise SystemExit("bootstrap requires the pinned uv") from error
+    if result.returncode or result.stdout.strip() != requirement:
+        raise SystemExit("bootstrap requires the pinned uv")
 
 
 def _sync_dependencies(repo_root: Path) -> None:
@@ -185,7 +209,8 @@ def _stdlib_git_preflight(
         if head != evidence:
             changed = _git(repo_root, "diff", "--name-only", evidence, head).splitlines()
             if any(
-                not path.startswith(("Docs/", "artifacts/", "resume/"))
+                path != "RESUME.md"
+                and not path.startswith(("Docs/", "artifacts/", "resume/"))
                 for path in changed
             ):
                 raise SystemExit("bootstrap delivery commits changed implementation inputs")

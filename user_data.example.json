@@ -1,0 +1,7 @@
+{
+  "ver": "0.0.6",
+  "REPLACE_WITH_LOCAL_CATVBA_PATH": {
+    "name": "CAT_MENU",
+    "path": "REPLACE_WITH_LOCAL_SOURCE_DIRECTORY"
+  }
+}

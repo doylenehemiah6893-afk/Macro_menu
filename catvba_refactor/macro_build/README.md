@@ -11,6 +11,9 @@ Python 代码属于根 `macro-menu` 项目，不在本目录建立第二个 `pyp
 macro-menu-build inventory [--worktree]
 macro-menu-build check [--worktree]
 macro-menu-build build-kit
+macro-menu-build doctor --state <state.json> --scope development|delivery
+macro-menu-build create-discovery-skeleton --output-root <dir>
+macro-menu-build build-operator-bundle <primary-build-root> --compare-build-root <second-build-root> ... --output-root <dir>
 macro-menu-build verify-kit <kit-directory-or-zip>
 macro-menu-build audit-catvba <returned.catvba> --expect <kit-manifest.json> [--package <package-id>]
 macro-menu-build create-target-handoff <primary-build-root> --compare-build-root <second-build-root> ... --output-root <dir>
@@ -48,7 +51,7 @@ bytes 不进入 JSON。
 - mutating target 命令必须显式给出 `--output-root`，不会修改 Kit、handoff 或 capture。
 
 当前 clone 已由独立 intake 流程接受精确 cutoff 并原子建立本地 `refs/heads/dev`；仓库已有获批 Core
-candidate、可复算的历史 G0/G1 Kit 证据和完整 evidence harness。下一步仍须从当前干净提交生成新的
-discovery Kit/handoff，再到 B28 采集真实证据。不得回退 `HEAD`、猜测 remote 或自动写 fork `main/dev`。
+candidate、可复算的 G0/G1 Kit 证据、完整 evidence harness 和本地 Discovery bundle。环境复刻修订后必须从新的
+evidence commit 重新签发，推送并通过两平台 fresh-clone，才可到 B28 采集真实证据。不得回退 `HEAD`、猜测 remote 或自动写 fork `main/dev`。
 这些工具不调用 CATIA，不执行 VBA，也不能产生 Compile、References、许可证或 UI 事实；未有真实目标证据前
 始终保持 `compile_status=not-run`、`release_eligible=false`。

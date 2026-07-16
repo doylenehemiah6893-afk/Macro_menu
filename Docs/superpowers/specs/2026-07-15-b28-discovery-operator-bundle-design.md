@@ -4,7 +4,7 @@
 >
 > 目标分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 >
-> 当前基线：`f20ad755d28f3b3f2ec15a781a0d23a6ebee1bd9`
+> 批准时设计基线：`f20ad755d28f3b3f2ec15a781a0d23a6ebee1bd9`；当前 evidence/delivery 身份见 `resume/state.json` 和 `Docs/STATUS.md`
 >
 > 批准 intake cutoff：`abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`
 >
@@ -13,6 +13,9 @@
 > 资格条件：`(AB3 OR HD2 OR MD2) AND SPA AND FTA`
 
 ## 1. 目的
+
+> 2026-07-16 实施叠加：Task 1–11 已在本地完成；当前正在按 `Docs/CURRENT_DEVELOPMENT_SPEC.md` 修复
+> 跨平台 fresh-clone 与 Development/Delivery 分层，之后必须重新签发。Task 12 仍被远端认证阻断。
 
 本设计把现有 Core Build Kit 和 target-evidence harness 转化为一个能在原生 Windows B28 目标机使用的
 Discovery 操作包，并使完整 Git clone 能在新开发环境恢复到可继续工作的状态。
