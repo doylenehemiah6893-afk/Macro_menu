@@ -26,13 +26,14 @@ from .canonical import (
     canonical_json_bytes,
     parse_canonical_json_bytes,
 )
+from .constants import MAX_RAW_SOURCE_MEMBERS
 
 
 MAX_CONTROL_BYTES = 4 * 1024 * 1024
 MAX_SKELETON_BYTES = 64 * 1024 * 1024
 MAX_MEMBER_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_MEMBER_BYTES = 128 * 1024 * 1024
-MAX_MEMBER_COUNT = 1024
+MAX_MEMBER_COUNT = MAX_RAW_SOURCE_MEMBERS
 LEDGER_MAX_AGE = timedelta(hours=24)
 LEDGER_FIELDS = frozenset(
     {"schema_version", "captured_at", "source", "active_handoff_ids", "withdrawn_handoff_ids"}

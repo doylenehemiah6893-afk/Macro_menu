@@ -5,6 +5,7 @@ import errno
 import os
 import secrets
 import stat
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
@@ -746,7 +747,10 @@ def _read_directory(
 
 
 def _zip_metadata_diagnostics(
-    archive: zipfile.ZipFile, infos: tuple[zipfile.ZipInfo, ...]
+    archive: zipfile.ZipFile,
+    infos: tuple[zipfile.ZipInfo, ...],
+    *,
+    phase: EvidencePhase,
 ) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     if archive.comment:
@@ -808,10 +812,12 @@ def _zip_metadata_diagnostics(
                     "ZIP directory and non-regular entries are forbidden",
                 )
             )
-        elif stat.S_IMODE(mode) != 0o644:
+        expected_mode = 0o444 if phase is EvidencePhase.RAW else 0o644
+        if stat.S_ISREG(mode) and stat.S_IMODE(mode) != expected_mode:
             diagnostics.append(
                 _diagnostic(
-                    "EVIDENCE_ZIP_MODE", path, "ZIP entry mode must be POSIX 0644"
+                    "EVIDENCE_ZIP_MODE", path,
+                    f"ZIP entry mode must be POSIX {expected_mode:04o}",
                 )
             )
         if info.create_system != 3:
@@ -894,7 +900,7 @@ def _read_zip_bytes(
     try:
         with zipfile.ZipFile(BytesIO(data), "r") as archive:
             infos = tuple(archive.infolist())
-            diagnostics = _zip_metadata_diagnostics(archive, infos)
+            diagnostics = _zip_metadata_diagnostics(archive, infos, phase=phase)
             if diagnostics:
                 return _snapshot_failure(
                     diagnostics, container_sha256=container_sha256
@@ -941,7 +947,9 @@ def _read_zip_bytes(
 
     stable_files = tuple(captured)
     try:
-        canonical_bytes = canonical_evidence_zip_bytes(dict(stable_files))
+        canonical_bytes = canonical_evidence_zip_bytes(
+            dict(stable_files), _mode=(0o444 if phase is EvidencePhase.RAW else 0o644)
+        )
     except EvidenceError:
         canonical_bytes = b""
     if data != canonical_bytes:
@@ -1156,6 +1164,66 @@ def read_evidence_container(
     )
 
 
+def read_raw_evidence_container(
+    path: os.PathLike[str] | str,
+) -> EvidenceContainerSnapshot:
+    """Re-snapshot a canonical raw ZIP from a private A-environment root."""
+
+    try:
+        absolute = _absolute_path(path)
+        observed = os.lstat(absolute)
+    except _ContainerFault as fault:
+        return _snapshot_failure([_diagnostic(fault.code, fault.path, fault.message)])
+    except OSError:
+        return _snapshot_failure([_diagnostic(
+            "RAW_CAPTURE_ZIP_REQUIRED", str(path), "raw capture must be one regular ZIP",
+        )])
+    if (
+        Path(absolute).suffix.casefold() != ".zip"
+        or not stat.S_ISREG(observed.st_mode)
+        or stat.S_ISLNK(observed.st_mode)
+        or observed.st_nlink != 1
+    ):
+        return _snapshot_failure([_diagnostic(
+            "RAW_CAPTURE_ZIP_REQUIRED", absolute, "raw capture must be one regular ZIP",
+        )])
+    try:
+        data, _absolute = _read_regular_path(absolute)
+    except _ContainerFault as fault:
+        return _snapshot_failure([_diagnostic(fault.code, fault.path, fault.message)])
+    snapshot = _read_zip_bytes(
+        data,
+        phase=EvidencePhase.RAW,
+        nesting_depth=0,
+        container_sha256=sha256_bytes(data),
+    )
+    if snapshot.diagnostics:
+        return snapshot
+    digest = snapshot.container_sha256
+    with tempfile.TemporaryDirectory(prefix="macro-menu-raw-") as temporary:
+        root = Path(temporary)
+        os.chmod(root, 0o700)
+        for relative, data in snapshot.files:
+            target = root.joinpath(*relative.split("/"))
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            descriptor = os.open(target, _FILE_CREATE_FLAGS, 0o600)
+            try:
+                _write_all(descriptor, data)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        extracted = _read_directory(root, phase=EvidencePhase.RAW, nesting_depth=0)
+    if extracted.diagnostics:
+        return extracted
+    return EvidenceContainerSnapshot(
+        files=extracted.files,
+        directories=extracted.directories,
+        container_sha256=digest,
+        diagnostics=(),
+        directory_identities=extracted.directory_identities,
+    )
+
+
 def _validated_file_items(
     files: Mapping[str, bytes],
 ) -> tuple[tuple[str, bytes], ...]:
@@ -1228,7 +1296,11 @@ def canonical_payload_manifest(
     return manifest, sha256_bytes(manifest), members
 
 
-def canonical_evidence_zip_bytes(files: Mapping[str, bytes]) -> bytes:
+def canonical_evidence_zip_bytes(
+    files: Mapping[str, bytes], *, _mode: int = 0o644
+) -> bytes:
+    if _mode not in {0o444, 0o644}:
+        raise EvidenceError("EVIDENCE_ZIP_MODE_INVALID")
     items = _validated_file_items(files)
     output = BytesIO()
     with zipfile.ZipFile(
@@ -1238,7 +1310,7 @@ def canonical_evidence_zip_bytes(files: Mapping[str, bytes]) -> bytes:
         for path, data in items:
             info = zipfile.ZipInfo(path, (1980, 1, 1, 0, 0, 0))
             info.create_system = 3
-            info.external_attr = (stat.S_IFREG | 0o644) << 16
+            info.external_attr = (stat.S_IFREG | _mode) << 16
             info.compress_type = zipfile.ZIP_STORED
             info.extra = b""
             info.comment = b""

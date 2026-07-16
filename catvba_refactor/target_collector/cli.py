@@ -13,6 +13,7 @@ from .records import (
     record_entitlements,
     record_environment,
 )
+from .finalize import RawFinalizeResult, finalize_raw
 from .workspace import CollectorResult, init_capture, preflight, status
 
 
@@ -49,10 +50,13 @@ def _parser() -> argparse.ArgumentParser:
     operator_command.add_argument("--category", choices=(
         "session", "environment", "entitlement", "reference", "review", "state", "other"
     ), required=True)
+    finalize_command = commands.add_parser("finalize-raw")
+    finalize_command.add_argument("--capture", type=Path, required=True)
+    finalize_command.add_argument("--output-root", type=Path, required=True)
     return parser
 
 
-def _document(result: CollectorResult) -> dict[str, object]:
+def _document(result: CollectorResult | RawFinalizeResult) -> dict[str, object]:
     return {
         "ok": result.ok,
         "exit_code": result.exit_code,
@@ -87,7 +91,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = record_entitlements(args.capture, args.input)
     elif args.command == "import-reference-csv":
         result = import_reference_csv(args.capture, point=args.point, source=args.input)
-    else:
+    elif args.command == "add-operator-record":
         result = add_operator_record(args.capture, source=args.input, category=args.category)
+    else:
+        result = finalize_raw(args.capture, args.output_root)
     print(json.dumps(_document(result), ensure_ascii=True, sort_keys=True, separators=(",", ":")))
     return result.exit_code

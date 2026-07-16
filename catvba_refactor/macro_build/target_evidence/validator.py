@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Mapping
+
+from jsonschema import Draft202012Validator
+
+from ...target_collector.canonical import CollectorError
+from ...target_collector.raw_validation import (
+    REQUIRED_DOCUMENTS as RAW_REQUIRED_DOCUMENTS,
+    validate_raw_capture_files,
+)
 
 from ..canonical import (
     CanonicalJsonError,
@@ -27,6 +37,7 @@ from .container import (
     _read_zip_bytes,
     canonical_payload_manifest,
     read_evidence_container,
+    read_raw_evidence_container,
 )
 from .kit_binding import KitEvidenceBinding, load_kit_evidence_binding
 from .model import EvidencePhase, TargetEvidenceReport
@@ -1611,6 +1622,17 @@ def validate_target_evidence(
                 ),
             ),
         )
+    if stable_phase is EvidencePhase.RAW:
+        return TargetEvidenceReport(
+            phase=stable_phase,
+            session_id=None,
+            evidence_payload_digest=None,
+            payload_members=(),
+            diagnostics=(_diagnostic(
+                "TARGET_EVIDENCE_PHASE_INVALID", "phase",
+                "formal evidence validation cannot consume raw transports",
+            ),),
+        )
     if (
         type(nesting_depth) is not int
         or nesting_depth < 0
@@ -1643,3 +1665,203 @@ def validate_target_evidence(
         schema_dir=schema_dir,
         nesting_depth=nesting_depth,
     ).report
+
+
+_RAW_MANIFEST_FIELDS = frozenset({
+    "schema_version", "session_id", "created_at", "trust_level", "mode",
+    "package_id", "profile_id", "bundle_id", "kit_id", "handoff_id",
+    "compile_status", "target_case_status", "artifact_status",
+    "release_eligible", "members",
+})
+_RAW_REQUIRED = RAW_REQUIRED_DOCUMENTS | {"raw-capture-manifest.json", "SHA256SUMS"}
+
+
+def _raw_report(
+    diagnostics: list[Diagnostic],
+    *,
+    session_id: str | None = None,
+    digest: str | None = None,
+    members: tuple[Any, ...] = (),
+) -> TargetEvidenceReport:
+    stable = tuple(sorted(set(diagnostics)))
+    return TargetEvidenceReport(
+        phase=EvidencePhase.RAW,
+        session_id=session_id if not stable else None,
+        evidence_payload_digest=digest if not stable else None,
+        payload_members=members if not stable else (),
+        diagnostics=stable,
+    )
+
+
+def _validate_raw_snapshot(snapshot: EvidenceContainerSnapshot) -> TargetEvidenceReport:
+    """Ingest raw/untrusted Discovery transport without computing a Gate.
+
+    Collector documents intentionally remain distinct from formal evidence
+    schemas.  This function validates their transport and immutable Discovery
+    boundaries; a subsequent explicit mapping step is required before calling
+    :func:`validate_target_evidence` with ``EvidencePhase.CAPTURE``.
+    """
+
+    boundary = _snapshot_boundary_diagnostics(snapshot)
+    if snapshot.diagnostics or boundary:
+        return _raw_report([*snapshot.diagnostics, *boundary])
+    files = dict(snapshot.files)
+    diagnostics: list[Diagnostic] = []
+    for path in sorted(_RAW_REQUIRED - files.keys()):
+        diagnostics.append(_diagnostic(
+            "TARGET_EVIDENCE_REQUIRED_FILE", path, "required raw member is missing",
+        ))
+    for path in sorted(files):
+        folded = path.casefold()
+        if (
+            folded in {"session_complete", "approval.json", "gate-receipt.json"}
+            or folded.startswith("returned-catvba/")
+        ):
+            diagnostics.append(_diagnostic(
+                "TARGET_EVIDENCE_SEAL_FORBIDDEN", path,
+                "raw capture cannot contain a seal, decision or returned CATVBA",
+            ))
+        if path not in _RAW_REQUIRED and not path.startswith("operator-records/"):
+            diagnostics.append(_diagnostic(
+                "TARGET_EVIDENCE_FILE_POLICY", path,
+                "raw capture contains an undeclared member",
+            ))
+
+    documents: dict[str, Any] = {}
+    governance_json = RAW_REQUIRED_DOCUMENTS | {"raw-capture-manifest.json"}
+    for path, data in sorted(files.items()):
+        if path in governance_json:
+            try:
+                documents[path] = parse_canonical_json_bytes(data)
+            except CanonicalJsonError:
+                diagnostics.append(_diagnostic(
+                    "TARGET_EVIDENCE_JSON_INVALID", path,
+                    "raw JSON is not strict canonical JSON",
+                ))
+    try:
+        shared_documents = validate_raw_capture_files(files, controls=True)
+    except CollectorError as error:
+        diagnostics.append(_diagnostic(
+            error.code, error.detail or "files",
+            "raw capture violates the shared target/A-environment semantic contract",
+        ))
+    else:
+        documents.update(shared_documents)
+
+    manifest = _mapping(documents.get("raw-capture-manifest.json"))
+    if manifest is None or frozenset(manifest) != _RAW_MANIFEST_FIELDS:
+        diagnostics.append(_diagnostic(
+            "RAW_CAPTURE_MANIFEST_INVALID", "raw-capture-manifest.json",
+            "raw manifest is missing or has an unknown field",
+        ))
+    else:
+        schema_path = Path(__file__).parents[2] / "schemas" / "raw-capture-manifest.schema.json"
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            schema_errors = sorted(
+                Draft202012Validator(
+                    schema, format_checker=Draft202012Validator.FORMAT_CHECKER
+                ).iter_errors(manifest),
+                key=lambda error: tuple(str(part) for part in error.absolute_path),
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+            schema_errors = [None]
+        for error in schema_errors:
+            pointer = "" if error is None else "/" + "/".join(
+                str(part) for part in error.absolute_path
+            )
+            diagnostics.append(_diagnostic(
+                "RAW_CAPTURE_MANIFEST_INVALID",
+                f"raw-capture-manifest.json#{pointer}",
+                "raw manifest violates its governed schema",
+            ))
+        fixed = {
+            "schema_version": 1, "trust_level": "raw-untrusted",
+            "mode": "discovery", "package_id": "core", "profile_id": "DISCOVERY",
+            "compile_status": "not-run", "target_case_status": "not-run",
+            "artifact_status": "not-produced", "release_eligible": False,
+        }
+        for key, expected in fixed.items():
+            if manifest.get(key) != expected:
+                code = "DISCOVERY_COMPILE_FORBIDDEN" if key == "compile_status" else "RAW_CAPTURE_MANIFEST_INVALID"
+                diagnostics.append(_diagnostic(
+                    code, f"raw-capture-manifest.json#/{key}",
+                    "raw boundary invariant mismatch",
+                ))
+        expected_members = [
+            {"path": path, "sha256": sha256_bytes(data), "size": len(data)}
+            for path, data in sorted(snapshot.files)
+            if path != "raw-capture-manifest.json"
+        ]
+        if manifest.get("members") != expected_members:
+            diagnostics.append(_diagnostic(
+                "RAW_CAPTURE_MANIFEST_MISMATCH", "raw-capture-manifest.json#/members",
+                "raw manifest does not exactly cover every non-self member",
+            ))
+
+    expected_checksum = "".join(
+        f"{sha256_bytes(data)}  {path}\n"
+        for path, data in sorted(snapshot.files)
+        if path not in {"SHA256SUMS", "raw-capture-manifest.json"}
+    ).encode("ascii")
+    if files.get("SHA256SUMS") != expected_checksum:
+        diagnostics.append(_diagnostic(
+            "RAW_CAPTURE_CHECKSUM_MISMATCH", "SHA256SUMS",
+            "raw checksum file does not cover the observation payload",
+        ))
+
+    session = _mapping(documents.get("session.json"))
+    if session is None:
+        diagnostics.append(_diagnostic(
+            "TARGET_EVIDENCE_REQUIRED_FILE", "session.json", "raw session is missing",
+        ))
+    else:
+        if manifest is not None:
+            for key in ("session_id", "created_at", "bundle_id", "kit_id", "handoff_id"):
+                if manifest.get(key) != session.get(key):
+                    diagnostics.append(_diagnostic(
+                        "RAW_CAPTURE_IDENTITY_MISMATCH", f"raw-capture-manifest.json#/{key}",
+                        "raw manifest identity differs from the session",
+                    ))
+    if "compile-result.json" in documents:
+        compile_document = _mapping(documents["compile-result.json"])
+        _discovery_compile_diagnostics(
+            {
+                "binding": {},
+                "records": compile_document.get("records") if compile_document is not None else None,
+            },
+            diagnostics,
+        )
+    if diagnostics:
+        return _raw_report(diagnostics)
+
+    payload = {
+        path: data for path, data in files.items()
+        if path not in {"SHA256SUMS", "raw-capture-manifest.json"}
+    }
+    try:
+        _manifest_bytes, digest, members = canonical_payload_manifest(payload)
+    except EvidenceError:
+        return _raw_report([_diagnostic(
+            "TARGET_EVIDENCE_FILE_POLICY", "files", "raw payload namespace is invalid",
+        )])
+    session_id = session.get("session_id") if session is not None else None
+    return _raw_report(
+        [],
+        session_id=session_id if type(session_id) is str else None,
+        digest=digest,
+        members=members,
+    )
+
+
+def validate_raw_capture(
+    evidence: os.PathLike[str] | str,
+) -> TargetEvidenceReport:
+    """Validate only one authenticated regular ``.zip`` raw transport path."""
+
+    if isinstance(evidence, EvidenceContainerSnapshot) or not isinstance(evidence, (str, os.PathLike)):
+        return _raw_report([_diagnostic(
+            "RAW_CAPTURE_ZIP_REQUIRED", "evidence",
+            "production raw ingestion accepts only a regular ZIP path",
+        )])
+    return _validate_raw_snapshot(read_raw_evidence_container(evidence))

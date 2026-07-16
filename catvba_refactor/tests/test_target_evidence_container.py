@@ -18,8 +18,10 @@ from catvba_refactor.macro_build.target_evidence.container import (
     canonical_payload_manifest,
     publish_evidence_artifacts,
     read_evidence_container,
+    read_raw_evidence_container,
 )
 from catvba_refactor.macro_build.target_evidence.model import EvidencePhase
+from catvba_refactor.target_collector.constants import MAX_RAW_ZIP_MEMBERS
 
 
 FILES = {
@@ -88,6 +90,24 @@ def test_payload_manifest_is_canonical_path_sorted_and_independent() -> None:
     assert manifest == expected
     assert digest == sha256_bytes(expected)
     assert [member.path for member in members] == ["a.txt", "z.txt"]
+
+
+def test_raw_is_a_distinct_container_phase() -> None:
+    assert EvidencePhase.RAW.value == "raw"
+    assert EvidencePhase.RAW is not EvidencePhase.SEALED
+    assert container.MAX_EVIDENCE_ENTRIES == MAX_RAW_ZIP_MEMBERS == 512
+
+
+def test_raw_reader_rejects_directory_and_symlink_before_parsing(tmp_path: Path) -> None:
+    directory = tmp_path / "unpacked"
+    directory.mkdir()
+    assert _codes(read_raw_evidence_container(directory)) == {"RAW_CAPTURE_ZIP_REQUIRED"}
+
+    archive = tmp_path / "capture.zip"
+    archive.write_bytes(b"not used through link")
+    linked = tmp_path / "linked.zip"
+    linked.symlink_to(archive)
+    assert _codes(read_raw_evidence_container(linked)) == {"RAW_CAPTURE_ZIP_REQUIRED"}
 
 
 @pytest.mark.parametrize(

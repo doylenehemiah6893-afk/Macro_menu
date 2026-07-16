@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import stat
+import tempfile
 import unicodedata
 from collections.abc import Mapping
 from contextlib import contextmanager
@@ -829,6 +830,7 @@ def record_environment(capture: Path, source: object) -> CollectorResult:
             raise CollectorError("COLLECTOR_ENVIRONMENT_FORBIDDEN")
         output = _raw_envelope()
         output.update({"windows": windows, "catia": catia, "vba": vba, "pollution_scan": pollution})
+        validate_environment_document(output)
         _write_exclusive(capture / "environment.json", output)
     except CollectorError as error:
         return _failure(error)
@@ -895,6 +897,7 @@ def record_entitlements(capture: Path, source: object) -> CollectorResult:
             }
         output = _raw_envelope()
         output.update({"qualification_expression": QUALIFICATION_EXPRESSION, "licenses": licenses})
+        validate_entitlements_document(output)
         _write_exclusive(capture / "entitlements.json", output)
     except CollectorError as error:
         return _failure(error)
@@ -1043,7 +1046,7 @@ def import_reference_csv(capture: Path, *, point: str, source: object) -> Collec
             try:
                 current_bytes = _read_bounded_file(path)
                 expected_sha256 = hashlib.sha256(current_bytes).hexdigest()
-                document = _validate_references_document(
+                document = validate_references_document(
                     parse_canonical_json_bytes(current_bytes)
                 )
             except CollectorError as error:
@@ -1219,6 +1222,79 @@ def _validate_review_bindings(
             raise CollectorError("COLLECTOR_REDACTION_REVIEW_INVALID")
         digests.append(record["sha256"])
     return digests
+
+
+def validate_environment_document(document: Mapping[str, object]) -> None:
+    """Pure strict validation for a recorded B28 environment document."""
+    _validate_raw_envelope(document, frozenset({"windows", "catia", "vba", "pollution_scan"}), "COLLECTOR_CAPTURE_INVALID")
+    windows = _exact_mapping(document.get("windows"), frozenset({"edition", "build", "architecture"}))
+    catia = _exact_mapping(document.get("catia"), frozenset({"release", "revision", "build"}))
+    vba = _exact_mapping(document.get("vba"), frozenset({"generation", "win64"}))
+    pollution = _exact_mapping(document.get("pollution_scan"), frozenset({"B30", "x86", "VBA6", "Temp", "user-profile"}))
+    if (
+        type(windows.get("edition")) is not str or not windows["edition"]
+        or type(windows.get("build")) is not str or not windows["build"]
+        or windows.get("architecture") != "Win64"
+        or catia != {"release": "V5-6R2018", "revision": "R28", "build": "B28"}
+        or vba != {"generation": "VBA7", "win64": True}
+        or any(value != "absent" for value in pollution.values())
+    ):
+        raise CollectorError("COLLECTOR_ENVIRONMENT_FORBIDDEN")
+
+
+def validate_entitlements_document(document: Mapping[str, object]) -> None:
+    """Pure strict validation for the five recorded license observations."""
+    _validate_raw_envelope(document, frozenset({"qualification_expression", "licenses"}), "COLLECTOR_CAPTURE_INVALID")
+    licenses = document.get("licenses")
+    if (
+        document.get("qualification_expression") != QUALIFICATION_EXPRESSION
+        or type(licenses) is not dict or set(licenses) != set(LICENSE_IDS)
+        or len(licenses) != len(LICENSE_IDS)
+    ):
+        raise CollectorError("COLLECTOR_LICENSE_SET_INVALID")
+    for value in licenses.values():
+        if (
+            type(value) is not dict or frozenset(value) != {"availability", "checkout"}
+            or value.get("availability") not in ALLOWED_AVAILABILITY
+            or value.get("checkout") not in ALLOWED_CHECKOUT
+            or (value.get("checkout") == "observed-checked-out" and value.get("availability") != "observed-available")
+            or (value.get("availability") == "observed-unavailable" and value.get("checkout") != "not-checked-out")
+        ):
+            raise CollectorError("COLLECTOR_LICENSE_OBSERVATION_INVALID")
+
+
+def validate_references_document(document: object) -> dict[str, object]:
+    """Public pure validator shared by finalization and ingestion."""
+    return _validate_references_document(document)
+
+
+def validate_operator_index_files(files: Mapping[str, bytes]) -> None:
+    """Validate the index against exactly its supplied bounded member bytes."""
+    with tempfile.TemporaryDirectory(prefix="macro-menu-operator-index-") as temporary:
+        root = Path(temporary)
+        for path, data in files.items():
+            if not path.startswith("operator-records/"):
+                continue
+            target = root.joinpath(*PurePosixPath(path).parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("xb") as stream:
+                stream.write(data)
+
+        document, _digest = _operator_index(root / "operator-records" / "index.json")
+    records = document.get("records")
+    if type(records) is not list:
+        raise CollectorError("COLLECTOR_OPERATOR_INDEX_INVALID")
+    declared = {"operator-records/index.json"}
+    for record in records:
+        if type(record) is not dict or type(record.get("relative_path")) is not str:
+            raise CollectorError("COLLECTOR_OPERATOR_INDEX_INVALID")
+        relative = record["relative_path"]
+        declared.add(relative)
+        if record.get("media_type") == "image":
+            member = PurePosixPath(relative)
+            declared.add(str(member.with_name(member.stem + ".redaction-review.json")))
+    if {path for path in files if path.startswith("operator-records/")} != declared:
+        raise CollectorError("COLLECTOR_OPERATOR_INDEX_INVALID")
 
 
 @_locked_mutation

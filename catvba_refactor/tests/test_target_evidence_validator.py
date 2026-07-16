@@ -23,8 +23,45 @@ from catvba_refactor.macro_build.target_evidence.model import (
 from catvba_refactor.macro_build.target_evidence.validator import (
     TargetEvidenceInspection,
     environment_fingerprint,
+    validate_raw_capture,
     validate_target_evidence,
 )
+
+
+def test_a_environment_rejects_untrusted_snapshot_object() -> None:
+    snapshot = EvidenceContainerSnapshot(
+        files=(("session.json", canonical_json_bytes({
+            "schema_version": 1,
+            "trust_level": "raw-untrusted",
+            "mode": "discovery",
+            "compile_status": "passed",
+            "target_case_status": "not-run",
+            "artifact_status": "not-produced",
+            "release_eligible": False,
+        })),),
+        directories=(),
+        container_sha256=None,
+        diagnostics=(),
+    )
+
+    report = validate_raw_capture(snapshot)
+
+    assert report.phase is EvidencePhase.RAW
+    assert "RAW_CAPTURE_ZIP_REQUIRED" in {
+        diagnostic.code for diagnostic in report.diagnostics
+    }
+
+
+def test_formal_validator_rejects_raw_phase_with_stable_code() -> None:
+    report = validate_target_evidence(
+        EvidenceContainerSnapshot((), (), None, ()),
+        _kit(formal=False),
+        phase=EvidencePhase.RAW,
+        schema_dir=SCHEMA_DIR,
+    )
+    assert {item.code for item in report.diagnostics} == {
+        "TARGET_EVIDENCE_PHASE_INVALID"
+    }
 
 
 SCHEMA_DIR = Path(__file__).parents[1] / "schemas" / "target_evidence"

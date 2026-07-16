@@ -5,6 +5,7 @@ from ..model import Diagnostic
 
 
 class EvidencePhase(StrEnum):
+    RAW = "raw"
     CAPTURE = "capture"
     SEALED = "sealed"
 
