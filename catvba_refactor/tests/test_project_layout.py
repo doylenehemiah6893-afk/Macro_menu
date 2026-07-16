@@ -1,9 +1,12 @@
+from datetime import UTC, datetime
+import hashlib
 from pathlib import Path
 import json
 import re
 import subprocess
 import tomllib
 
+from catvba_refactor.macro_build import resume
 from catvba_refactor.macro_build.resume import load_resume_state
 
 ROOT = Path(__file__).parents[2]
@@ -87,7 +90,8 @@ def test_target_bundle_document_sources_and_cmd_wrapper_exist() -> None:
     assert "2026-07-15-catvba-b28-discovery-operator-bundle.md" not in docs_index
     assert "b28-target/README_TARGET_B28.md" in status
     assert "b28-target/README_TARGET_B28.md" in resume
-    assert "complete-evidence-implementation" in status
+    state = load_resume_state(ROOT / "resume/state.json", ROOT / "catvba_refactor/schemas")
+    assert state["next_action"] in status
     assert "resume/state.json" in resume
     runbook = (
         ROOT / "Docs/runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md"
@@ -113,13 +117,65 @@ def test_target_bundle_document_sources_and_cmd_wrapper_exist() -> None:
 def test_resume_state_matches_schema_and_never_claims_release() -> None:
     state = load_resume_state(ROOT / "resume/state.json", ROOT / "catvba_refactor/schemas")
     assert state["release_eligible"] is False
-    assert state["active_bundle_path"] is None
-    assert state["evidence_commit"] is None
-    assert state["evidence_tree"] is None
-    assert state["delivery_parent_commit"] is None
-    assert state["last_full_test_count"] is None
-    assert state["revocation_status"] == "preparation"
-    assert state["next_action"] == "complete-evidence-implementation"
+    assert isinstance(state["next_action"], str) and state["next_action"]
+    if state["active_bundle_path"] is None:
+        assert state["evidence_commit"] is None
+        assert state["evidence_tree"] is None
+        assert state["delivery_parent_commit"] is None
+        assert state["last_full_test_count"] is None
+        assert state["bundle_digest"] is None
+        assert state["active_kit_id"] is None
+        assert state["kit_zip_digest"] is None
+        assert state["active_handoff_id"] is None
+        assert state["handoff_digest"] is None
+        assert state["expiry"] is None
+        assert state["last_reproducibility_receipt"] is None
+        assert state["next_action"] == "complete-evidence-implementation"
+        assert state["revocation_status"] == "preparation"
+    else:
+        bundle = ROOT / state["active_bundle_path"]
+        assert bundle.is_dir()
+        assert state["active_bundle_path"].startswith("artifacts/b28-discovery/bundles/bundle-")
+        assert state["evidence_commit"] is not None
+        assert state["evidence_tree"] is not None
+        assert state["delivery_parent_commit"] == state["evidence_commit"]
+        assert isinstance(state["last_full_test_count"], int) and state["last_full_test_count"] > 0
+        for key in (
+            "bundle_digest", "active_kit_id", "kit_zip_digest", "active_handoff_id",
+            "handoff_digest", "expiry", "last_reproducibility_receipt",
+        ):
+            assert state[key] is not None
+        receipt = ROOT / state["last_reproducibility_receipt"]
+        assert receipt.is_file()
+        assert receipt.is_relative_to(bundle / "receipts")
+        assert state["revocation_status"] in {"active", "withdrawn", "expired", "unavailable"}
+        provenance_bytes = (bundle / "provenance.json").read_bytes()
+        provenance = json.loads(provenance_bytes)
+        handoff_bytes = (bundle / "handoff.json").read_bytes()
+        handoff = json.loads(handoff_bytes)
+        assert hashlib.sha256(provenance_bytes).hexdigest() == state["bundle_digest"]
+        assert bundle.name == "bundle-" + state["bundle_digest"][:24]
+        assert provenance["kit_id"] == state["active_kit_id"]
+        assert provenance["kit_zip_sha256"] == state["kit_zip_digest"]
+        assert provenance["handoff_id"] == state["active_handoff_id"]
+        assert hashlib.sha256(handoff_bytes).hexdigest() == state["handoff_digest"]
+        assert handoff["handoff_id"] == state["active_handoff_id"]
+        assert handoff["expires_at"] == provenance["handoff_expires_at"] == state["expiry"]
+        assert json.loads((ROOT / "artifacts/b28-discovery/CURRENT.json").read_text("utf-8")) == {
+            "schema_version": 1,
+            "bundle_id": bundle.name,
+            "bundle_sha256": state["bundle_digest"],
+            "handoff_id": state["active_handoff_id"],
+        }
+        ledger = json.loads(
+            (ROOT / "artifacts/b28-discovery/active-handoff-ledger.json").read_text("utf-8")
+        )
+        assert ledger["source"] == provenance["active_ledger_source"]
+        if state["revocation_status"] == "active":
+            assert state["active_handoff_id"] in ledger["active_handoff_ids"]
+            assert state["active_handoff_id"] not in ledger["withdrawn_handoff_ids"]
+            observed_at = datetime.fromisoformat(ledger["captured_at"].replace("Z", "+00:00")).astimezone(UTC)
+            assert not resume._active_delivery_diagnostics(ROOT, state, observed_at)
     assert state["gate_statuses"]["G2"] == "BLOCKED"
     assert all(state["gate_statuses"][f"G{number}"] == "BLOCKED" for number in range(2, 8))
     raw = json.loads((ROOT / "resume/state.json").read_text("utf-8"))
