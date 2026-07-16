@@ -1,7 +1,7 @@
 # B28 Discovery Operator Bundle 实施审查记录
 
 日期：2026-07-16  
-记录：`record.task10-implementation-review.381bf7c`、`record.task11-skeleton-contract.760896d`  
+记录：`record.task10-implementation-review.381bf7c`、`record.task11-skeleton-contract.760896d`
 范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..760896da2b0a2e0c5c4928480f5a37ed1e0e1331`
 
 ## 结论
