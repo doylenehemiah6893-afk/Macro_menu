@@ -570,7 +570,11 @@ def test_every_schema_accepts_a_canonical_document(schemas, filename: str) -> No
 
 
 def test_public_model_enums_and_reports_are_frozen_and_dictionary_free() -> None:
-    assert tuple(EvidencePhase) == (EvidencePhase.CAPTURE, EvidencePhase.SEALED)
+    assert tuple(EvidencePhase) == (
+        EvidencePhase.RAW,
+        EvidencePhase.CAPTURE,
+        EvidencePhase.SEALED,
+    )
     assert [item.value for item in SessionMode] == ["discovery", "g2", "g3-c"]
     assert [item.value for item in GateId] == ["DISCOVERY", "G2", "G3-C"]
     assert [item.value for item in ComputedOutcome] == ["eligible", "fail", "blocked"]

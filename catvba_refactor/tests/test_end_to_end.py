@@ -12,8 +12,14 @@ import pytest
 
 from catvba_refactor.macro_build import cli
 from catvba_refactor.macro_build.canonical import canonical_json_bytes, sha256_bytes
+from catvba_refactor.macro_build.handoff import (
+    issue_target_handoff as _issue_target_handoff,
+)
 from catvba_refactor.macro_build.reference_contract import (
     reference_contract_body_digest,
+)
+from catvba_refactor.macro_build.target_evidence.session import (
+    init_target_session as _init_target_session,
 )
 from catvba_refactor.macro_build.target_evidence.validator import (
     environment_fingerprint,
@@ -210,6 +216,27 @@ def _write_revocations(
     return path
 
 
+def _write_active_ledger(
+    path: Path,
+    *,
+    captured_at: str,
+    active: list[str],
+    withdrawn: list[str],
+) -> Path:
+    path.write_bytes(
+        canonical_json_bytes(
+            {
+                "schema_version": 1,
+                "captured_at": captured_at,
+                "source": "repository-active-handoff-ledger",
+                "active_handoff_ids": active,
+                "withdrawn_handoff_ids": withdrawn,
+            }
+        )
+    )
+    return path
+
+
 def _tree_bytes(root: Path) -> dict[str, bytes]:
     return {
         path.relative_to(root).as_posix(): path.read_bytes()
@@ -327,6 +354,28 @@ def _complete_synthetic_capture(
                 "operator_record_id": record_id,
             }
             add_record(record_id, "entitlement")
+        documents["entitlements.json"]["licenses"] = {
+            "AB3": {
+                "availability": "observed-available",
+                "checkout": "observed-checked-out",
+            },
+            "HD2": {
+                "availability": "observed-unavailable",
+                "checkout": "not-checked-out",
+            },
+            "MD2": {
+                "availability": "observed-unavailable",
+                "checkout": "not-checked-out",
+            },
+            "SPA": {
+                "availability": "observed-available",
+                "checkout": "observed-checked-out",
+            },
+            "FTA": {
+                "availability": "observed-available",
+                "checkout": "observed-checked-out",
+            },
+        }
         reference_record = "record-synthetic-reference-point-01"
         documents["references.json"]["points"][0].update(
             status="observed",
@@ -784,18 +833,6 @@ def test_candidate_kit_is_deterministic_and_dirty_tree_fails_closed(
 
     dirty_module = module + b"' diagnostic worktree change\r\n"
     module_path.write_bytes(dirty_module)
-    components_path = repo / "catvba_refactor" / "config" / "components.json"
-    components = json.loads(components_path.read_text(encoding="utf-8"))
-    module_record = next(
-        record
-        for record in components["components"]
-        if record["source_id"] == "core.safe-module"
-    )
-    module_record["members"][0]["raw_sha256"] = hashlib.sha256(
-        dirty_module
-    ).hexdigest()
-    _write_json(components_path, components)
-
     dirty_output = tmp_path / "dirty output"
     return_code, error, stdout, stderr = _invoke_json(
         capsys,
@@ -828,19 +865,48 @@ def test_candidate_kit_is_deterministic_and_dirty_tree_fails_closed(
             "--worktree",
         ],
     )
-    assert return_code == 0
+    assert return_code == 3
     assert stdout and not stderr
-    assert checked["ok"] is True
+    assert checked["ok"] is False
     assert checked["formal_eligible"] is False
     assert checked["mode"] == "worktree"
+    assert [item["code"] for item in checked["diagnostics"]] == [
+        "MEMBER_BINDING_MISMATCH"
+    ]
     assert not {"kit_id", "kit_dir", "zip_path"} & checked.keys()
 
 
 def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise only synthetic offline evidence; never promote target status."""
+    handoff_times = iter(("2026-07-14T10:30:00Z", "2026-07-14T14:00:00Z"))
+    session_times = {
+        "session-synthetic-discovery": "2026-07-14T12:00:00Z",
+        "session-synthetic-g2": "2026-07-14T15:00:00Z",
+        "session-synthetic-g3-c": "2026-07-14T17:00:00Z",
+    }
+
+    def issue_with_test_clock(*args: Any, **kwargs: Any) -> Any:
+        fixed_time = next(handoff_times)
+        return _issue_target_handoff(
+            *args,
+            **kwargs,
+            _clock=lambda: fixed_time,
+        )
+
+    def init_with_test_time(*args: Any, **kwargs: Any) -> Any:
+        session_id = kwargs["session_id"]
+        return _init_target_session(
+            *args,
+            **kwargs,
+            created_at=session_times[session_id],
+        )
+
+    monkeypatch.setattr(cli, "issue_target_handoff", issue_with_test_clock)
+    monkeypatch.setattr(cli, "init_target_session", init_with_test_time)
     repo, _module_path, _module = _create_fixture_repository(tmp_path)
     discovery_builds = _build_pair(
         capsys,
@@ -868,8 +934,6 @@ def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
             "record-synthetic-discovery-handoff-prepared",
             "--review-record-id",
             "record-synthetic-discovery-handoff-reviewed",
-            "--created-at",
-            "2026-07-14T10:30:00Z",
             "--expires-at",
             "2026-07-21T10:30:00Z",
             "--output-root",
@@ -877,6 +941,15 @@ def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
         ],
     )
     discovery_handoff_path = Path(discovery_handoff["handoff_path"])
+    assert json.loads(discovery_handoff_path.read_bytes())["created_at"] == (
+        "2026-07-14T10:30:00Z"
+    )
+    discovery_ledger = _write_active_ledger(
+        tmp_path / "discovery active ledger.json",
+        captured_at="2026-07-14T10:31:00Z",
+        active=[discovery_handoff["handoff_id"]],
+        withdrawn=[],
+    )
 
     discovery_runs: list[dict[str, Any]] = []
     for ordinal in (1, 2):
@@ -894,10 +967,10 @@ def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
                 "DISCOVERY",
                 "--handoff",
                 os.fspath(discovery_handoff_path),
+                "--revocation-ledger",
+                os.fspath(discovery_ledger),
                 "--session-id",
                 "session-synthetic-discovery",
-                "--created-at",
-                "2026-07-14T12:00:00Z",
                 "--schema-dir",
                 os.fspath(_SCHEMA_ROOT),
                 "--output-root",
@@ -1073,8 +1146,6 @@ def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
             "record-synthetic-formal-handoff-prepared",
             "--review-record-id",
             "record-synthetic-formal-handoff-reviewed",
-            "--created-at",
-            "2026-07-14T14:00:00Z",
             "--expires-at",
             "2026-07-21T14:00:00Z",
             "--output-root",
@@ -1082,6 +1153,15 @@ def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
         ],
     )
     formal_handoff_path = Path(formal_handoff["handoff_path"])
+    assert json.loads(formal_handoff_path.read_bytes())["created_at"] == (
+        "2026-07-14T14:00:00Z"
+    )
+    formal_ledger = _write_active_ledger(
+        tmp_path / "formal active ledger.json",
+        captured_at="2026-07-14T14:01:00Z",
+        active=[formal_handoff["handoff_id"]],
+        withdrawn=[discovery_handoff["handoff_id"]],
+    )
 
     g2_initialized = _invoke_success(
         capsys,
@@ -1096,10 +1176,10 @@ def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
             "P-AB3",
             "--handoff",
             os.fspath(formal_handoff_path),
+            "--revocation-ledger",
+            os.fspath(formal_ledger),
             "--session-id",
             "session-synthetic-g2",
-            "--created-at",
-            "2026-07-14T15:00:00Z",
             "--schema-dir",
             os.fspath(_SCHEMA_ROOT),
             "--output-root",
@@ -1182,12 +1262,12 @@ def test_synthetic_discovery_g2_and_g3_evidence_workflow_is_deterministic(
             "P-AB3",
             "--handoff",
             os.fspath(formal_handoff_path),
+            "--revocation-ledger",
+            os.fspath(formal_ledger),
             "--prerequisite-evidence",
             g2_bundle["zip_path"],
             "--session-id",
             "session-synthetic-g3-c",
-            "--created-at",
-            "2026-07-14T17:00:00Z",
             "--schema-dir",
             os.fspath(_SCHEMA_ROOT),
             "--output-root",
