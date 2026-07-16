@@ -1,0 +1,66 @@
+# B28 Discovery Operator Bundle 实施审查记录
+
+日期：2026-07-16  
+记录：`record.task10-implementation-review.96a2c07`  
+范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..96a2c078e046ace2c8b2c726db1510680dfdcf9a`
+
+## 结论
+
+Task 1–9 的实现、回归修复与 Task 10 审查已完成到可构建交付候选的状态。实现仍然只是 A 环境离线准备：
+`compile_status=not-run`、target cases=`not-run`、CATVBA=`not-produced`、`release_eligible=false`，G2–G7 均保持
+`BLOCKED`。本记录不是 B28/CATIA、VBE、DSLS、Reference、Compile 或发布通过的声明。
+
+## 固定合同
+
+- 工作分支只为 `codex/dev-review-report`；批准 cutoff 是
+  `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`。当前 `origin/dev`
+  `688911522f88e2283231fb59232ea43edd3174a5` 未被采用。
+- `CURRENT.json.bundle_sha256` 统一表示 canonical `provenance.json` 的 SHA-256；bundle ID 是该摘要的 24 位前缀。
+- `provenance.bundle_content_sha256` 是所有 regular 成员的 canonical member-record digest，固定排除
+  `provenance.json` 与 `SHA256SUMS`；`SHA256SUMS` 再覆盖 provenance 和所有非自身成员。生成器、CI 选择器和原生
+  Windows 采集器以相同顺序验证该闭环。
+- issued state 只有完整的 bundle/Kit/handoff/expiry/receipt 字段集合才有效；doctor、verify-resume 和 CI 选择器均要求
+  CURRENT、handoff、fresh ledger 与 state 绑定同一 active、未撤回、未过期 handoff。
+
+## 已修复的审查问题
+
+1. `bundle_sha256` 曾被目标采集器解释为 provenance 摘要、被 CI 解释为 bundle tree 摘要，真实交付无法双端接受。
+   现已拆分语义，新增实际构建的端到端回归：同一 `CURRENT.json` 同时通过 CI selector 和模拟原生 Windows
+   preflight；篡改 payload 即使重写 `SHA256SUMS` 也被两端拒绝。
+2. B28 preflight 现验证完整 regular tree、portable path、reparse/symlink/hard link、forbidden CATVBA payload、成员数和
+   大小、content digest、全量 checksum、Kit ZIP/sidecar、collector pyz/sidecar、skeleton、handoff 与外部 ledger。
+3. resume state schema 拒绝半激活状态；doctor 要求 state、CURRENT、provenance、handoff、ledger 和 bundle 内 receipt
+   交叉绑定。CI selector 也拒绝缺失、future、stale、withdrawn 或 inactive ledger 以及 expired handoff。
+4. `status` 不再始终建议 `record-environment`，而是报告 environment、entitlements、Reference observation points 和
+   `ready_to_finalize_raw`；它不推导任何 Gate。
+5. bootstrap Git 子进程已禁用 global/system Git configuration 与 replace objects。历史 2026-07-15 操作手册已明确
+   `SUPERSEDED`，所有入口改为 bundle 内 `b28-target/README_TARGET_B28.md` 与 fail-closed `QUICKSTART_B28.md`。
+
+## 验证记录
+
+执行环境：CPython 3.12.13、uv 0.9.25。由于工作容器遗留 `.venv` 是无效的 rsync-munged symlink，验证使用独立
+`/tmp/macro-menu-task10-venv`；这不是仓库文件或目标机缺陷。
+
+已通过的针对性回归包括：
+
+```text
+test_operator_bundle.py                    32 passed
+test_target_collector_workspace.py         44 passed
+test_project_layout.py + test_cli.py      122 passed
+```
+
+最终完整冻结环境测试、`verify_resume.py` 双 Kit 重现、Task 11 双根 operator bundle 构建及全新 clone 验证将继续保留
+各自的机器可读 receipt，并在交付提交中精确引用。本记录本身不写 evidence commit/tree，以避免自引用；Task 11
+将在本记录提交后解析并绑定它们。
+
+## 独立复审
+
+两项独立只读审查覆盖 Windows 文件安全、collector 状态机、bundle/ledger 控制、state/CI、文档和 bootstrap Git 环境。
+初审发现 1 个 Critical 与多项 Important，均已在 `96a2c07` 关闭；最终复审记录将与该提交的完整测试结果一起检查，任何
+新增 Critical/Important 都会阻止 Task 11。
+
+## 仍然禁止与下一步
+
+不得执行 CATIA、VBE、DSLS 或 Compile；不得生成/发布 CATVBA；不得把 raw 当成 sealed evidence。下一步仅是从本记录
+提交生成的 evidence commit 出发，在两个独立输出根重建 Kit、签发新的 discovery handoff、构建 immutable bundle，并
+只把认证后的 public artifact/control 文件纳入 Git。
