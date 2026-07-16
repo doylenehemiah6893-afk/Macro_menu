@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+from types import SimpleNamespace
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -204,9 +205,72 @@ def test_console_help_lists_all_commands() -> None:
         "verify-kit",
         "audit-catvba",
         "doctor",
+        "build-operator-bundle",
         *_TARGET_COMMANDS,
     ):
         assert command in help_text
+
+
+def test_build_operator_bundle_cli_accepts_the_documented_inputs(tmp_path: Path) -> None:
+    args = cli.build_parser().parse_args([
+        "build-operator-bundle", str(tmp_path / "primary"),
+        "--compare-build-root", str(tmp_path / "comparison"),
+        "--handoff", str(tmp_path / "handoff.json"),
+        "--ledger", str(tmp_path / "active-ledger.json"),
+        "--issuance-revocation-snapshot", str(tmp_path / "issuance.json"),
+        "--session-skeleton", str(tmp_path / "skeleton"),
+        "--tutorial-dir", str(tmp_path / "tutorials"),
+        "--run-script", str(tmp_path / "run.cmd"),
+        "--output-root", str(tmp_path / "output"),
+    ])
+
+    assert args.command == "build-operator-bundle"
+    assert args.primary_build_root == tmp_path / "primary"
+    assert args.compare_build_root == tmp_path / "comparison"
+    assert args.output_root == tmp_path / "output"
+
+
+def test_build_operator_bundle_dispatch_uses_exact_repository_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: list[object] = []
+
+    def build(request: object) -> object:
+        captured.append(request)
+        return SimpleNamespace(
+            bundle_id="bundle-" + "1" * 24,
+            bundle_dir=tmp_path / "output" / ("bundle-" + "1" * 24),
+            bundle_sha256="2" * 64,
+            provenance_sha256="2" * 64,
+            pyz_sha256="3" * 64,
+            kit_id="kit-" + "4" * 20,
+            handoff_id="handoff-example",
+            active_ledger_sha256="5" * 64,
+            active_ledger_captured_at="2026-07-15T12:01:00Z",
+            active_ledger_source="repository-active-handoff-ledger",
+        )
+
+    monkeypatch.setattr(cli, "build_operator_bundle", build)
+    handoff = tmp_path / "handoffs" / "handoff.json"
+    result = cli.main([
+        "build-operator-bundle", str(tmp_path / "primary"),
+        "--compare-build-root", str(tmp_path / "comparison"),
+        "--handoff", str(handoff),
+        "--ledger", str(tmp_path / "active-ledger.json"),
+        "--session-skeleton", str(tmp_path / "skeleton"),
+        "--repo-root", str(tmp_path),
+        "--output-root", str(tmp_path / "output"),
+        "--format", "json",
+    ])
+
+    assert result == 0
+    request = captured[0]
+    assert request.issuance_revocation_snapshot == handoff.parent / "revocation-snapshot.json"
+    assert request.tutorials == tmp_path / "Docs" / "runbooks" / "b28-target"
+    assert request.run_script == tmp_path / "scripts" / "run-discovery.cmd"
+    assert json.loads(capsys.readouterr().out)["active_ledger_sha256"] == "5" * 64
 
 
 def test_candidate_build_rejects_external_config_directory(

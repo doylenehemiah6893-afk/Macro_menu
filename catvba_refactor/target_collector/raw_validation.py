@@ -45,6 +45,9 @@ ENVELOPE = {
     "artifact_status": "not-produced",
     "release_eligible": False,
 }
+DISCOVERY_SKELETON_MEMBERS = frozenset({
+    "compile-result.json", "test-results.json", "artifact-manifest.json",
+})
 
 
 def _document(files: Mapping[str, bytes], path: str) -> dict[str, object]:
@@ -171,3 +174,14 @@ def validate_raw_capture_files(files: Mapping[str, bytes], *, controls: bool) ->
     _artifact(documents["artifact-manifest.json"])
     _operator_members(files)
     return documents
+
+
+def validate_discovery_skeleton_files(files: Mapping[str, bytes]) -> None:
+    """Validate the exact bundle-independent documents copied by init-capture."""
+
+    if frozenset(files) != DISCOVERY_SKELETON_MEMBERS:
+        raise CollectorError("COLLECTOR_SKELETON_MEMBER_SET_INVALID")
+    documents = {path: _document(files, path) for path in DISCOVERY_SKELETON_MEMBERS}
+    _compile(documents["compile-result.json"])
+    _tests(documents["test-results.json"])
+    _artifact(documents["artifact-manifest.json"])

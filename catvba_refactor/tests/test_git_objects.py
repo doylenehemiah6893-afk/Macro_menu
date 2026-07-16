@@ -228,6 +228,8 @@ def test_every_git_subprocess_uses_minimal_read_only_offline_environment(
         for name in ("PATH", "SYSTEMROOT")
         if name in os.environ
     } | {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_OPTIONAL_LOCKS": "0",
         "GIT_NO_LAZY_FETCH": "1",
         "GIT_NO_REPLACE_OBJECTS": "1",

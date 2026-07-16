@@ -28,3 +28,6 @@ exclude = ["catvba_refactor.tests*"]
 [tool.pytest.ini_options]
 testpaths = ["catvba_refactor/tests"]
 addopts = "--strict-markers --strict-config"
+
+[tool.setuptools.package-data]
+catvba_refactor = ["schemas/*.json", "schemas/target_evidence/*.json", "templates/target_operator/*"]

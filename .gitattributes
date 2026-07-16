@@ -3,3 +3,5 @@
 *.frm     -text diff=vb
 *.frx     binary
 *.catvba  binary
+*.pyz     binary
+*.zip     binary

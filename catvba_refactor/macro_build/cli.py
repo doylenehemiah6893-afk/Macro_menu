@@ -39,6 +39,7 @@ from .model import (
     ValidationReport,
     VerificationReport,
 )
+from .operator_bundle import OperatorBundleRequest, build_operator_bundle
 from .policy import validate_catalog
 from .resolver import resolve_sources
 from .resume import doctor_repository
@@ -81,6 +82,7 @@ _SCALAR_OPTIONS = frozenset(
         "--mode",
         "--profile",
         "--handoff",
+        "--ledger",
         "--prerequisite-evidence",
         "--session-id",
         "--kit",
@@ -93,6 +95,13 @@ _SCALAR_OPTIONS = frozenset(
         "--approved-at",
         "--approval",
         "--state",
+        "--issuance-revocation-snapshot",
+        "--session-skeleton",
+        "--tutorial-dir",
+        "--run-script",
+        "--generation-record-id",
+        "--test-record-id",
+        "--bundle-review-record-id",
     }
 )
 
@@ -158,6 +167,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="diagnose a fresh-clone resume environment without changing it",
     )
     doctor.add_argument("--state", required=True, type=Path)
+
+    operator_bundle = commands.add_parser(
+        "build-operator-bundle",
+        parents=[common],
+        allow_abbrev=False,
+        help="build a deterministic native-Windows B28 discovery operator bundle",
+    )
+    operator_bundle.add_argument("primary_build_root", type=Path)
+    operator_bundle.add_argument("--compare-build-root", required=True, type=Path)
+    operator_bundle.add_argument("--handoff", required=True, type=Path)
+    operator_bundle.add_argument("--ledger", required=True, type=Path)
+    operator_bundle.add_argument("--issuance-revocation-snapshot", type=Path)
+    operator_bundle.add_argument("--session-skeleton", required=True, type=Path)
+    operator_bundle.add_argument("--tutorial-dir", type=Path)
+    operator_bundle.add_argument("--run-script", type=Path)
+    operator_bundle.add_argument(
+        "--generation-record-id", default="record-bundle-generation"
+    )
+    operator_bundle.add_argument(
+        "--test-record-id", default="record-target-collector-tests"
+    )
+    operator_bundle.add_argument(
+        "--bundle-review-record-id", default="record-bundle-independent-review"
+    )
 
     verify = commands.add_parser(
         "verify-kit",
@@ -945,6 +978,60 @@ def _doctor_command(args: argparse.Namespace) -> int:
     return int(ExitCode.SUCCESS if report.ok else ExitCode.INFRASTRUCTURE)
 
 
+def _build_operator_bundle_command(args: argparse.Namespace) -> int:
+    repo_root = Path(getattr(args, "repo_root", _REPOSITORY_ROOT)).absolute()
+    handoff = Path(args.handoff)
+    issuance = getattr(
+        args,
+        "issuance_revocation_snapshot",
+        None,
+    ) or handoff.parent / "revocation-snapshot.json"
+    tutorials = getattr(
+        args, "tutorial_dir", repo_root / "Docs" / "runbooks" / "b28-target"
+    ) or repo_root / "Docs" / "runbooks" / "b28-target"
+    run_script = getattr(
+        args, "run_script", repo_root / "scripts" / "run-discovery.cmd"
+    ) or repo_root / "scripts" / "run-discovery.cmd"
+    receipt = build_operator_bundle(OperatorBundleRequest(
+        primary_build_root=args.primary_build_root,
+        comparison_build_root=args.compare_build_root,
+        handoff=handoff,
+        active_ledger=args.ledger,
+        issuance_revocation_snapshot=issuance,
+        session_skeleton=args.session_skeleton,
+        output_root=args.output_root,
+        repo_root=repo_root,
+        tutorials=tutorials,
+        run_script=run_script,
+        generation_record_id=args.generation_record_id,
+        test_record_id=args.test_record_id,
+        review_record_id=args.bundle_review_record_id,
+    ))
+    _emit(
+        {
+            "command": args.command,
+            "ok": True,
+            "bundle_id": receipt.bundle_id,
+            "bundle_dir": os.fspath(receipt.bundle_dir),
+            "bundle_sha256": receipt.bundle_sha256,
+            "provenance_sha256": receipt.provenance_sha256,
+            "pyz_sha256": receipt.pyz_sha256,
+            "kit_id": receipt.kit_id,
+            "handoff_id": receipt.handoff_id,
+            "active_ledger_sha256": receipt.active_ledger_sha256,
+            "active_ledger_captured_at": receipt.active_ledger_captured_at,
+            "active_ledger_source": receipt.active_ledger_source,
+            "compile_status": "not-run",
+            "target_case_status": "not-run",
+            "artifact_status": "not-produced",
+            "release_eligible": False,
+            "diagnostics": [],
+        },
+        _format(args),
+    )
+    return int(ExitCode.SUCCESS)
+
+
 def dispatch(args: argparse.Namespace) -> int:
     _reject_external_candidate_configuration(args)
     if args.command == "inventory":
@@ -953,6 +1040,8 @@ def dispatch(args: argparse.Namespace) -> int:
         return _check_command(args)
     if args.command == "build-kit":
         return _build_command(args)
+    if args.command == "build-operator-bundle":
+        return _build_operator_bundle_command(args)
     if args.command == "doctor":
         return _doctor_command(args)
     if args.command == "verify-kit":
@@ -1004,6 +1093,7 @@ def main(argv: list[str] | None = None) -> int:
         "evaluate-target-gate",
         "record-target-approval",
         "pack-target-evidence",
+        "build-operator-bundle",
     }
     if args.command in output_commands and not hasattr(args, "output_root"):
         parser.error(f"{args.command} requires --output-root")
