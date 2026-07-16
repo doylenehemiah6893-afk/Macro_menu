@@ -1,8 +1,8 @@
 # B28 Discovery Operator Bundle 实施审查记录
 
 日期：2026-07-16  
-记录：`record.task10-implementation-review.381bf7c`  
-范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..381bf7c9d2ff8388f918f9af797e7d1c1e377c5f`
+记录：`record.task10-implementation-review.381bf7c`、`record.task11-skeleton-contract.760896d`  
+范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..760896da2b0a2e0c5c4928480f5a37ed1e0e1331`
 
 ## 结论
 
@@ -38,6 +38,12 @@ Task 1–9 的实现、回归修复与 Task 10 审查已完成到可构建交付
 6. 最终复审还确认：`status` 以与 finalizer 相同的完整 raw validator 判定 readiness，已签发 state 能如实保留
    `active`/`withdrawn`/`expired`/`unavailable`，且 doctor/verify-resume 会重算 active bundle content digest、完整
    `SHA256SUMS`、Kit/pyz sidecar；后续撤回或到期不能被误记为 preparation。
+7. 实际交付预演发现 `init-target-session` 的完整 target-evidence 会话与原生 collector 的 raw skeleton 是两个刻意不同的
+   合同：前者包含可信的 `started_at`、session binding 和完整 30-case plan，后者只能包含三个固定 raw/untrusted `not-run`
+   文档。把前者直接放入 bundle 会被 fail-closed raw validator 拒绝。`760896d` 因而新增
+   `macro-menu-build create-discovery-skeleton`；它使用目标 collector 自身的 canonical factory，生成并自校验唯一允许的
+   `compile-result.json`、`test-results.json` 和 `artifact-manifest.json`，拒绝覆盖已有输出。该接口不产生任何 B28 事实，
+   也不替代目标机的 `init-capture`。
 
 ## 验证记录
 
@@ -50,11 +56,15 @@ Task 1–9 的实现、回归修复与 Task 10 审查已完成到可构建交付
 test_operator_bundle.py                    32 passed
 test_target_collector_workspace.py         44 passed
 test_project_layout.py + test_cli.py      122 passed
+test_operator_bundle.py + test_cli.py     145 passed（skeleton contract 修复后）
 ```
 
-最终完整冻结环境测试、`verify_resume.py` 双 Kit 重现、Task 11 双根 operator bundle 构建及全新 clone 验证将继续保留
+最新完整冻结环境测试为 `1659 passed, 19 warnings in 215.66s`。`verify_resume.py` 双 Kit 重现、Task 11 双根 operator
+bundle 构建及全新 clone 验证将继续保留
 各自的机器可读 receipt，并在交付提交中精确引用。本记录本身不写 evidence commit/tree，以避免自引用；Task 11
-将在本记录提交后解析并绑定它们。
+将在本记录提交后解析并绑定它们。当前受控执行容器会在命令间复原一个无效的、被 `.gitignore` 排除的 `.venv`；bootstrap
+在单一进程内已用 CPython 3.12.13 成功重建该环境，完整测试则使用同一冻结的临时 CPython 3.12 环境。该容器行为不是
+仓库内容，也不会作为目标机要求或交付物的一部分。
 
 ## 独立复审
 

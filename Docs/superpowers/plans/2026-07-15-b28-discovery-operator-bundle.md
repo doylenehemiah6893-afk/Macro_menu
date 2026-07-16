@@ -916,17 +916,22 @@ source = repository-active-handoff-ledger
 Issue a new discovery handoff using the production trusted clock and seven-day TTL. Then write a second ledger record whose only active
 ID is the newly returned handoff ID and whose withdrawn set still contains the old ID. Validate both records and the new handoff.
 
-- [ ] **Step 4: Initialize skeleton and build operator bundle**
+- [ ] **Step 4: Initialize raw skeleton and build operator bundle**
 
-Initialize a deterministic Discovery skeleton using:
+Create the bundle-independent raw Discovery skeleton twice with the checked-in factory, and require equal bytes:
 
 ```bash
-SESSION_ID="session-$(date -u +%Y%m%d)-discovery-$(git rev-parse --short=12 "$EVIDENCE_COMMIT")"
+uv run macro-menu-build create-discovery-skeleton --output-root "$OUT/raw-skeleton-1" --format json
+uv run macro-menu-build create-discovery-skeleton --output-root "$OUT/raw-skeleton-2" --format json
+diff -rq "$OUT/raw-skeleton-1" "$OUT/raw-skeleton-2"
 ```
 
-Use `macro-menu-build build-operator-bundle` with both build roots, new handoff, active ledger and skeleton. Build twice into separate
-roots and require identical bundle ID, tree, pyz, Kit ZIP and SHA256SUMS. Run the target collector fixture flow and A-environment raw
-ingestion; computed Discovery result must be exit 7 with `blocked/discovery-only`.
+This skeleton intentionally contains only the three raw/untrusted `not-run` documents copied by target `init-capture`. Do not substitute
+`init-target-session` output: its trusted target-evidence session includes a real `started_at`, a session binding and a richer schema, so
+it is neither byte-deterministic nor valid raw collector input. Use `macro-menu-build build-operator-bundle` with both build roots, new
+handoff, active ledger and `raw-skeleton-1`. Build twice into separate roots and require identical bundle ID, tree, pyz, Kit ZIP and
+SHA256SUMS. Run the target collector fixture flow and A-environment raw ingestion; computed Discovery result must be exit 7 with
+`blocked/discovery-only`.
 
 - [ ] **Step 5: Copy only public artifacts into Git paths**
 
