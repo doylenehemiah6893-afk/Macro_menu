@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/session-complete.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "session_id", "sealed_at", "bundle_content_digest",
+    "evidence_payload_digest", "sha256sums_sha256", "gate_receipt_sha256",
+    "approval_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "session_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/session_id"},
+    "sealed_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
+    "bundle_content_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "evidence_payload_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "sha256sums_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "gate_receipt_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "approval_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"}
+  }
+}

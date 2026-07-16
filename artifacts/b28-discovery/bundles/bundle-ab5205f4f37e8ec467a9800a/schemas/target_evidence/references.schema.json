@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/references.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["binding", "reference_contract_body_digest", "points"],
+  "properties": {
+    "binding": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"},
+    "reference_contract_body_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "points": {
+      "type": "array",
+      "prefixItems": [
+        {"$ref": "#/$defs/blank_project"},
+        {"$ref": "#/$defs/post_form_import"},
+        {"$ref": "#/$defs/post_all_import"},
+        {"$ref": "#/$defs/post_save"},
+        {"$ref": "#/$defs/post_restart"}
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "binding": {"properties": {"session_mode": {"const": "g2"}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "points": {
+            "prefixItems": [
+              true,
+              {"properties": {"status": {"const": "not-run"}}},
+              {"properties": {"status": {"const": "not-run"}}},
+              {"properties": {"status": {"const": "not-run"}}},
+              {"properties": {"status": {"const": "not-run"}}}
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_record_id", "stable_reference_id", "name", "description",
+        "guid", "major", "minor", "source_classification", "missing",
+        "path_kind", "path_basename", "relative_path", "redacted_path",
+        "path_sha256", "architecture", "release_provenance", "operator_record_id"
+      ],
+      "properties": {
+        "observation_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+        "stable_reference_id": {
+          "oneOf": [
+            {"type": "string", "pattern": "^ref\\.[0-9a-f]{32}\\.[0-9]+\\.[0-9]+$"},
+            {"type": "null"}
+          ]
+        },
+        "name": {"type": ["string", "null"], "maxLength": 160},
+        "description": {"type": ["string", "null"], "maxLength": 320},
+        "guid": {"type": ["string", "null"], "pattern": "^\\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\\}$"},
+        "major": {"type": ["integer", "null"], "minimum": 0},
+        "minor": {"type": ["integer", "null"], "minimum": 0},
+        "source_classification": {"enum": ["builtin", "host-default", "package-added", "import-introduced", "unknown"]},
+        "missing": {"type": "boolean"},
+        "path_kind": {"enum": ["catia-install", "windows-install", "system", "user-profile", "temp", "unknown"]},
+        "path_basename": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9._ -]{1,100}$"},
+        "relative_path": {
+          "oneOf": [
+            {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/portable_path"},
+            {"type": "null"}
+          ]
+        },
+        "redacted_path": {"type": ["string", "null"], "pattern": "^<[^>]+>(?:/[A-Za-z0-9._ -]+)*$"},
+        "path_sha256": {"oneOf": [{"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"}, {"type": "null"}]},
+        "architecture": {"enum": ["x64", "x86", "unknown"]},
+        "release_provenance": {"enum": ["B28", "B30", "unknown"]},
+        "operator_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"}
+      }
+    },
+    "point_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["point", "status", "observations", "operator_record_id"],
+      "properties": {
+        "point": {"type": "string"},
+        "status": {"enum": ["not-run", "observed", "blocked", "failed"]},
+        "observations": {"type": "array", "items": {"$ref": "#/$defs/observation"}},
+        "operator_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "not-run"}}},
+          "then": {
+            "properties": {
+              "observations": {"maxItems": 0},
+              "operator_record_id": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "observed"}}},
+          "then": {
+            "properties": {
+              "operator_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"}
+            }
+          }
+        }
+      ]
+    },
+    "blank_project": {"$ref": "#/$defs/point_base", "properties": {"point": {"const": "blank-project"}}},
+    "post_form_import": {"$ref": "#/$defs/point_base", "properties": {"point": {"const": "post-form-import"}}},
+    "post_all_import": {"$ref": "#/$defs/point_base", "properties": {"point": {"const": "post-all-import"}}},
+    "post_save": {"$ref": "#/$defs/point_base", "properties": {"point": {"const": "post-save"}}},
+    "post_restart": {"$ref": "#/$defs/point_base", "properties": {"point": {"const": "post-restart"}}}
+  }
+}

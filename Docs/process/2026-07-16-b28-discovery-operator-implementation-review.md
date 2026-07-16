@@ -79,3 +79,16 @@ bundle 构建及全新 clone 验证将继续保留
 不得执行 CATIA、VBE、DSLS 或 Compile；不得生成/发布 CATVBA；不得把 raw 当成 sealed evidence。下一步仅是从本记录
 提交生成的 evidence commit 出发，在两个独立输出根重建 Kit、签发新的 discovery handoff、构建 immutable bundle，并
 只把认证后的 public artifact/control 文件纳入 Git。
+
+## Task 11 交付结果
+
+上述下一步已由后续 evidence commit `68022541bf8cacd1db012128daf4cdef1048af8d`（tree
+`405f24751ddabecced9b547680e6dbdefdeb80be`）完成。该提交只强化了 preparation/issued lifecycle 的公开状态测试；
+构建输入没有采用浮动 `origin/dev`。两个 Kit 与两个 bundle 输出根均逐字节一致，四种 Kit verifier 均通过。实际 public
+identity、expiry、ledger 与收据路径由 `resume/state.json`、`artifacts/b28-discovery/CURRENT.json` 及
+`Docs/process/2026-07-16-b28-discovery-operator-bundle-build.md` 固定。
+
+这表示 Task 11 的 A 环境交付完成，而不是 B28 执行完成。新 bundle 仍为 Discovery-only：
+`compile_status=not-run`、30 个 target case=`not-run`、CATVBA=`not-produced`、`release_eligible=false`，G2–G7
+仍为 `BLOCKED`。Task 12 只能推送本分支、监控 CI 并以新 clone 复核；现场操作仍必须在 fresh active ledger 与未到期
+handoff 下由人按 bundle 内 Windows `cmd.exe` 快速表执行。

@@ -2,7 +2,7 @@
 
 > 状态：CURRENT
 >
-> 更新日期：2026-07-15
+> 更新日期：2026-07-16
 >
 > 分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 >
@@ -13,7 +13,8 @@
 本文是当前状态与上下文恢复入口。详细事实以 Git 文件、固定哈希和目标机证据为准。
 
 开发续作唯一入口为仓库根 `RESUME.md` 与 `resume/state.json`。当前唯一下一动作是
-`complete-evidence-implementation`；active bundle/Kit/handoff 均为 null，revocation 为 preparation。
+`run-b28-discovery`；已签发的 active bundle/Kit/handoff、摘要、expiry 与 revocation 状态均由
+`resume/state.json`、`artifacts/b28-discovery/CURRENT.json` 和 fresh ledger 交叉绑定。
 
 ## 1. 立即停止条件
 
@@ -41,8 +42,10 @@
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
 | 实施计划 | 离线 Build Kit、baseline intake、Core Runtime MVP 和 B28 evidence harness 的 A 环境实现已完成 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | 当前 clean evidence 提交 `2c3d501e...` 为 1306 passed；历史 Kit 提交 `2645033a...` 为 589 passed，均非 CATIA 证据 |
-| 当前仓库 CLI | 6 个离线 Build Kit/audit/handoff 命令加 5 个 target evidence 命令；已生成确定性 discovery 空 skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
+| 离线测试 | 当前 evidence 提交 `68022541...` 的冻结测试为 1659 passed、19 条第三方 deprecation warnings；均非 CATIA 证据 |
+| active discovery bundle | `bundle-ab5205f4f37e8ec467a9800a`，canonical provenance SHA-256 `ab5205f4f37e8ec467a9800afb986bc2290ae7235820d38423cfde2b7c89d895` |
+| active Kit / handoff | `kit-e93a2e7f48c3f4d2f179` / `handoff-b8d9d535604e78551423`；expires `2026-07-23T11:11:06Z`，仅在 ledger fresh/active 时可用 |
+| 当前仓库 CLI | 离线 Build Kit/audit/handoff 命令与 target evidence 命令均已具备；已生成确定性 discovery raw skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
 ## 3. 遗留证据
@@ -71,8 +74,8 @@
 
 | Gate | 状态 | 原因 |
 |---|---|---|
-| G0 INPUT-FROZEN | `PASS` | 仅表示批准 cutoff 与 A 环境离线输入合同已冻结；当前 operator bundle 尚在 preparation |
-| G1 KIT-READY | `PASS` | 仅表示 A 环境离线构建/验证工具链历史证据；当前无可取得的 active Kit bytes，Task 11 必须重建 |
+| G0 INPUT-FROZEN | `PASS` | 批准 cutoff 与 A 环境离线输入合同已冻结；active bundle 绑定其 evidence commit/tree |
+| G1 KIT-READY | `PASS` | 已取得并双构建验证的 active Kit/bundle；这仍只是 A 环境离线证据 |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -83,15 +86,31 @@
 此处 G0/G1 `PASS` 仅由固定 Git 输入、生成收据和可复算的离线 Kit 支撑。它们不是 CATIA
 Compile、References、许可证 checkout、UI 或运行通过。
 
-## 6. 历史 discovery Kit/handoff A 环境证据（bytes unavailable / withdrawn）
+## 6. 当前公开 Discovery bundle（可取得，但不是 CATIA PASS）
+
+公开路径为
+`artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/`；`CURRENT.json` 固定指向 canonical
+provenance SHA-256 `ab5205f4f37e8ec467a9800afb986bc2290ae7235820d38423cfde2b7c89d895`，外部 active ledger 的 captured_at
+为 `2026-07-16T11:12:07Z`。bundle 内含 Kit ZIP、collector pyz、哈希、handoff、教程和 sanitized offline receipt；完整
+构建记录见 `Docs/process/2026-07-16-b28-discovery-operator-bundle-build.md`。
+
+仅当 `handoff-b8d9d535604e78551423` 未过期、未撤回、在 ledger active 集中且 ledger 不超过 24 小时，B28 才能按
+bundle 内 `QUICKSTART_B28.md` 以原生 Windows `cmd.exe` 和 CPython 3.12 进行人工 raw Discovery。不得使用 WSL、
+PowerShell、uv 或自动化 CATIA/VBE/DSLS。离线包不能证明后续没有被撤回；任何时间/摘要/状态问题都停止并从本分支
+重新取得 control 文件。
+
+这不是 Compile、References、DSLS checkout、运行、G2/G3 或 release 通过。bundle 固定
+`compile_status=not-run`、target cases=`not-run`、`artifact_status=not-produced`、`release_eligible=false`。
+
+## 7. 历史 discovery Kit/handoff A 环境证据（bytes unavailable / withdrawn）
 
 本节精确绑定 clean evidence commit
 `2c3d501eaf017a41d838bf2ce39214fd1291802c` 和 tree
 `42447cc3ae72d657f76be39355fa134230b1ff28`。本次状态文档提交发生在构建之后，不是被构建的输入；Kit、handoff、
 revocation snapshot 和 session skeleton 均在仓库外的隔离临时根中，未进入 Git，实际 bytes 当前不可取得。
 因此本节只作为历史 receipt 摘要，不是 active artifact。`handoff-6ed312ee18b254cb3c13` 在本轮 preparation 中
-按 withdrawn 处理，不能因历史 expiry 尚未到达而恢复。当前 active bundle/Kit/handoff 以 `resume/state.json` 的 null
-为准；Task 11 将创建全新的可追踪 bundle 与 handoff。
+按 withdrawn 处理，不能因历史 expiry 尚未到达而恢复。当前 active bundle/Kit/handoff 以
+`resume/state.json` 和上一节的公开控制文件为准。
 
 ### 6.1 离线 Gate 与 Build Kit
 
@@ -154,7 +173,7 @@ release_eligible = false
 这些结果只证明离线 evidence harness、确定性 discovery Kit/handoff 和空 session skeleton；不证明 B28、
 References、许可证 checkout、Compile、运行或发布。
 
-## 7. 历史 A 环境 Core Kit 证据
+## 8. 历史 A 环境 Core Kit 证据
 
 本记录精确绑定源/证据提交
 `2645033a25e770fe9855b67e05bdefce42bc1c6a`，而不是后续只更改文档的提交。该提交 tree 为
@@ -221,7 +240,7 @@ target-test-plan 共 30 个 case，全部 `status=not-run`；`compile_status=not
 Python PASS 或已验证 Kit 推导 CATIA Compile、References、许可证、UI、运行或发布结论。目标资格
 仍是 `(AB3 OR HD2 OR MD2) AND SPA AND FTA`；SPA/FTA 保持与 Core 物理隔离，其失败隔离证据尚未执行。
 
-## 8. 已完成的早期 A 环境验证
+## 9. 已完成的早期 A 环境验证
 
 | 检查 | 2026-07-13 结果 | 结论边界 |
 |---|---|---|
@@ -239,15 +258,15 @@ Python PASS 或已验证 Kit 推导 CATIA Compile、References、许可证、UI�
 `main/dev`。上述测试未启动 CATIA、未写 CATVBA、未证明 References/API/许可证/UI；始终保持
 `compile_status=not-run`、`release_eligible=false`。
 
-## 9. 当前下一动作
+## 10. 当前下一动作
 
-唯一下一动作是 `complete-evidence-implementation`：完成原生 Windows collector/operator bundle、一键复现、
-Linux/Windows CI 与独立复核，形成 clean evidence commit。随后才能双构建新的 `discovery-required` Kit、签发新的
-handoff、生成仓库可取得的 immutable bundle 和 fresh active ledger。旧 handoff bytes 不可取得并按 withdrawn
-处理，禁止安排现场执行。只有新 bundle 全量验证后才能按 2026-07-15 手册在批准的 blank VM 上执行 Discovery；
-只有回传并封存真实五点 Reference observation 后，才可在 A 环境批准 formal contract 并进入 G2/G3-C。
+唯一下一动作是 `run-b28-discovery`：在 handoff 到期前、ledger fresh 且 active 时，B28 操作员只按
+`artifacts/b28-discovery/bundles/bundle-ab5205f4f37e8ec467a9800a/QUICKSTART_B28.md` 在批准的 blank VM 上人工采集
+raw/untrusted Discovery。不得使用旧的 withdrawn handoff，不得运行 CATIA 自动化、Compile 或 target cases。回传后先在
+A 环境校验 hash、严格 ingest 和独立脱敏复核；只有真实五点 Reference observation 被封存后，才可评估 formal contract
+和后续 G2/G3-C，当前 Gate 不升级。
 
-## 10. 外部阻塞
+## 11. 外部阻塞
 
 - 正式 Windows、R2018 SP/HF、DS VBA/VBE；
 - P-AB3/P-HD2/P-MD2 精确 DSLS entitlement 和隔离方式；
