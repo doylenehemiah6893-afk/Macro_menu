@@ -1,6 +1,6 @@
 # Macro_menu 当前开发计划
 
-状态：CURRENT / corrective evidence cycle in progress / remote publication blocked
+状态：CURRENT / corrective evidence and delivery rebuilt / final clone pending / remote publication blocked
 
 日期：2026-07-16
 
@@ -12,9 +12,9 @@
 |---|---|---|
 | Discovery Task 1–9 | 本地完成 | schema、bootstrap、collector、raw finalizer、bundle builder、教程、CI 已实现 |
 | Task 10 | 本地完成 | 实施审查与回归关闭记录已提交 |
-| Task 11 | 历史本地完成，当前签发已撤回 | public discovery bundle 保留审计；最终 delivery fresh clone 暴露路径解析缺陷后已撤回授权 |
+| Task 11 | 本地重新完成 | quoted-path 修复后已从新 evidence 双构建并签发 public discovery bundle；不是 B28 执行完成 |
 | Task 12 | BLOCKED | 远端仍落后；缺 Git 推送凭据，远端 CI 与 GitHub fresh-clone 未验证 |
-| B28 Discovery | BLOCKED | 当前为 preparation；需完成修正 evidence、新签发、推送并由目标机从仓库重新取得，再人工操作 |
+| B28 Discovery | BLOCKED | 本地 fresh delivery control 已重新签发；需先完成最终 clone、推送并由目标机从仓库重新取得，再人工操作 |
 | G2–G7 | BLOCKED | Compile、References、权益、profile、试点和发布证据均未取得 |
 
 ## 2. 当前复刻与文档治理工作包
@@ -28,14 +28,14 @@
 | R5 | 同步当前规格、计划、状态和各层 README | DONE | 当前入口唯一；旧计划加历史状态；无不存在的 skill 引用；不再声称远端已发布 |
 | R6 | 完整本地验证并形成新 evidence commit | HISTORICAL DONE | `f2c9d8d`、1664 tests、autocrlf evidence clone、inventory/check、双 Kit/四 verifier 全通过 |
 | R7 | 重新构建、签发并提交新 delivery record | WITHDRAWN AFTER CLONE QA | `bundle-6b7518...` 本身双构建一致；最终 delivery clone 因 Git quoted path 误判不能 bootstrap，handoff 已撤回 |
-| R7A | 修复非 ASCII delivery 路径验证并形成新 evidence/delivery | IN PROGRESS | NUL 路径回归与 pre-evidence 1665 tests 已通过；等待 clean evidence、重新签发和最终 clone |
+| R7A | 修复非 ASCII delivery 路径验证并形成新 evidence/delivery | FINAL CLONE PENDING | `4327491`、1665 tests、新 Kit/bundle/handoff 已闭合；等待 delivery commit 的 autocrlf/quotepath fresh clone |
 | R8 | 推送并验证 GitHub | BLOCKED | 需要外部 HTTPS/SSH/gh 认证；仅 fast-forward 本分支；远端 HEAD=本地 HEAD |
 | R9 | Linux/Windows CI 与第二 fresh clone | BLOCKED BY R8 | 两平台 Development 复刻通过；Delivery selector 对过期控制只标 unavailable |
 | R10 | 原生 B28 Discovery | BLOCKED BY R8 | 推送后取得 fresh ledger + 未过期 handoff，再人工完成五点 Reference observation；仍禁止 Compile |
 
 ## 3. 当前执行顺序
 
-1. 完成 NUL 路径修复的 clean evidence、完整测试、双构建、新 handoff/ledger 和最终 local fresh clone。
+1. 提交第二周期 delivery record，并以 `core.autocrlf=true` / `core.quotepath=true` 做最终 local fresh clone。
 2. 取得 GitHub 认证后只 fast-forward 推送 `codex/dev-review-report`；不使用 API 重建提交。
 3. 验证远端 HEAD、监控 Linux/Windows CI，并从 GitHub 新目录 clone 复核。
 4. 仅在新 clone 的 Delivery doctor 仍通过时，把 active bundle/CURRENT/fresh ledger 转运到 B28。

@@ -10,7 +10,7 @@
 
 另有两个已复现的代码级 P0：Windows `core.autocrlf=true` 会在 clean clone 中改写 lock、intake 和 bundle 控制 bytes；Development doctor 又被 24 小时 ledger 与七天 handoff 时效阻断。两者都会使外部 fresh clone 随平台或时间失败。本轮已由 `f2c9d8d` 的新 evidence cycle 和实际 autocrlf clone 关闭。
 
-首轮最终 delivery commit 的 fresh clone 又发现第三个 P0：Git 对 `Docs/发版.md` 的 quoted-path 展示使 bootstrap 误判合法交付路径。该问题不会影响 evidence commit clone，却会阻断包含中文文档更新的最终交付 clone；当前已撤回对应 handoff，并以 NUL 分隔路径解析和真实 commit 回归进入第二修正周期。
+首轮最终 delivery commit 的 fresh clone 又发现第三个 P0：Git 对 `Docs/发版.md` 的 quoted-path 展示使 bootstrap 误判合法交付路径。该问题不会影响 evidence commit clone，却会阻断包含中文文档更新的最终交付 clone；对应 handoff 已撤回，NUL 分隔路径解析、真实 commit 回归和第二周期 clean evidence 已完成，等待最终 delivery clone 闭合。
 
 ## 审查事实
 
@@ -33,7 +33,7 @@
 
 ## 当前状态与仍未关闭
 
-本轮代码与文档回归达到 `1664 passed, 19 warnings`；warnings 仅来自 oletools/pyparsing 的第三方 deprecation。机器状态曾安全回到 preparation 并撤回旧 handoff，随后从 `f2c9d8d` 重新双构建并签发 `bundle-6b7518a2e3c969d2383fcb60`。最终 clone QA 暴露 quoted-path 缺陷后，该 handoff 已撤回，bundle 仅保留审计；第二修正周期尚未重新签发。
+首轮代码与文档回归为 `1664 passed, 19 warnings`；第二修正周期 `4327491` 为 `1665 passed, 19 warnings`，warnings 均只来自 oletools/pyparsing 的第三方 deprecation。quoted-path 缺陷后的新 bundle 为 `bundle-95bce28983237f5d84d0cbfd`，旧 bundle 仅保留审计；新 delivery record 的最终 clone 尚待完成。
 
 1. 本地所有提交仍需 GitHub 认证后 fast-forward 推送；在此之前，远端 fresh clone 仍无法取得当前工作。
 2. 推送后必须取得真实 Linux/Windows Actions 结果，并从 GitHub 第二次 clone 验证。

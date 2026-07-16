@@ -1,0 +1,24 @@
+{
+  "catia": {
+    "build": "B28",
+    "release": "V5-6R2018",
+    "revision": "R28"
+  },
+  "pollution_scan": {
+    "B30": "absent",
+    "Temp": "absent",
+    "VBA6": "absent",
+    "user-profile": "absent",
+    "x86": "absent"
+  },
+  "schema_version": 1,
+  "vba": {
+    "generation": "VBA7",
+    "win64": true
+  },
+  "windows": {
+    "architecture": "Win64",
+    "build": "REPLACE_WITH_WINDOWS_BUILD",
+    "edition": "REPLACE_WITH_WINDOWS_EDITION"
+  }
+}

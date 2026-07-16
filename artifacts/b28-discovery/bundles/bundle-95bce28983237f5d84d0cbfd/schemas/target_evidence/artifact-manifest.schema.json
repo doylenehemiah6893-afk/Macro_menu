@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/artifact-manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["binding", "artifact_status", "artifact", "release_eligible"],
+  "properties": {
+    "binding": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"},
+    "artifact_status": {"enum": ["not-produced", "returned"]},
+    "artifact": {
+      "oneOf": [{"$ref": "#/$defs/artifact"}, {"type": "null"}]
+    },
+    "release_eligible": {"const": false}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"artifact_status": {"const": "not-produced"}}},
+      "then": {"properties": {"artifact": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"artifact_status": {"const": "returned"}}},
+      "then": {"properties": {"artifact": {"$ref": "#/$defs/artifact"}}}
+    },
+    {
+      "if": {
+        "properties": {
+          "binding": {
+            "properties": {
+              "session_mode": {"enum": ["discovery", "g2"]}
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "artifact_status": {"const": "not-produced"},
+          "artifact": {"type": "null"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_path", "filename", "package_id", "sha256", "size",
+        "post_import_compile_record_id", "post_restart_compile_record_id",
+        "modules_sha256", "form_frx_sha256", "reference_observation_sha256",
+        "signature_stream_status", "kit_source_receipt_sha256", "readonly"
+      ],
+      "properties": {
+        "relative_path": {"const": "returned-catvba/core.catvba"},
+        "filename": {"const": "core.catvba"},
+        "package_id": {"const": "core"},
+        "sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "size": {"type": "integer", "minimum": 1},
+        "post_import_compile_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+        "post_restart_compile_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+        "modules_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "form_frx_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "reference_observation_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "signature_stream_status": {"enum": ["absent", "present", "unknown"]},
+        "kit_source_receipt_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "readonly": {"const": true}
+      }
+    }
+  }
+}

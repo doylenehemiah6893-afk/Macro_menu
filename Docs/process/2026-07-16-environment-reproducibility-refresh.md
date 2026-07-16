@@ -121,3 +121,26 @@ CURRENT、ledger 和 bundle provenance bytes 均正确，但 bootstrap 返回 `d
 第二周期 pre-evidence 完整回归为 `1665 passed, 19 warnings in 234.14s`。首次在仓库内 `.venv` 运行得到 4 个
 `sys.executable` 找不到的环境失败；同一 lock 在 `/tmp/macro-menu-reorg-venv` 重建后 4 项全部通过，确认失败来自托管
 工作区反复改写 ignored `.venv` 链接，而不是产品代码。正式 evidence receipt 仍必须从 clean commit 重新生成。
+
+## 8. 第二周期 clean evidence 与重新签发
+
+修正后的 evidence commit 为 `43274914149a67c3f076e5322e86060e3b1d1cc1`，tree 为
+`190494ac751fff8b51b925413f46b426f4e5eb25`。从该精确提交运行 `verify_resume.py` 得到 `ok=true`：
+
+| 项目 | 固定结果 |
+|---|---|
+| 完整 pytest | `1665 passed, 19 warnings in 235.33s` |
+| inventory / check | 90 records / 16 components、2 tools；零 diagnostics，均 `formal_eligible=true` |
+| Kit / ZIP SHA-256 | `kit-87ecc7bcf3d8f9deaf99` / `165d044494a583cebf292e3e3df0f438cb4c3918d2d7ee7bb87055893d719af1` |
+| Kit tree / sidecar SHA-256 | `f48f37ce9b6d612785fd4e417e2f6d5d7aae105a85c99278e85a7f95caae52f6` / `4aec1bc19d4e61b6d26b91fc97b0a9c8ff7581901bf965faeb404eaca5efcd8b` |
+| 四 verifier / collector smoke | directory/ZIP × primary/comparison 全部通过；pyz help 与 synthetic expected-fail-closed 通过 |
+| pre-issuance ledger | active 为空；三份旧 handoff withdrawn；SHA-256 `65670c6ba2759c4504b80ef8cb807cf4551e44db32d0ab342aedde279e9295ee` |
+| 新 handoff / SHA-256 | `handoff-07bbe55bc7552489cd55` / `f301e8b4a89de22add30a6ebc7092de5013824dd81c81c2ffa582dd71639d3fa` |
+| created / expires | `2026-07-16T15:52:15Z` / `2026-07-23T15:51:52Z` |
+| active ledger | captured `2026-07-16T15:52:25Z`；SHA-256 `94324963be7d1a74fac30896c4574dcda595139feb0287ab9a3a62f0fee73425` |
+| operator bundle | `bundle-95bce28983237f5d84d0cbfd`；两次完整目录相同，61 files、约 700 KiB |
+| provenance / content SHA-256 | `95bce28983237f5d84d0cbfd1aadc762f93948a84f16364359f2ebd002f170ba` / `ba089f0859bdcac85185423f861b0c57f3d08e544b694ec26cc836dfb737e00b` |
+| collector pyz / selector ZIP SHA-256 | `e11da8de8147fbbaab5217f56dde7eea7636cacf8993230c85484b1ef6358301` / `ab9fc80cd5cdadcbc2c01318804ebd38b2af2329faaeba43d6de0d94299aca6c` |
+
+delivery record 提交后还必须在 `core.autocrlf=true`、`core.quotepath=true` 的最终 clone 中运行 bootstrap、两种 doctor
+和 selector。该 clone 通过前不交给 B28；远端推送、GitHub Actions 与 GitHub fresh clone 继续受外部认证阻塞。
