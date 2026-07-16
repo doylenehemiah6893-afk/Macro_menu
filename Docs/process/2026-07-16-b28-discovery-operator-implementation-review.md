@@ -1,8 +1,8 @@
 # B28 Discovery Operator Bundle 实施审查记录
 
 日期：2026-07-16  
-记录：`record.task10-implementation-review.c1d0706`  
-范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..c1d070636c52235ea5a546487b7f91815b968daf`
+记录：`record.task10-implementation-review.381bf7c`  
+范围：`eb64766d99e09b1ea901708d5fd793f4ca92a9de..381bf7c9d2ff8388f918f9af797e7d1c1e377c5f`
 
 ## 结论
 
@@ -60,8 +60,9 @@ test_project_layout.py + test_cli.py      122 passed
 
 两项独立只读审查覆盖 Windows 文件安全、collector 状态机、bundle/ledger 控制、state/CI、文档和 bootstrap Git 环境。
 初审发现 1 个 Critical 与多项 Important，已在 `96a2c07` 关闭；最终复审额外发现 operator-record index、raw skeleton
-完整性、issued state 生命周期和 doctor bundle integrity 的缺口，已在 `686d98a` 与 `c1d0706` 关闭。任何新增
-Critical/Important 都会阻止 Task 11。
+完整性、issued state 生命周期和 doctor bundle integrity 的缺口，已在 `686d98a` 与 `c1d0706` 关闭。末次独立复审确认
+`c1d0706` 没有 Critical/Important；`381bf7c` 仅将原先允许的 partial-expiry 测试更新为正确的 schema 拒绝断言。任何
+新增 Critical/Important 都会阻止 Task 11。
 
 ## 仍然禁止与下一步
 
