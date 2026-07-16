@@ -71,8 +71,8 @@ uv run pytest -q
 
 当前 manifest 精确批准 13 个固定 Core candidate component 和两个首回合只读工具：
 `core.healthcheck` 与 `core.document-summary`。Generator 加入 3 个确定生成 component，所以 checked/built
-catalog 为 16 个 component、2 个 tool。当前 `resume/state.json` 处于 preparation，active discovery bundle、Kit、
-handoff 均为空；CURRENT 已移除、旧 handoff 已撤回，旧 bundle 只作历史审计，不能用于 B28。新制品签发后由 [Docs/STATUS.md](Docs/STATUS.md)、
-`resume/state.json` 与 `CURRENT.json` 共同展示；推送完成前也不能从 GitHub 取得。本轮 G0=`PASS`、G1=`BLOCKED`，
-`compile_status=not-run`、`release_eligible=false`，30 个目标 case 全部
-`not-run`；G2–G7 仍 `BLOCKED`。
+catalog 为 16 个 component、2 个 tool。活动 discovery 制品只由 `resume/state.json` 选择：当
+`active_bundle_path=null` 时没有可用于 B28 的 bundle；非空时还必须与 `CURRENT.json`、bundle provenance 和 fresh
+ledger 共同验证。旧 bundle 只作历史审计，不能自行恢复授权。精确 Kit/handoff/Gate/远端发布状态只在
+[Docs/STATUS.md](Docs/STATUS.md) 与 `resume/state.json` 维护；`compile_status=not-run`、`release_eligible=false`，
+30 个目标 case 全部 `not-run`，G2–G7 始终保持 `BLOCKED`，直到取得真实目标机证据。
