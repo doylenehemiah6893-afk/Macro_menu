@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/operator-bundle-provenance.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "repository", "branch", "evidence_commit", "evidence_tree",
+    "approved_cutoff", "kit_id", "catalog_sha256", "manifest_sha256",
+    "manifest_digest", "kit_zip_sha256", "kit_sidecar_sha256", "handoff_id",
+    "handoff_sha256", "handoff_created_at", "handoff_expires_at",
+    "issuance_revocation_snapshot_sha256", "active_ledger_schema_version",
+    "active_ledger_source", "collector_source_commit", "collector_source_sha256",
+    "collector_pyz_sha256", "python_requirement", "session_skeleton_sha256",
+    "tutorials_sha256", "templates_sha256", "schemas_sha256", "compile_status",
+    "target_case_status", "artifact_status", "release_eligible",
+    "generation_record_id", "test_record_id", "review_record_id"
+  ],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "repository": {"const": "doylenehemiah6893-afk/Macro_menu"},
+    "branch": {"const": "codex/dev-review-report"},
+    "evidence_commit": {"$ref": "#/$defs/git_oid"},
+    "evidence_tree": {"$ref": "#/$defs/git_oid"},
+    "approved_cutoff": {"const": "abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad"},
+    "kit_id": {"type": "string", "pattern": "^kit-[0-9a-f]{16,64}$"},
+    "catalog_sha256": {"$ref": "#/$defs/sha256"},
+    "manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "manifest_digest": {"$ref": "#/$defs/sha256"},
+    "kit_zip_sha256": {"$ref": "#/$defs/sha256"},
+    "kit_sidecar_sha256": {"$ref": "#/$defs/sha256"},
+    "handoff_id": {"type": "string", "pattern": "^handoff-[a-z0-9][a-z0-9-]{2,94}$"},
+    "handoff_sha256": {"$ref": "#/$defs/sha256"},
+    "handoff_created_at": {"$ref": "#/$defs/utc"},
+    "handoff_expires_at": {"$ref": "#/$defs/utc"},
+    "issuance_revocation_snapshot_sha256": {"$ref": "#/$defs/sha256"},
+    "active_ledger_schema_version": {"const": 1},
+    "active_ledger_source": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{2,127}$"},
+    "collector_source_commit": {"$ref": "#/$defs/git_oid"},
+    "collector_source_sha256": {"$ref": "#/$defs/sha256"},
+    "collector_pyz_sha256": {"$ref": "#/$defs/sha256"},
+    "python_requirement": {"const": "CPython 3.12"},
+    "session_skeleton_sha256": {"$ref": "#/$defs/sha256"},
+    "tutorials_sha256": {"$ref": "#/$defs/sha256"},
+    "templates_sha256": {"$ref": "#/$defs/sha256"},
+    "schemas_sha256": {"$ref": "#/$defs/sha256"},
+    "compile_status": {"const": "not-run"},
+    "target_case_status": {"const": "not-run"},
+    "artifact_status": {"const": "not-produced"},
+    "release_eligible": {"const": false},
+    "generation_record_id": {"$ref": "#/$defs/record_id"},
+    "test_record_id": {"$ref": "#/$defs/record_id"},
+    "review_record_id": {"$ref": "#/$defs/record_id"}
+  },
+  "$defs": {
+    "git_oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "utc": {
+      "type": "string", "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "record_id": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{2,127}$"}
+  }
+}

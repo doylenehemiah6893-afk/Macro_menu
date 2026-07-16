@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/resume-state.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "repository", "branch", "evidence_commit", "evidence_tree",
+    "delivery_parent_commit", "approved_cutoff", "intake_record_path",
+    "intake_record_digest", "python_requirement", "uv_requirement", "lock_digest",
+    "gate_statuses", "active_bundle_path", "bundle_digest", "active_kit_id",
+    "kit_zip_digest", "active_handoff_id", "handoff_digest", "expiry",
+    "revocation_status", "last_full_test_count", "last_reproducibility_receipt",
+    "release_eligible", "next_action"
+  ],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "repository": {"const": "doylenehemiah6893-afk/Macro_menu"},
+    "branch": {"const": "codex/dev-review-report"},
+    "evidence_commit": {"$ref": "#/$defs/nullable_git_oid"},
+    "evidence_tree": {"$ref": "#/$defs/nullable_git_oid"},
+    "delivery_parent_commit": {"$ref": "#/$defs/nullable_git_oid"},
+    "approved_cutoff": {"const": "abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad"},
+    "intake_record_path": {"$ref": "#/$defs/portable_path"},
+    "intake_record_digest": {"$ref": "#/$defs/sha256"},
+    "python_requirement": {"const": "CPython 3.12"},
+    "uv_requirement": {"type": "string", "pattern": "^uv [0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "lock_digest": {"$ref": "#/$defs/sha256"},
+    "gate_statuses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7"],
+      "properties": {
+        "G0": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]},
+        "G1": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]},
+        "G2": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]},
+        "G3": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]},
+        "G4": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]},
+        "G5": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]},
+        "G6": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]},
+        "G7": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]}
+      }
+    },
+    "active_bundle_path": {"$ref": "#/$defs/nullable_portable_path"},
+    "bundle_digest": {"$ref": "#/$defs/nullable_sha256"},
+    "active_kit_id": {"oneOf": [{"$ref": "#/$defs/kit_id"}, {"type": "null"}]},
+    "kit_zip_digest": {"$ref": "#/$defs/nullable_sha256"},
+    "active_handoff_id": {"oneOf": [{"$ref": "#/$defs/handoff_id"}, {"type": "null"}]},
+    "handoff_digest": {"$ref": "#/$defs/nullable_sha256"},
+    "expiry": {"oneOf": [{"$ref": "#/$defs/utc"}, {"type": "null"}]},
+    "revocation_status": {"enum": ["preparation", "active", "withdrawn", "expired", "unavailable"]},
+    "last_full_test_count": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+    "last_reproducibility_receipt": {"$ref": "#/$defs/nullable_portable_path"},
+    "release_eligible": {"const": false},
+    "next_action": {"type": "string", "minLength": 1, "maxLength": 500}
+  },
+  "$defs": {
+    "git_oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "utc": {
+      "type": "string", "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "portable_path": {
+      "type": "string", "minLength": 1, "maxLength": 240,
+      "allOf": [
+        {"pattern": "^[ -~]+$"}, {"not": {"pattern": "[<>:\"\\\\|?*]"}},
+        {"not": {"pattern": "(?:^/|/$|//|\\\\)"}},
+        {"not": {"pattern": "(?:^|/)\\.{1,2}(?:/|$)"}}
+      ]
+    },
+    "kit_id": {"type": "string", "pattern": "^kit-[0-9a-f]{16,64}$"},
+    "handoff_id": {"type": "string", "pattern": "^handoff-[a-z0-9][a-z0-9-]{2,94}$"},
+    "nullable_git_oid": {"oneOf": [{"$ref": "#/$defs/git_oid"}, {"type": "null"}]},
+    "nullable_sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "nullable_portable_path": {"oneOf": [{"$ref": "#/$defs/portable_path"}, {"type": "null"}]}
+  }
+}

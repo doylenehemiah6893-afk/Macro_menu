@@ -1,12 +1,15 @@
 import copy
 import json
 from dataclasses import FrozenInstanceError, fields
+from datetime import UTC as DATETIME_UTC, datetime
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
-from catvba_refactor.macro_build.errors import ConfigError
+from catvba_refactor.macro_build.errors import ConfigError, EvidenceError
 from catvba_refactor.macro_build.model import Diagnostic
+from catvba_refactor.macro_build.resume import validate_active_ledger
 from catvba_refactor.macro_build.target_evidence.model import (
     ComputedOutcome,
     EvidencePhase,
@@ -30,6 +33,16 @@ SHA_B = "b" * 64
 GIT = "c" * 40
 UTC = "2026-07-14T12:00:00Z"
 UTC_LATER = "2026-07-14T12:01:00Z"
+
+
+def _active_ledger() -> dict:
+    return {
+        "schema_version": 1,
+        "captured_at": UTC,
+        "source": "macro-menu-repository",
+        "active_handoff_ids": ["handoff-current-example"],
+        "withdrawn_handoff_ids": ["handoff-historical-example"],
+    }
 
 
 def _binding(mode: str = "discovery", profile: str = "DISCOVERY") -> dict:
@@ -1147,3 +1160,51 @@ def test_review_contract_loader_contains_schema_dialect_errors(
 
     with pytest.raises(ConfigError, match=r"INVALID_TARGET_EVIDENCE_SCHEMA.*session"):
         load_target_evidence_schemas(copied)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["revocation-snapshot.schema.json", "active-handoff-ledger.schema.json"],
+)
+def test_revocation_documents_have_strict_schema_contracts(filename: str) -> None:
+    schema_path = Path(__file__).parents[1] / "schemas" / filename
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(
+        schema,
+        format_checker=Draft202012Validator.FORMAT_CHECKER,
+    )
+    document = _active_ledger()
+    assert list(validator.iter_errors(document)) == []
+
+    document["unexpected"] = True
+    assert [error.validator for error in validator.iter_errors(document)] == [
+        "additionalProperties"
+    ]
+
+
+def test_active_ledger_requires_each_handoff_in_exactly_one_set() -> None:
+    ledger = _active_ledger()
+    ledger["withdrawn_handoff_ids"] = [ledger["active_handoff_ids"][0]]
+    with pytest.raises(EvidenceError, match="HANDOFF_LEDGER_ID_OVERLAP"):
+        validate_active_ledger(
+            ledger,
+            effective_at=datetime(2026, 7, 15, 18, 0, tzinfo=DATETIME_UTC),
+        )
+
+
+def test_active_ledger_rejects_future_capture_time() -> None:
+    ledger = _active_ledger()
+    ledger["captured_at"] = "2026-07-15T18:00:01Z"
+    with pytest.raises(EvidenceError, match="HANDOFF_LEDGER_CAPTURED_IN_FUTURE"):
+        validate_active_ledger(
+            ledger,
+            effective_at=datetime(2026, 7, 15, 18, 0, tzinfo=DATETIME_UTC),
+        )
+
+
+def test_active_ledger_accepts_current_disjoint_sets() -> None:
+    report = validate_active_ledger(
+        _active_ledger(),
+        effective_at=datetime(2026, 7, 15, 18, 0, tzinfo=DATETIME_UTC),
+    )
+    assert report.ok
