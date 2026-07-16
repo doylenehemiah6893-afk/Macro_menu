@@ -12,9 +12,9 @@
 
 本文是当前状态与上下文恢复入口。详细事实以 Git 文件、固定哈希和目标机证据为准。
 
-开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。新 evidence/delivery
-cycle 已在本地完成；当前优先动作是提交 delivery record、fast-forward 推送并验证远端 CI/fresh clone。机器状态为
-`next_action=run-b28-discovery` / `revocation_status=active`，但 GitHub 尚未同步，目标机不得从旧远端开始。
+开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。首轮最终 delivery
+fresh clone 暴露中文 Git quoted-path 误判；对应 handoff 已撤回，当前进入第二修正 evidence cycle。机器状态为
+`next_action=complete-evidence-implementation` / `revocation_status=preparation`，目标机不得开始。
 
 ## 1. 立即停止条件
 
@@ -37,16 +37,16 @@ cycle 已在本地完成；当前优先动作是提交 delivery record、fast-fo
 | SPA/FTA | 目标机保证权益；物理隔离为默认部署 Fleet Extensions |
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
-| 本地/远端 | 新 evidence=`f2c9d8d`；delivery record 本地已形成；remote=`037ab406` 仍落后，GitHub fresh clone 尚不可取得当前实现/制品 |
+| 本地/远端 | 历史 evidence=`f2c9d8d`、delivery=`08daced` 已被最终 clone QA 取代；当前修正尚未形成新 evidence；remote=`037ab406` 仍落后 |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
 | 实施计划 | 离线 Build Kit、baseline intake、Core Runtime MVP 和 B28 evidence harness 的 A 环境实现已完成 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | `f2c9d8d` 完整验证为 1664 passed、19 条第三方 deprecation warnings；实际 autocrlf fresh clone 也为 1664 passed；均非 CATIA 证据 |
-| active discovery bundle | 本地 `bundle-6b7518a2e3c969d2383fcb60`；provenance SHA-256 `6b7518a2e3c969d2383fcb60429cb0c584389e06fada95b6342b70736abcd1ac` |
-| active Kit / handoff | `kit-a09bfd3dcb7264c8bc0e` / `handoff-56097be57a37a63c7644`；expires `2026-07-23T15:19:09Z`；仅在 ledger fresh/active 时可用 |
-| 环境复刻修订 | Windows autocrlf、Development/Delivery scope、uv 前置校验、无效 agent/IDE 配置和文档漂移已关闭并由 clean clone 验证 |
+| 离线测试 | 上一 evidence `f2c9d8d` 完整验证为 1664 passed、19 条第三方 warnings；第二修正周期需重新完整验证；均非 CATIA 证据 |
+| active discovery bundle | 无；`bundle-6b7518a2e3c969d2383fcb60` 只保留历史审计，CURRENT 已移除 |
+| active Kit / handoff | 无；`handoff-56097be57a37a63c7644` 已加入 withdrawn |
+| 环境复刻修订 | autocrlf/scope/uv/配置漂移已关闭；Git quoted-path 修复已实现回归，等待新 evidence/delivery 与最终 clone 闭合 |
 | 当前仓库 CLI | 离线 Build Kit/audit/handoff 命令与 target evidence 命令均已具备；已生成确定性 discovery raw skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
@@ -80,7 +80,7 @@ cycle 已在本地完成；当前优先动作是提交 delivery record、fast-fo
 | Gate | 状态 | 原因 |
 |---|---|---|
 | G0 INPUT-FROZEN | `PASS` | 批准 cutoff 与 A 环境离线输入合同已冻结 |
-| G1 KIT-READY | `PASS` | `f2c9d8d` 双 Kit/ZIP、四 verifier、双 operator bundle 与 fresh handoff 已闭合；仅为 A 环境离线证据 |
+| G1 KIT-READY | `BLOCKED` | 代码变更后已撤回上一 handoff；等待新 evidence 的双 Kit/ZIP、四 verifier、operator bundle 与 fresh handoff |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -91,18 +91,16 @@ cycle 已在本地完成；当前优先动作是提交 delivery record、fast-fo
 G0/G1 `PASS` 只说明固定 Git 输入与本地可复算 delivery chain 闭合；两者都不是 CATIA Compile、References、
 许可证 checkout、UI 或运行通过。
 
-## 6. 当前本地 Discovery bundle（远端未发布，不是 CATIA PASS）
+## 6. 当前 Discovery preparation（不是 CATIA PASS）
 
-本地 Git 路径为 `artifacts/b28-discovery/bundles/bundle-6b7518a2e3c969d2383fcb60/`；CURRENT 固定 canonical
-provenance SHA-256 `6b7518a2e3c969d2383fcb60429cb0c584389e06fada95b6342b70736abcd1ac`。active ledger captured-at
-为 `2026-07-16T15:20:36Z`，只激活 `handoff-56097be57a37a63c7644`，并撤回旧
-`handoff-6ed312ee18b254cb3c13` 与 `handoff-b8d9d535604e78551423`。bundle 内含 Kit ZIP、collector pyz、哈希、
-handoff、教程和 sanitized offline receipts；完整构建记录见
+当前没有 CURRENT、active bundle、active Kit 或 active handoff。ledger active 集为空，并撤回
+`handoff-56097be57a37a63c7644`、`handoff-6ed312ee18b254cb3c13` 与 `handoff-b8d9d535604e78551423`。
+历史 bundle 目录继续保留不可变审计，但不能由选择器授权。完整原因和第二修正周期见
 `Docs/process/2026-07-16-environment-reproducibility-refresh.md`。
 
-仅当远端完成同步、目标机重新下载、handoff 未过期/未撤回且 ledger 不超过 24 小时时，B28 才能按 bundle quick-start
+只有新 evidence、签发、最终 clone、远端同步和 fresh control 全部闭合后，B28 才可能按新 bundle quick-start
 以原生 Windows `cmd.exe` 和 CPython 3.12 人工执行 raw Discovery。不得使用 WSL、PowerShell、uv 或自动化
-CATIA/VBE/DSLS；不得从当前仍陈旧的 GitHub 分支开始。
+CATIA/VBE/DSLS；当前 preparation 明确禁止开始。
 
 这不是 Compile、References、DSLS checkout、运行、G2/G3 或 release 通过。bundle 固定
 `compile_status=not-run`、target cases=`not-run`、`artifact_status=not-produced`、`release_eligible=false`。
@@ -114,8 +112,8 @@ CATIA/VBE/DSLS；不得从当前仍陈旧的 GitHub 分支开始。
 `42447cc3ae72d657f76be39355fa134230b1ff28`。本次状态文档提交发生在构建之后，不是被构建的输入；Kit、handoff、
 revocation snapshot 和 session skeleton 均在仓库外的隔离临时根中，未进入 Git，实际 bytes 当前不可取得。
 因此本节只作为历史 receipt 摘要，不是 active artifact。`handoff-6ed312ee18b254cb3c13` 在本轮 preparation 中
-按 withdrawn 处理，不能因历史 expiry 尚未到达而恢复。当前 active bundle/Kit/handoff 只以上一节、
-`resume/state.json` 和 CURRENT/ledger 的共同绑定为准。
+按 withdrawn 处理，不能因历史 expiry 尚未到达而恢复。未来若重新签发，active bundle/Kit/handoff 只能由
+`resume/state.json`、CURRENT 和 ledger 的共同绑定确认；当前三者没有形成 active 选择。
 
 ### 7.1 离线 Gate 与 Build Kit
 

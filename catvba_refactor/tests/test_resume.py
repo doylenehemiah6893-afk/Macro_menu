@@ -343,6 +343,23 @@ def test_stdlib_bootstrap_accepts_clean_preparation_state(tmp_path: Path) -> Non
     module._stdlib_preflight(clone.resolve(), state_path.resolve())
 
 
+def test_stdlib_bootstrap_accepts_unicode_docs_only_delivery_commit(
+    tmp_path: Path,
+) -> None:
+    clone, state_path = _fresh_clone(tmp_path)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    _git(clone, "config", "user.name", "Resume Tests")
+    _git(clone, "config", "user.email", "resume@example.invalid")
+    _git(clone, "config", "core.quotepath", "true")
+    release_guide = clone / "Docs/发版.md"
+    release_guide.write_bytes(release_guide.read_bytes() + b"\n")
+    _git(clone, "add", release_guide.relative_to(clone).as_posix())
+    _git(clone, "commit", "-m", "fixture: unicode docs delivery")
+
+    module = _bootstrap_script_module()
+    module._stdlib_git_preflight(clone.resolve(), state_path.resolve(), state)
+
+
 def test_stdlib_bootstrap_git_environment_ignores_host_configuration() -> None:
     module = _bootstrap_script_module()
     environment = module._git_environment()

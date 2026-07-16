@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：CURRENT IMPLEMENTATION / LOCAL DELIVERY ISSUED — 离线工具、Core、evidence harness 与 active operator bundle 已实现；远端尚未同步，CATIA/目标机测试未运行
+> 状态：CURRENT IMPLEMENTATION / DELIVERY PREPARATION — 离线工具、Core、evidence harness 与 operator bundle builder 已实现；active handoff 已撤回，远端尚未同步，CATIA/目标机测试未运行
 >
 > 更新日期：2026-07-16
 >
@@ -14,8 +14,8 @@
 - 所有本地 VBA、Python、配置、schema、测试和派生输出进入 `catvba_refactor/`；
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
 - 离线 Python、manifest/schema、Build Kit/evidence/operator CLI、target collector 和 pytest 已实现；首轮 Core Runtime
-  源码已固定为候选输入。新 Discovery bundle 已从 `f2c9d8d` 双构建并在本地签发，上一份 bundle/handoff 已撤回；
-  远端同步前外部机器仍不能从 GitHub 取得。尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
+  源码已固定为候选输入。`f2c9d8d` 对应 bundle 在最终 clone QA 后已撤回授权，当前以 NUL 路径修正重新形成
+  evidence/delivery；远端同步前外部机器仍不能从 GitHub 取得。尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
 
 ## 2. 仓库拓扑
 

@@ -207,7 +207,13 @@ def _stdlib_git_preflight(
             raise SystemExit("bootstrap evidence tree does not match state")
         _git(repo_root, "merge-base", "--is-ancestor", evidence, head)
         if head != evidence:
-            changed = _git(repo_root, "diff", "--name-only", evidence, head).splitlines()
+            changed = tuple(
+                os.fsdecode(path)
+                for path in _git_bytes(
+                    repo_root, "diff", "--name-only", "-z", evidence, head
+                ).split(b"\0")
+                if path
+            )
             if any(
                 path != "RESUME.md"
                 and not path.startswith(("Docs/", "artifacts/", "resume/"))

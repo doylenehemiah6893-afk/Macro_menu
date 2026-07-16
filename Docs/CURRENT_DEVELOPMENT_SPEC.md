@@ -38,6 +38,7 @@
 4. 受限 HOME 环境显式把 `UV_CACHE_DIR` 指向可写临时目录；
 5. `.venv`、cache、build、egg-info 和本机配置由仓库重新生成，绝不复制或提交；
 6. Git for Windows 的行尾设置不得改变受哈希保护的文件；`.gitattributes` 固定 LF，并将已签发 bundle 作为字节不透明内容。
+7. evidence 与 delivery commit 之间的路径边界必须用 `git diff --name-only -z` 的原始 NUL 分隔路径解析；不得依赖会受 `core.quotepath`、非 ASCII 文件名或换行文件名影响的展示文本。
 
 仓库目前没有 wheelhouse，因此“仅 clone 即可完全断网安装依赖”不成立。若未来要求断网复刻，必须另建按操作系统/架构签名并带哈希的 wheelhouse 制品和验证清单，不能放宽 frozen lock。
 
@@ -71,6 +72,7 @@
 ## 7. 验收标准
 
 - Linux 与原生 Windows fresh clone 均通过 Development bootstrap/doctor；`core.autocrlf=true` 不改变 lock、intake、state 或 bundle bytes。
+- evidence 后仅包含 `Docs/`、`artifacts/`、`resume/` 和 `RESUME.md` 的 delivery commit，在 `core.quotepath=true` 且含中文文件名时仍通过 bootstrap；任何其他路径仍 fail-closed。
 - 模拟 ledger 超过 24 小时或 handoff 过期：Development doctor 仍通过，Delivery doctor 稳定失败。
 - `uv lock --check`、完整 pytest、inventory/check、双 Kit 构建、四路 verifier 和 collector smoke 全部通过。
 - Git 跟踪列表不含本地代理/IDE配置、secret、本机路径或未脱敏目标数据。

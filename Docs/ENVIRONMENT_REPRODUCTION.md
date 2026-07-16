@@ -42,7 +42,7 @@ uv run macro-menu-build doctor --state resume\state.json --scope development --f
 py -3.12 scripts\verify_resume.py --repo-root . --state resume\state.json --output-root catvba_refactor\build\resume-verification
 ```
 
-`uv --version` 必须精确输出 `uv 0.9.25`。`.gitattributes` 已使常见 `core.autocrlf=true` clone 仍保持受哈希文件的稳定 bytes；不要手工批量转换行尾。
+`uv --version` 必须精确输出 `uv 0.9.25`。`.gitattributes` 已使常见 `core.autocrlf=true` clone 仍保持受哈希文件的稳定 bytes；不要手工批量转换行尾。bootstrap 使用 NUL 分隔的 Git 原始路径核对 evidence 后的 delivery 边界，因此 `core.quotepath=true` 与中文文档名不会被误判；这不放宽允许路径集合。
 
 ## 4. Delivery control 单独验证
 
@@ -107,4 +107,5 @@ HEAD 必须等于已推送本地提交，工作树为空，本地 `dev` 必须�
 | Development doctor 失败 | Git/lock/toolchain/immutable bytes 不可复刻 | 停止构建并修复根因 |
 | Delivery doctor 失败 | 当前操作授权不可用 | 停止 B28，重新获取或签发控制文件 |
 | GitHub clone 缺当前 bundle | 本地提交尚未推送 | 取得认证并 fast-forward 推送本分支 |
+| `delivery commits changed implementation inputs` | evidence 后确有越界路径，或使用了未修复的旧 bootstrap | 查看 NUL 安全的 commit diff；不得靠关闭 `core.quotepath` 绕过，升级到含回归修复的提交 |
 | 断网且 cache 为空 | 仓库没有依赖 wheelhouse | 使用批准镜像或另行构建受控 wheelhouse |

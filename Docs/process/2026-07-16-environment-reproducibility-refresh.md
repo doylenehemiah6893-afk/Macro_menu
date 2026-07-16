@@ -14,6 +14,7 @@
 - bootstrap 在验证精确 uv 版本之前就可能改写 `.venv`；Python 项目又没有明确拒绝 3.13。
 - 仓库跟踪了无效 Antigravity/Gemini/Cursor/IDE 配置、GBK 全局设置和本机绝对路径样例；日期化计划引用不存在的外部 skills。
 - 根 `build/` 未忽略，多层 README、状态和发版文档仍复制旧候选数、旧 bundle/handoff 与旧任务描述。
+- 首轮最终 delivery fresh clone 暴露 Git path 展示层缺陷：`git diff --name-only` 在 `core.quotepath=true` 下会把 `Docs/发版.md` 转义并加引号，合法的 docs-only delivery 因而被误判为实现输入变更。
 
 ## 2. 已实施的修订
 
@@ -25,6 +26,7 @@
 - 删除无效代理/IDE个人配置；忽略 `.context/`、`.antigravity/`、`.cursorrules`、`.vscode/`、根 `build/` 与 `user_data.json`，新增无绝对路径的 `user_data.example.json`。
 - 建立当前开发规格、唯一活动计划、环境复刻指南和日期化审查；同步根入口、STATUS、RESUME、发版、项目结构、子目录 README、历史计划状态和决策台账。
 - 受管输入变化后把 `resume/state.json` 返回 preparation：移除 CURRENT，清空 ledger active 集，将上一 handoff 列入 withdrawn；无 active bundle/Kit/handoff，G0=`PASS`、G1–G7=`BLOCKED`、`release_eligible=false`。
+- delivery 边界改用 `git diff --name-only -z` 与原始路径解码，新增 `core.quotepath=true`、中文文档名和 evidence 后提交的真实 Git 回归；允许路径集合保持不变。
 
 ## 3. 验证环境
 
@@ -105,3 +107,17 @@ smoke 全部 PASS。两次都没有复制本地 `.venv`。
 本地 Delivery doctor 在 current state/CURRENT/bundle/fresh ledger 上必须 PASS。远端仍停在 `037ab406...`，所以这份
 local delivery 在 fast-forward push、GitHub CI 和 GitHub fresh clone 完成前不得交给 B28。签发不改变
 `compile_status=not-run`、30 cases=`not-run`、CATVBA=`not-produced`、G2–G7=`BLOCKED`、`release_eligible=false`。
+
+## 7. 最终 delivery clone 反馈与第二修正周期
+
+对 `08daced43c7cf423d9b4f5bebb6fc83e3fd80384` 做 `core.autocrlf=true` 的全新克隆时，commit/tree、lock、intake、
+CURRENT、ledger 和 bundle provenance bytes 均正确，但 bootstrap 返回 `delivery commits changed implementation inputs`。
+根因不是制品越界，而是 Git 把中文路径输出成带引号的转义展示文本，旧代码的 `startswith("Docs/")` 无法识别。
+
+该结果按停止条件处理：移除 CURRENT，把 `handoff-56097be57a37a63c7644` 加入 withdrawn，state 回到 preparation，
+并开启第二个 clean evidence/delivery 周期。修复不得通过关闭 `core.quotepath` 或扩大 allowlist 绕过；必须以 NUL 分隔
+原始路径、真实 Git commit 回归、完整测试和最终 delivery commit fresh clone 共同关闭。
+
+第二周期 pre-evidence 完整回归为 `1665 passed, 19 warnings in 234.14s`。首次在仓库内 `.venv` 运行得到 4 个
+`sys.executable` 找不到的环境失败；同一 lock 在 `/tmp/macro-menu-reorg-venv` 重建后 4 项全部通过，确认失败来自托管
+工作区反复改写 ignored `.venv` 链接，而不是产品代码。正式 evidence receipt 仍必须从 clean commit 重新生成。
