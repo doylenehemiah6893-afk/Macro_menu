@@ -62,7 +62,7 @@
 - [离线 Build Kit 实施计划](superpowers/plans/2026-07-13-catvba-offline-build-kit.md)
 - [B28 G2/G3 证据工具链规格](superpowers/specs/2026-07-14-catvba-b28-g2-g3-evidence-harness-design.md)
 - [B28 G2/G3 证据工具链实施计划](superpowers/plans/2026-07-14-catvba-b28-g2-g3-evidence-harness.md)
-- [B28 Discovery 原生 Windows operator bundle 操作手册](runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md)
+- [B28 Discovery 原生 Windows 唯一执行入口](runbooks/b28-target/README_TARGET_B28.md)
 - [历史 G2/G3-C 手册（SUPERSEDED）](runbooks/2026-07-14-catvba-b28-g2-g3-core.md)
 - [项目结构](PROJECT_STRUCTURE.md)
 - [调查与决策台账](CATVBA重构调查与决策记录.md)

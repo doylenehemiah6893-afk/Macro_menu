@@ -1014,6 +1014,7 @@ def _build_operator_bundle_command(args: argparse.Namespace) -> int:
             "bundle_id": receipt.bundle_id,
             "bundle_dir": os.fspath(receipt.bundle_dir),
             "bundle_sha256": receipt.bundle_sha256,
+            "bundle_content_sha256": receipt.bundle_content_sha256,
             "provenance_sha256": receipt.provenance_sha256,
             "pyz_sha256": receipt.pyz_sha256,
             "kit_id": receipt.kit_id,

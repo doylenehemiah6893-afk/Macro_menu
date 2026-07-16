@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 
 from catvba_refactor.macro_build.errors import ConfigError, EvidenceError
 from catvba_refactor.macro_build import resume
+from catvba_refactor.macro_build.canonical import canonical_json_bytes
 from catvba_refactor.macro_build.resume import (
     APPROVED_CUTOFF,
     StrictDraft202012Validator,
@@ -327,6 +328,14 @@ def test_stdlib_bootstrap_accepts_clean_preparation_state(tmp_path: Path) -> Non
     module._stdlib_preflight(clone.resolve(), state_path.resolve())
 
 
+def test_stdlib_bootstrap_git_environment_ignores_host_configuration() -> None:
+    module = _bootstrap_script_module()
+    environment = module._git_environment()
+    assert environment["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert environment["GIT_NO_REPLACE_OBJECTS"] == "1"
+
+
 def test_doctor_rejects_dirty_tracked_non_governed_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -605,6 +614,7 @@ def valid_bundle_provenance() -> dict:
         "issuance_revocation_snapshot_sha256": SHA,
         "active_ledger_schema_version": 1,
         "active_ledger_source": "macro-menu-repository",
+        "bundle_content_sha256": SHA,
         "collector_source_commit": GIT,
         "collector_source_sha256": SHA_B,
         "collector_pyz_sha256": SHA,
@@ -624,6 +634,68 @@ def valid_bundle_provenance() -> dict:
         "test_record_id": "record-target-collector-tests",
         "review_record_id": "record-bundle-independent-review",
     }
+
+
+def test_active_delivery_controls_bind_state_and_fail_on_withdrawal(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    bundle_parent = root / "artifacts/b28-discovery/bundles"
+    control = root / "artifacts/b28-discovery"
+    handoff = {
+        "expires_at": "2026-07-22T18:00:00Z",
+        "handoff_id": "handoff-0123456789abcdef0123",
+        "revocation_status": "active",
+    }
+    handoff_bytes = canonical_json_bytes(handoff)
+    provenance = {
+        "active_ledger_source": "repository-active-handoff-ledger",
+        "handoff_expires_at": handoff["expires_at"],
+        "handoff_id": handoff["handoff_id"],
+        "handoff_sha256": hashlib.sha256(handoff_bytes).hexdigest(),
+        "kit_id": "kit-0123456789abcdef0123",
+        "kit_zip_sha256": SHA,
+    }
+    provenance_bytes = canonical_json_bytes(provenance)
+    digest = hashlib.sha256(provenance_bytes).hexdigest()
+    bundle = bundle_parent / ("bundle-" + digest[:24])
+    (bundle / "receipts").mkdir(parents=True)
+    (bundle / "provenance.json").write_bytes(provenance_bytes)
+    (bundle / "handoff.json").write_bytes(handoff_bytes)
+    (bundle / "receipts/build-reproducibility.json").write_bytes(b'{"ok":true}\n')
+    current = {
+        "schema_version": 1,
+        "bundle_id": bundle.name,
+        "bundle_sha256": digest,
+        "handoff_id": handoff["handoff_id"],
+    }
+    (control / "CURRENT.json").write_bytes(canonical_json_bytes(current))
+    ledger = {
+        "schema_version": 1,
+        "captured_at": UTC,
+        "source": "repository-active-handoff-ledger",
+        "active_handoff_ids": [handoff["handoff_id"]],
+        "withdrawn_handoff_ids": [],
+    }
+    (control / "active-handoff-ledger.json").write_bytes(canonical_json_bytes(ledger))
+    state = valid_resume_state()
+    state.update({
+        "active_bundle_path": bundle.relative_to(root).as_posix(),
+        "bundle_digest": digest,
+        "active_kit_id": provenance["kit_id"],
+        "kit_zip_digest": SHA,
+        "active_handoff_id": handoff["handoff_id"],
+        "handoff_digest": provenance["handoff_sha256"],
+        "expiry": handoff["expires_at"],
+        "revocation_status": "active",
+        "last_reproducibility_receipt": "artifacts/b28-discovery/bundles/" + bundle.name + "/receipts/build-reproducibility.json",
+    })
+    now = datetime.fromisoformat(UTC.replace("Z", "+00:00"))
+    assert resume._active_delivery_diagnostics(root, state, now) == []
+    ledger["active_handoff_ids"] = []
+    ledger["withdrawn_handoff_ids"] = [handoff["handoff_id"]]
+    (control / "active-handoff-ledger.json").write_bytes(canonical_json_bytes(ledger))
+    assert [item.code for item in resume._active_delivery_diagnostics(root, state, now)] == [
+        "RESUME_ACTIVE_HANDOFF_WITHDRAWN"
+    ]
 
 
 def valid_raw_capture_manifest() -> dict:

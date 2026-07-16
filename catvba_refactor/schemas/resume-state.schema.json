@@ -53,6 +53,35 @@
     "release_eligible": {"const": false},
     "next_action": {"type": "string", "minLength": 1, "maxLength": 500}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"active_bundle_path": {"type": "null"}}},
+      "then": {
+        "properties": {
+          "bundle_digest": {"type": "null"},
+          "active_kit_id": {"type": "null"},
+          "kit_zip_digest": {"type": "null"},
+          "active_handoff_id": {"type": "null"},
+          "handoff_digest": {"type": "null"},
+          "expiry": {"type": "null"},
+          "last_reproducibility_receipt": {"type": "null"},
+          "revocation_status": {"const": "preparation"}
+        }
+      },
+      "else": {
+        "properties": {
+          "bundle_digest": {"$ref": "#/$defs/sha256"},
+          "active_kit_id": {"$ref": "#/$defs/kit_id"},
+          "kit_zip_digest": {"$ref": "#/$defs/sha256"},
+          "active_handoff_id": {"$ref": "#/$defs/handoff_id"},
+          "handoff_digest": {"$ref": "#/$defs/sha256"},
+          "expiry": {"$ref": "#/$defs/utc"},
+          "last_reproducibility_receipt": {"$ref": "#/$defs/portable_path"},
+          "revocation_status": {"const": "active"}
+        }
+      }
+    }
+  ],
   "$defs": {
     "git_oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

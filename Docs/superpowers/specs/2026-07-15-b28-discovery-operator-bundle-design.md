@@ -230,7 +230,7 @@ Windows 采集器不承担受攻击目录中的原子可信发布保证。因此
 可公开、可 Git 跟踪的目标机交付目录为：
 
 ```text
-artifacts/b28-discovery/<bundle-id>/
+artifacts/b28-discovery/bundles/<bundle-id>/
 ├─ README_TARGET_B28.md
 ├─ QUICKSTART_B28.md
 ├─ SECURITY_AND_REDACTION.md
@@ -271,7 +271,7 @@ artifacts/b28-discovery/CURRENT.json
 artifacts/b28-discovery/active-handoff-ledger.json
 ```
 
-`CURRENT.json` 只指向一个 bundle ID、bundle digest 和 active handoff ID；`active-handoff-ledger.json` 可在撤回或
+`CURRENT.json` 只指向一个 bundle ID、canonical `provenance.json` 的 SHA-256（字段名 `bundle_sha256`）和 active handoff ID；`active-handoff-ledger.json` 可在撤回或
 刷新时独立更新。目标机命令必须显式传入这两个 sibling 文件，不能只信 bundle 内的 issuance snapshot。
 
 ### 6.2 Bundle 身份
@@ -288,6 +288,11 @@ artifacts/b28-discovery/active-handoff-ledger.json
 -教程和模板的 digest；
 - `compile_status=not-run`、`release_eligible=false`；
 - 生成、测试和独立复核 record ID。
+
+`provenance.json` 还保存 `bundle_content_sha256`：它是除 `provenance.json` 与 `SHA256SUMS` 外所有 regular bundle
+成员的 canonical member-record digest。该值被 `bundle_sha256` 间接认证；选择器先验证 `CURRENT.json` 的
+`bundle_sha256` 等于 provenance digest，再验证 `bundle_content_sha256` 和完整 `SHA256SUMS`，从而避免把同一字段
+同时解释为 provenance 身份和完整 tree digest。
 
 ### 6.3 Handoff 与 freshness
 

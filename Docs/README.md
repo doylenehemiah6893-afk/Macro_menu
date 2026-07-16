@@ -21,7 +21,7 @@
 - [项目结构、所有权与分支规划](PROJECT_STRUCTURE.md)
 - [CATVBA 重构调查与决策记录](CATVBA重构调查与决策记录.md)
 - [R2018 恢复、依赖与安全交付指南](CATIA_V5_R2018_VBA7_64恢复与依赖指南.md)
-- [B28 Discovery 原生 Windows operator bundle 操作手册](runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md)
+- [B28 Discovery 原生 Windows 唯一执行入口](runbooks/b28-target/README_TARGET_B28.md)
 - [历史 B28 G2/G3-C 手册（SUPERSEDED）](runbooks/2026-07-14-catvba-b28-g2-g3-core.md)
 
 ## 已批准规格

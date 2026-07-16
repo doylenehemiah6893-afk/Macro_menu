@@ -55,6 +55,19 @@ def _fixed_clock() -> datetime:
 def _make_bundle(tmp_path: Path, *, member_path: str = "templates/readme.txt") -> dict[str, Path]:
     bundle = tmp_path / "bundle"
     bundle.mkdir(parents=True)
+    kit_id = "kit-0123456789abcdef"
+    kit_zip = b"fixture-kit\n"
+    pyz = b"fixture-pyz\n"
+    snapshot = b'{"fixture":"revocation"}\n'
+    (bundle / f"{kit_id}.zip").write_bytes(kit_zip)
+    (bundle / f"{kit_id}.zip.sha256").write_bytes(
+        f"{_sha(kit_zip)}  {kit_id}.zip\n".encode("ascii")
+    )
+    (bundle / "target-discovery.pyz").write_bytes(pyz)
+    (bundle / "target-discovery.pyz.sha256").write_bytes(
+        f"{_sha(pyz)}  target-discovery.pyz\n".encode("ascii")
+    )
+    (bundle / "revocation-snapshot.json").write_bytes(snapshot)
     member_data = b"operator skeleton\n"
     skeleton = bundle / "session-skeleton.zip"
     with zipfile.ZipFile(skeleton, "w", compression=zipfile.ZIP_STORED) as archive:
@@ -67,13 +80,13 @@ def _make_bundle(tmp_path: Path, *, member_path: str = "templates/readme.txt") -
         "created_at": "2026-07-15T17:00:00Z",
         "expires_at": "2026-07-22T17:00:00Z",
         "revocation_status": "active",
-        "revocation_snapshot_sha256": SHA,
-        "kit_id": "kit-0123456789abcdef",
+        "revocation_snapshot_sha256": _sha(snapshot),
+        "kit_id": kit_id,
         "catalog_sha256": SHA,
         "manifest_sha256": SHA_B,
         "manifest_digest": SHA,
-        "zip_sha256": SHA_B,
-        "zip_sidecar_sha256": SHA,
+        "zip_sha256": _sha(kit_zip),
+        "zip_sidecar_sha256": _sha((bundle / f"{kit_id}.zip.sha256").read_bytes()),
         "work_commit": GIT,
         "work_tree": TREE,
         "work_branch": "codex/dev-review-report",
@@ -113,23 +126,24 @@ def _make_bundle(tmp_path: Path, *, member_path: str = "templates/readme.txt") -
         "evidence_commit": GIT,
         "evidence_tree": TREE,
         "approved_cutoff": CUTOFF,
-        "kit_id": "kit-0123456789abcdef",
+        "kit_id": kit_id,
         "catalog_sha256": SHA,
         "manifest_sha256": SHA_B,
         "manifest_digest": SHA,
-        "kit_zip_sha256": SHA_B,
-        "kit_sidecar_sha256": SHA,
+        "kit_zip_sha256": _sha(kit_zip),
+        "kit_sidecar_sha256": _sha((bundle / f"{kit_id}.zip.sha256").read_bytes()),
         "handoff_id": HANDOFF_ID,
         "handoff_sha256": _sha(handoff_data),
         "handoff_created_at": handoff["created_at"],
         "handoff_expires_at": handoff["expires_at"],
-        "issuance_revocation_snapshot_sha256": SHA,
+        "issuance_revocation_snapshot_sha256": _sha(snapshot),
         "active_ledger_schema_version": 1,
         "active_ledger_source": "repository-active-handoff-ledger",
+        "bundle_content_sha256": _bundle_content_digest(bundle),
         "python_requirement": "CPython 3.12",
         "collector_source_commit": GIT,
         "collector_source_sha256": SHA,
-        "collector_pyz_sha256": SHA_B,
+        "collector_pyz_sha256": _sha(pyz),
         "session_skeleton_sha256": _sha(skeleton.read_bytes()),
         "session_skeleton_members": [
             {"path": member_path, "sha256": _sha(member_data), "size": len(member_data)}
@@ -146,6 +160,7 @@ def _make_bundle(tmp_path: Path, *, member_path: str = "templates/readme.txt") -
         "review_record_id": "record-bundle-review",
     }
     provenance_data = _write_canonical(bundle / "provenance.json", provenance)
+    _rewrite_bundle_sums(bundle)
     bundle_id = "bundle-" + _sha(provenance_data)[:24]
     current = tmp_path / "CURRENT.json"
     _write_canonical(
@@ -169,6 +184,32 @@ def _make_bundle(tmp_path: Path, *, member_path: str = "templates/readme.txt") -
         },
     )
     return {"bundle": bundle, "current": current, "ledger": ledger}
+
+
+def _bundle_content_digest(bundle: Path) -> str:
+    records = [
+        {
+            "path": path.relative_to(bundle).as_posix(),
+            "sha256": _sha(path.read_bytes()),
+            "size": path.stat().st_size,
+        }
+        for path in sorted(bundle.rglob("*"), key=lambda item: item.as_posix().encode("ascii"))
+        if path.is_file() and path.relative_to(bundle).as_posix() not in {"provenance.json", "SHA256SUMS"}
+    ]
+    return _sha(canonical_json_bytes(records))
+
+
+def _rewrite_bundle_sums(bundle: Path) -> None:
+    members = [
+        path for path in sorted(bundle.rglob("*"), key=lambda item: item.as_posix().encode("ascii"))
+        if path.is_file() and path.relative_to(bundle).as_posix() != "SHA256SUMS"
+    ]
+    (bundle / "SHA256SUMS").write_bytes(
+        b"".join(
+            f"{_sha(path.read_bytes())}  {path.relative_to(bundle).as_posix()}\n".encode("ascii")
+            for path in members
+        )
+    )
 
 
 def _tree_digest(root: Path) -> str:
@@ -250,7 +291,13 @@ def test_init_capture_never_modifies_bundle(tmp_path: Path, monkeypatch: pytest.
     assert session["compile_status"] == "not-run"
     assert session["release_eligible"] is False
     assert (capture / "templates" / "readme.txt").read_bytes() == b"operator skeleton\n"
-    assert status(capture).ok
+    current = status(capture)
+    assert current.ok
+    assert current.facts["next_action"] == "record-environment"
+    assert current.facts["environment_recorded"] is False
+    assert current.facts["entitlements_recorded"] is False
+    assert current.facts["reference_points_recorded"] == []
+    assert current.facts["ready_to_finalize_raw"] is False
 
 
 def test_init_capture_rejects_existing_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -284,11 +331,7 @@ def test_preflight_rejects_symlink_nonregular_oversize_and_hash_mismatch(
     inputs = _make_bundle(tmp_path / "hash")
     provenance = json.loads((inputs["bundle"] / "provenance.json").read_text("ascii"))
     provenance["session_skeleton_members"][0]["sha256"] = "0" * 64
-    provenance_data = _write_canonical(inputs["bundle"] / "provenance.json", provenance)
-    current = json.loads(inputs["current"].read_text("ascii"))
-    current["bundle_id"] = "bundle-" + _sha(provenance_data)[:24]
-    current["bundle_sha256"] = _sha(provenance_data)
-    _write_canonical(inputs["current"], current)
+    _rewrite_provenance(inputs, provenance)
     assert init_capture(**inputs, capture=tmp_path / "bad-hash", _clock=_fixed_clock).codes == (
         "COLLECTOR_MEMBER_HASH_MISMATCH",
     )
@@ -296,11 +339,7 @@ def test_preflight_rejects_symlink_nonregular_oversize_and_hash_mismatch(
     inputs = _make_bundle(tmp_path / "large")
     provenance = json.loads((inputs["bundle"] / "provenance.json").read_text("ascii"))
     provenance["session_skeleton_members"][0]["size"] = 65 * 1024 * 1024
-    provenance_data = _write_canonical(inputs["bundle"] / "provenance.json", provenance)
-    current = json.loads(inputs["current"].read_text("ascii"))
-    current["bundle_id"] = "bundle-" + _sha(provenance_data)[:24]
-    current["bundle_sha256"] = _sha(provenance_data)
-    _write_canonical(inputs["current"], current)
+    _rewrite_provenance(inputs, provenance)
     assert init_capture(**inputs, capture=tmp_path / "too-large", _clock=_fixed_clock).codes == (
         "COLLECTOR_FILE_TOO_LARGE",
     )
@@ -314,7 +353,7 @@ def test_preflight_rejects_symlink_nonregular_oversize_and_hash_mismatch(
             skeleton.symlink_to(real.name)
         except OSError:
             pytest.skip("symlink creation unavailable")
-        assert preflight(**inputs, _clock=_fixed_clock).codes == ("COLLECTOR_PATH_UNSAFE",)
+        assert preflight(**inputs, _clock=_fixed_clock).codes == ("COLLECTOR_BUNDLE_TREE_INVALID",)
 
 
 def test_init_capture_rejects_zip_symlink_member(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -328,11 +367,7 @@ def test_init_capture_rejects_zip_symlink_member(tmp_path: Path, monkeypatch: py
         archive.writestr(info, b"operator skeleton\n")
     provenance = json.loads((inputs["bundle"] / "provenance.json").read_text("ascii"))
     provenance["session_skeleton_sha256"] = _sha(skeleton.read_bytes())
-    provenance_data = _write_canonical(inputs["bundle"] / "provenance.json", provenance)
-    current = json.loads(inputs["current"].read_text("ascii"))
-    current["bundle_id"] = "bundle-" + _sha(provenance_data)[:24]
-    current["bundle_sha256"] = _sha(provenance_data)
-    _write_canonical(inputs["current"], current)
+    _rewrite_provenance(inputs, provenance)
     assert init_capture(**inputs, capture=tmp_path / "capture", _clock=_fixed_clock).codes == (
         "COLLECTOR_MEMBER_UNSAFE",
     )
@@ -375,15 +410,13 @@ def _rebind_skeleton(inputs: dict[str, Path]) -> None:
     skeleton = inputs["bundle"] / "session-skeleton.zip"
     provenance = json.loads((inputs["bundle"] / "provenance.json").read_text("ascii"))
     provenance["session_skeleton_sha256"] = _sha(skeleton.read_bytes())
-    provenance_data = _write_canonical(inputs["bundle"] / "provenance.json", provenance)
-    current = json.loads(inputs["current"].read_text("ascii"))
-    current["bundle_id"] = "bundle-" + _sha(provenance_data)[:24]
-    current["bundle_sha256"] = _sha(provenance_data)
-    _write_canonical(inputs["current"], current)
+    _rewrite_provenance(inputs, provenance)
 
 
 def _rewrite_provenance(inputs: dict[str, Path], provenance: dict[str, object]) -> None:
+    provenance["bundle_content_sha256"] = _bundle_content_digest(inputs["bundle"])
     data = _write_canonical(inputs["bundle"] / "provenance.json", provenance)
+    _rewrite_bundle_sums(inputs["bundle"])
     current = json.loads(inputs["current"].read_text("ascii"))
     current["bundle_id"] = "bundle-" + _sha(data)[:24]
     current["bundle_sha256"] = _sha(data)

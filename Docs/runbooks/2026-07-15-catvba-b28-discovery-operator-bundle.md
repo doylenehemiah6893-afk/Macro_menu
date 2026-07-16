@@ -2,7 +2,12 @@
 
 日期：2026-07-15
 
-状态：APPROVED PROCEDURE；尚无目标机结果
+状态：SUPERSEDED — 不得执行本文件中的历史命令；尚无目标机结果
+
+> 本文在 Task 10 已被发现为不完整的历史草案：若命令失败，它的部分段落只打印错误码，且过早复制后续
+> Reference 输入。唯一批准的目标机执行入口是随已签发 bundle 提供的
+> [`b28-target/QUICKSTART_B28.md`](b28-target/QUICKSTART_B28.md)，并必须先阅读其同目录的
+> `README_TARGET_B28.md` 与 `SECURITY_AND_REDACTION.md`。本文件仅保留历史背景，任何代码块均不可执行。
 
 范围：CATIA V5-6R2018 / R28 / B28、VBA7、Win64、原生 CPython 3.12
 

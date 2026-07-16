@@ -34,6 +34,10 @@ MAX_SKELETON_BYTES = 64 * 1024 * 1024
 MAX_MEMBER_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_MEMBER_BYTES = 128 * 1024 * 1024
 MAX_MEMBER_COUNT = MAX_RAW_SOURCE_MEMBERS
+MAX_BUNDLE_MEMBER_BYTES = 512 * 1024 * 1024
+# Builder caps pre-checksum output at 512 MiB; retain a small control-file margin.
+MAX_BUNDLE_TOTAL_BYTES = 513 * 1024 * 1024
+MAX_BUNDLE_MEMBER_COUNT = 8192
 LEDGER_MAX_AGE = timedelta(hours=24)
 LEDGER_FIELDS = frozenset(
     {"schema_version", "captured_at", "source", "active_handoff_ids", "withdrawn_handoff_ids"}
@@ -57,6 +61,7 @@ WINDOWS_RESERVED = frozenset(
     | {f"LPT{number}" for number in range(1, 10)}
 )
 WINDOWS_INVALID_CHARS = frozenset('<>:"\\|?*')
+BUNDLE_FORBIDDEN_SUFFIXES = (".catvba", ".bas", ".cls", ".frm", ".frx")
 SESSION_FIELDS = frozenset(
     {
         "schema_version",
@@ -83,7 +88,7 @@ PROVENANCE_FIELDS = frozenset(
         "manifest_digest", "kit_zip_sha256", "kit_sidecar_sha256", "handoff_id",
         "handoff_sha256", "handoff_created_at", "handoff_expires_at",
         "issuance_revocation_snapshot_sha256", "active_ledger_schema_version",
-        "active_ledger_source", "collector_source_commit", "collector_source_sha256",
+        "active_ledger_source", "bundle_content_sha256", "collector_source_commit", "collector_source_sha256",
         "collector_pyz_sha256", "python_requirement", "session_skeleton_sha256",
         "session_skeleton_members", "tutorials_sha256", "templates_sha256",
         "schemas_sha256", "compile_status", "target_case_status", "artifact_status",
@@ -350,6 +355,77 @@ def _read_control(path: Path, *, max_bytes: int = MAX_CONTROL_BYTES) -> tuple[di
     return document, digest
 
 
+def _node_signature(path: Path) -> tuple[int, int, int, int, int, int, int]:
+    info = path.lstat()
+    return (
+        info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_size,
+        info.st_mtime_ns, getattr(info, "st_file_attributes", 0),
+    )
+
+
+def _bundle_tree(bundle: Path) -> tuple[tuple[str, bytes], ...]:
+    """Read every regular immutable bundle member with portable-name checks."""
+
+    try:
+        root = _safe_absolute_path(bundle)
+        root_info = root.lstat()
+        if not stat.S_ISDIR(root_info.st_mode):
+            raise CollectorError("COLLECTOR_BUNDLE_TREE_INVALID")
+        directories = {root: _node_signature(root)}
+        portable: set[str] = set()
+        records: list[tuple[str, bytes]] = []
+        total = 0
+        for path in sorted(
+            root.rglob("*"),
+            key=lambda item: item.relative_to(root).as_posix().encode("ascii"),
+        ):
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode) or _path_has_reparse(info):
+                raise CollectorError("COLLECTOR_BUNDLE_TREE_INVALID", str(path))
+            if not stat.S_ISDIR(info.st_mode) and not stat.S_ISREG(info.st_mode):
+                raise CollectorError("COLLECTOR_BUNDLE_TREE_INVALID", str(path))
+            relative = _validate_member_path(path.relative_to(root).as_posix())
+            key = _portable_key(relative)
+            if key in portable:
+                raise CollectorError("COLLECTOR_BUNDLE_PATH_COLLISION", relative)
+            portable.add(key)
+            if stat.S_ISDIR(info.st_mode):
+                directories[path] = _node_signature(path)
+                continue
+            if relative.casefold().endswith(BUNDLE_FORBIDDEN_SUFFIXES):
+                raise CollectorError("COLLECTOR_BUNDLE_FORBIDDEN_PAYLOAD", relative)
+            data, _digest = _stable_read(path, max_bytes=MAX_BUNDLE_MEMBER_BYTES)
+            total += len(data)
+            if len(records) >= MAX_BUNDLE_MEMBER_COUNT:
+                raise CollectorError("COLLECTOR_BUNDLE_MEMBER_LIMIT")
+            if total > MAX_BUNDLE_TOTAL_BYTES:
+                raise CollectorError("COLLECTOR_BUNDLE_SIZE_LIMIT")
+            records.append((relative, data))
+        if any(_node_signature(path) != signature for path, signature in directories.items()):
+            raise CollectorError("COLLECTOR_BUNDLE_TREE_CHANGED")
+    except CollectorError:
+        raise
+    except (OSError, UnicodeError) as error:
+        raise CollectorError("COLLECTOR_BUNDLE_TREE_INVALID") from error
+    return tuple(records)
+
+
+def _bundle_member_digest(records: tuple[tuple[str, bytes], ...]) -> str:
+    return hashlib.sha256(
+        canonical_json_bytes(
+            [{"path": path, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)} for path, data in records]
+        )
+    ).hexdigest()
+
+
+def _bundle_sums(records: tuple[tuple[str, bytes], ...]) -> bytes:
+    return b"".join(
+        f"{hashlib.sha256(data).hexdigest()}  {path}\n".encode("ascii")
+        for path, data in records
+        if path != "SHA256SUMS"
+    )
+
+
 def _paths_overlap(first: Path, second: Path) -> bool:
     first_text = os.fspath(first)
     second_text = os.fspath(second)
@@ -417,7 +493,7 @@ def _validate_provenance(provenance: dict[str, Any]) -> tuple[dict[str, Any], ..
     digest_fields = (
         "catalog_sha256", "manifest_sha256", "manifest_digest", "kit_zip_sha256",
         "kit_sidecar_sha256", "handoff_sha256", "issuance_revocation_snapshot_sha256",
-        "collector_source_sha256", "collector_pyz_sha256", "session_skeleton_sha256",
+        "bundle_content_sha256", "collector_source_sha256", "collector_pyz_sha256", "session_skeleton_sha256",
         "tutorials_sha256", "templates_sha256", "schemas_sha256",
     )
     if not all(_sha(provenance.get(key)) for key in digest_fields):
@@ -525,9 +601,25 @@ def _load_preflight(
     ledger = _safe_absolute_path(Path(ledger))
     if _paths_overlap(bundle, current) or _paths_overlap(bundle, ledger):
         raise CollectorError("COLLECTOR_EXTERNAL_STATE_REQUIRED")
-    provenance_path = bundle / "provenance.json"
-    provenance, provenance_digest = _read_control(provenance_path)
+    tree = _bundle_tree(bundle)
+    file_map = dict(tree)
+    if "provenance.json" not in file_map or "SHA256SUMS" not in file_map:
+        raise CollectorError("COLLECTOR_BUNDLE_REQUIRED_FILE_MISSING")
+    provenance_bytes = file_map["provenance.json"]
+    provenance = _require_dict(
+        parse_canonical_json_bytes(provenance_bytes), "COLLECTOR_JSON_INVALID"
+    )
+    provenance_digest = hashlib.sha256(provenance_bytes).hexdigest()
     members = _validate_provenance(provenance)
+    if file_map["SHA256SUMS"] != _bundle_sums(tree):
+        raise CollectorError("COLLECTOR_BUNDLE_SHA256SUMS_INVALID")
+    content = tuple(
+        (path, data)
+        for path, data in tree
+        if path not in {"provenance.json", "SHA256SUMS"}
+    )
+    if _bundle_member_digest(content) != provenance["bundle_content_sha256"]:
+        raise CollectorError("COLLECTOR_BUNDLE_CONTENT_MISMATCH")
     current_document, _current_digest = _read_control(current)
     _require_exact_keys(current_document, CURRENT_FIELDS, "COLLECTOR_CURRENT_INVALID")
     bundle_id = "bundle-" + provenance_digest[:24]
@@ -540,12 +632,29 @@ def _load_preflight(
     ):
         raise CollectorError("COLLECTOR_CURRENT_BUNDLE_MISMATCH")
     kit_id = provenance.get("kit_id")
-    skeleton_path = bundle / "session-skeleton.zip"
-    skeleton_bytes, skeleton_digest = _stable_read(skeleton_path, max_bytes=MAX_SKELETON_BYTES)
+    try:
+        skeleton_bytes = file_map["session-skeleton.zip"]
+        handoff_bytes = file_map["handoff.json"]
+        kit_zip = file_map[f"{kit_id}.zip"]
+        kit_sidecar = file_map[f"{kit_id}.zip.sha256"]
+        pyz = file_map["target-discovery.pyz"]
+        pyz_sidecar = file_map["target-discovery.pyz.sha256"]
+    except KeyError as error:
+        raise CollectorError("COLLECTOR_BUNDLE_REQUIRED_FILE_MISSING", str(error)) from error
+    if len(skeleton_bytes) > MAX_SKELETON_BYTES:
+        raise CollectorError("COLLECTOR_FILE_TOO_LARGE", "session-skeleton.zip")
+    skeleton_digest = hashlib.sha256(skeleton_bytes).hexdigest()
     if skeleton_digest != provenance.get("session_skeleton_sha256"):
         raise CollectorError("COLLECTOR_SKELETON_HASH_MISMATCH")
-    handoff_path = bundle / "handoff.json"
-    handoff, handoff_digest = _read_control(handoff_path)
+    if (
+        hashlib.sha256(kit_zip).hexdigest() != provenance.get("kit_zip_sha256")
+        or kit_sidecar != f"{provenance['kit_zip_sha256']}  {kit_id}.zip\n".encode("ascii")
+        or hashlib.sha256(pyz).hexdigest() != provenance.get("collector_pyz_sha256")
+        or pyz_sidecar != f"{provenance['collector_pyz_sha256']}  target-discovery.pyz\n".encode("ascii")
+    ):
+        raise CollectorError("COLLECTOR_BUNDLE_MEMBER_BINDING_MISMATCH")
+    handoff = _require_dict(parse_canonical_json_bytes(handoff_bytes), "COLLECTOR_JSON_INVALID")
+    handoff_digest = hashlib.sha256(handoff_bytes).hexdigest()
     if handoff_digest != provenance.get("handoff_sha256"):
         raise CollectorError("COLLECTOR_HANDOFF_HASH_MISMATCH")
     handoff_id = _validate_handoff(handoff, provenance, now)
@@ -782,6 +891,53 @@ def status(capture: Path) -> CollectorResult:
         ):
             raise CollectorError("COLLECTOR_SESSION_INVALID")
         _now(session["created_at"])
+        from .records import (
+            POINT_ORDER,
+            validate_entitlements_document,
+            validate_environment_document,
+            validate_references_document,
+        )
+
+        def optional_document(name: str) -> dict[str, Any] | None:
+            path = capture / name
+            if not path.exists():
+                return None
+            document, _digest = _read_control(path)
+            return document
+
+        environment = optional_document("environment.json")
+        entitlements = optional_document("entitlements.json")
+        references = optional_document("references.json")
+        if environment is not None:
+            validate_environment_document(environment)
+        if entitlements is not None:
+            validate_entitlements_document(entitlements)
+        reference_points: tuple[str, ...] = ()
+        if references is not None:
+            validated = validate_references_document(references)
+            observations = validated.get("observations")
+            if type(observations) is not list:
+                raise CollectorError("COLLECTOR_REFERENCES_INVALID")
+            reference_points = tuple(
+                str(item.get("point_id"))
+                for item in observations
+                if type(item) is dict
+            )
+            if reference_points != POINT_ORDER[:len(reference_points)]:
+                raise CollectorError("COLLECTOR_REFERENCES_INVALID")
+        required = {
+            "environment": environment is not None,
+            "entitlements": entitlements is not None,
+            "reference_points": reference_points,
+        }
+        if environment is None:
+            next_action = "record-environment"
+        elif entitlements is None:
+            next_action = "record-entitlements"
+        elif len(reference_points) < len(POINT_ORDER):
+            next_action = f"import-reference-csv:{POINT_ORDER[len(reference_points)]}"
+        else:
+            next_action = "finalize-raw"
     except CollectorError as error:
         return _failure(error)
     return _result(
@@ -789,7 +945,12 @@ def status(capture: Path) -> CollectorResult:
             "session_id": session.get("session_id"),
             "capture_status": session.get("capture_status"),
             "trust_level": TRUST_LEVEL,
-            "next_action": "record-environment",
+            "environment_recorded": required["environment"],
+            "entitlements_recorded": required["entitlements"],
+            "reference_points_recorded": list(required["reference_points"]),
+            "reference_points_required": list(POINT_ORDER),
+            "ready_to_finalize_raw": next_action == "finalize-raw",
+            "next_action": next_action,
             "gate_evaluated": False,
         }
     )

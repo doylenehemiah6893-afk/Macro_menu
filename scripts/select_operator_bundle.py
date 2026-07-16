@@ -13,15 +13,24 @@ import stat
 import sys
 import tempfile
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
 _BUNDLE = re.compile(r"^bundle-[0-9a-f]{24}$")
 _HANDOFF = re.compile(r"^handoff-[a-z0-9][a-z0-9._-]{2,127}$")
 _SHA = re.compile(r"^[0-9a-f]{64}$")
+_SOURCE = re.compile(r"^[a-z][a-z0-9._-]{2,127}$")
+_UTC = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z$"
+)
 _CURRENT_FIELDS = frozenset(
     {"schema_version", "bundle_id", "bundle_sha256", "handoff_id"}
 )
+_LEDGER_FIELDS = frozenset(
+    {"schema_version", "captured_at", "source", "active_handoff_ids", "withdrawn_handoff_ids"}
+)
+_LEDGER_MAX_AGE = timedelta(hours=24)
 _FORBIDDEN_SUFFIXES = (".catvba", ".bas", ".cls", ".frm", ".frx")
 _WINDOWS_RESERVED = frozenset(
     {"con", "prn", "aux", "nul"}
@@ -127,6 +136,58 @@ def _canonical_bytes(data: bytes) -> dict[str, object]:
     return document
 
 
+def _utc(value: object, code: str) -> datetime:
+    if type(value) is not str or _UTC.fullmatch(value) is None:
+        raise SelectionError(code)
+    try:
+        return datetime.fromisoformat(value[:-1] + "+00:00").astimezone(UTC)
+    except ValueError as error:
+        raise SelectionError(code) from error
+
+
+def _validate_active_control(
+    repo: Path, *, provenance: dict[str, object], handoff: dict[str, object], now: datetime
+) -> None:
+    ledger = repo / "artifacts/b28-discovery/active-handoff-ledger.json"
+    ledger_chain = _path_chain(ledger, repo)
+    document = _canonical_bytes(_stable_read(ledger))
+    _chain_unchanged(ledger_chain)
+    handoff_id = provenance.get("handoff_id")
+    source = provenance.get("active_ledger_source")
+    if (
+        frozenset(document) != _LEDGER_FIELDS
+        or document.get("schema_version") != 1
+        or type(document.get("schema_version")) is not int
+        or type(source) is not str
+        or _SOURCE.fullmatch(source) is None
+        or document.get("source") != source
+        or handoff.get("handoff_id") != handoff_id
+        or handoff.get("revocation_status") != "active"
+        or _utc(handoff.get("expires_at"), "HANDOFF_INVALID") <= now
+    ):
+        raise SelectionError("ACTIVE_CONTROL_INVALID")
+    active = document.get("active_handoff_ids")
+    withdrawn = document.get("withdrawn_handoff_ids")
+    if (
+        type(active) is not list
+        or type(withdrawn) is not list
+        or not all(type(value) is str and _HANDOFF.fullmatch(value) for value in active + withdrawn)
+        or len(active) != len(set(active))
+        or len(withdrawn) != len(set(withdrawn))
+        or set(active) & set(withdrawn)
+    ):
+        raise SelectionError("ACTIVE_CONTROL_INVALID")
+    captured_at = _utc(document.get("captured_at"), "ACTIVE_CONTROL_INVALID")
+    if captured_at > now:
+        raise SelectionError("ACTIVE_CONTROL_FUTURE")
+    if now - captured_at > _LEDGER_MAX_AGE:
+        raise SelectionError("ACTIVE_CONTROL_STALE")
+    if handoff_id in withdrawn:
+        raise SelectionError("ACTIVE_CONTROL_WITHDRAWN")
+    if handoff_id not in active:
+        raise SelectionError("ACTIVE_CONTROL_NOT_ACTIVE")
+
+
 def _write_outputs(path: Path, result: dict[str, object]) -> None:
     available = "true" if result["available"] else "false"
     payload = (
@@ -155,7 +216,7 @@ def _regular_tree(root: Path) -> tuple[tuple[str, bytes], ...]:
         directories = {root: _signature(root_status)}
         records: list[tuple[str, bytes]] = []
         portable_paths: dict[str, str] = {}
-        for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
             status = path.lstat()
             if stat.S_ISLNK(status.st_mode):
                 raise OSError
@@ -309,9 +370,14 @@ def select_operator_bundle(
     provenance_digest = hashlib.sha256(provenance_bytes).hexdigest()
     if (
         bundle_id != "bundle-" + provenance_digest[:24]
+        or document["bundle_sha256"] != provenance_digest
         or provenance.get("handoff_id") != document["handoff_id"]
     ):
         raise SelectionError("BUNDLE_PROVENANCE_MISMATCH")
+    try:
+        handoff = _canonical_bytes(file_map["handoff.json"])
+    except KeyError as error:
+        raise SelectionError("BUNDLE_REQUIRED_FILE_MISSING") from error
     expected_sums = b"".join(
         f"{hashlib.sha256(data).hexdigest()}  {path}\n".encode("ascii")
         for path, data in files
@@ -319,8 +385,20 @@ def select_operator_bundle(
     )
     if file_map["SHA256SUMS"] != expected_sums:
         raise SelectionError("BUNDLE_SHA256SUMS_INVALID")
-    if _bundle_tree_digest(files) != document["bundle_sha256"]:
-        raise SelectionError("BUNDLE_TREE_DIGEST_MISMATCH")
+    content_files = tuple(
+        (path, data)
+        for path, data in files
+        if path not in {"provenance.json", "SHA256SUMS"}
+    )
+    if (
+        type(provenance.get("bundle_content_sha256")) is not str
+        or _SHA.fullmatch(str(provenance["bundle_content_sha256"])) is None
+        or _bundle_tree_digest(content_files) != provenance["bundle_content_sha256"]
+    ):
+        raise SelectionError("BUNDLE_CONTENT_DIGEST_MISMATCH")
+    _validate_active_control(
+        repo, provenance=provenance, handoff=handoff, now=datetime.now(UTC)
+    )
     snapshot_directory = Path(snapshot_root).resolve()
     try:
         snapshot_relative = snapshot_directory.relative_to(repo)

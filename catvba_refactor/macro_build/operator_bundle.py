@@ -94,6 +94,7 @@ class OperatorBundleReceipt:
     bundle_id: str
     bundle_dir: Path
     bundle_sha256: str
+    bundle_content_sha256: str
     provenance_sha256: str
     pyz_sha256: str
     kit_id: str
@@ -745,17 +746,31 @@ def _copy_records(root: Path, prefix: str, records: Iterable[tuple[str, bytes]])
         _write_file(root, f"{prefix}/{path}" if prefix else path, data)
 
 
-def _checksum_bytes(root: Path) -> bytes:
-    files = tuple(
-        sorted(
-            (
-                (path.relative_to(root).as_posix(), path.read_bytes())
-                for path in root.rglob("*")
-                if path.is_file() and path.name != "SHA256SUMS"
-            ),
-            key=lambda item: item[0].encode("ascii"),
+def _bundle_content_records(
+    root: Path, *, exclude: frozenset[str] = frozenset({"provenance.json", "SHA256SUMS"})
+) -> tuple[tuple[str, bytes], ...]:
+    """Read generated bundle members before the provenance/checksum controls."""
+
+    try:
+        files = tuple(
+            sorted(
+                (
+                    (path.relative_to(root).as_posix(), path.read_bytes())
+                    for path in root.rglob("*")
+                    if path.is_file() and path.relative_to(root).as_posix() not in exclude
+                ),
+                key=lambda item: item[0].encode("ascii"),
+            )
         )
-    )
+    except OSError as error:
+        raise InfrastructureError("OPERATOR_BUNDLE_STAGE_READ_FAILED") from error
+    if not files or not validate_portable_ascii_paths(path for path, _ in files).ok:
+        raise VerificationError("OPERATOR_BUNDLE_CONTENT_INVALID")
+    return files
+
+
+def _checksum_bytes(root: Path) -> bytes:
+    files = _bundle_content_records(root, exclude=frozenset({"SHA256SUMS"}))
     return b"".join(f"{_sha(data)}  {path}\n".encode("ascii") for path, data in files)
 
 
@@ -968,6 +983,7 @@ def build_operator_bundle(
             "issuance_revocation_snapshot_sha256": _sha(snapshot_bytes),
             "active_ledger_schema_version": ledger["schema_version"],
             "active_ledger_source": ledger["source"],
+            "bundle_content_sha256": _tree_digest(_bundle_content_records(stage)),
             "collector_source_commit": commit,
             "collector_source_sha256": _tree_digest(collector),
             "collector_pyz_sha256": pyz_sha,
@@ -1014,6 +1030,7 @@ def build_operator_bundle(
             bundle_id=bundle_id,
             bundle_dir=final,
             bundle_sha256=provenance_sha,
+            bundle_content_sha256=str(provenance["bundle_content_sha256"]),
             provenance_sha256=provenance_sha,
             pyz_sha256=pyz_sha,
             kit_id=str(inspection.kit_id),

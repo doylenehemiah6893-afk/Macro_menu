@@ -10,7 +10,7 @@ import sys
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -65,6 +65,7 @@ _LEDGER_FIELDS = frozenset(
     }
 )
 _HANDOFF_ID = re.compile(r"^handoff-[a-z0-9][a-z0-9-]{2,94}$")
+_BUNDLE_ID = re.compile(r"^bundle-[0-9a-f]{24}$")
 _SOURCE = re.compile(r"^[a-z][a-z0-9._-]{2,127}$")
 _UTC_TIMESTAMP = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
@@ -300,6 +301,110 @@ def _internal_path(repo_root: Path, relative: object) -> Path | None:
     return candidate
 
 
+def _canonical_control(path: Path) -> dict[str, Any]:
+    """Read one canonical ASCII control document without accepting a rewrite."""
+
+    data = path.read_bytes()
+    document = json.loads(data.decode("ascii"), object_pairs_hook=_unique_object)
+    expected = (
+        json.dumps(document, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("ascii")
+    if type(document) is not dict or data != expected:
+        raise ValueError("noncanonical control")
+    return document
+
+
+def _active_delivery_diagnostics(
+    root: Path, state: Mapping[str, Any], now: datetime
+) -> list[ResumeDiagnostic]:
+    """Bind issued resume state to its immutable bundle and fresh control files."""
+
+    diagnostics: list[ResumeDiagnostic] = []
+    bundle = _internal_path(root, state["active_bundle_path"])
+    receipt = _internal_path(root, state["last_reproducibility_receipt"])
+    control_root = root / "artifacts/b28-discovery"
+    current = control_root / "CURRENT.json"
+    ledger = control_root / "active-handoff-ledger.json"
+    if bundle is None or not bundle.is_dir() or bundle.is_symlink():
+        return [_diagnostic("RESUME_ACTIVE_BUNDLE_INVALID", str(state["active_bundle_path"]), "active bundle path is unsafe or unavailable")]
+    if bundle.parent != control_root / "bundles" or _BUNDLE_ID.fullmatch(bundle.name) is None:
+        return [_diagnostic("RESUME_ACTIVE_BUNDLE_INVALID", str(state["active_bundle_path"]), "active bundle must use the issued bundles layout")]
+    if receipt is None or receipt.is_symlink() or not receipt.is_file():
+        return [_diagnostic("RESUME_REPRO_RECEIPT_INVALID", str(state["last_reproducibility_receipt"]), "issued state requires a regular reproducibility receipt")]
+    try:
+        receipt.relative_to(bundle / "receipts")
+    except ValueError:
+        return [_diagnostic("RESUME_REPRO_RECEIPT_INVALID", str(state["last_reproducibility_receipt"]), "reproducibility receipt must be inside the active bundle")]
+    try:
+        provenance_path = bundle / "provenance.json"
+        handoff_path = bundle / "handoff.json"
+        paths = (provenance_path, handoff_path, current, ledger)
+        if any(not path.is_file() or path.is_symlink() for path in paths):
+            raise OSError("control missing or unsafe")
+        provenance_bytes = provenance_path.read_bytes()
+        provenance = _canonical_control(provenance_path)
+        handoff_bytes = handoff_path.read_bytes()
+        handoff = _canonical_control(handoff_path)
+        current_document = _canonical_control(current)
+        ledger_document = _canonical_control(ledger)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return [_diagnostic("RESUME_ACTIVE_CONTROL_INVALID", "artifacts/b28-discovery", "issued control files are missing, unsafe, or noncanonical")]
+    provenance_digest = hashlib.sha256(provenance_bytes).hexdigest()
+    handoff_digest = hashlib.sha256(handoff_bytes).hexdigest()
+    bundle_id = "bundle-" + provenance_digest[:24]
+    bindings = (
+        bundle.name == bundle_id,
+        state["bundle_digest"] == provenance_digest,
+        state["active_kit_id"] == provenance.get("kit_id"),
+        state["kit_zip_digest"] == provenance.get("kit_zip_sha256"),
+        state["active_handoff_id"] == provenance.get("handoff_id"),
+        state["handoff_digest"] == handoff_digest == provenance.get("handoff_sha256"),
+        state["expiry"] == handoff.get("expires_at") == provenance.get("handoff_expires_at"),
+        current_document == {
+            "schema_version": 1,
+            "bundle_id": bundle_id,
+            "bundle_sha256": provenance_digest,
+            "handoff_id": state["active_handoff_id"],
+        },
+        handoff.get("handoff_id") == state["active_handoff_id"],
+        handoff.get("revocation_status") == "active",
+    )
+    if not all(bindings):
+        diagnostics.append(_diagnostic("RESUME_ACTIVE_BINDING_MISMATCH", "artifacts/b28-discovery", "state, CURRENT, provenance, and handoff must bind one identity"))
+    active = ledger_document.get("active_handoff_ids")
+    withdrawn = ledger_document.get("withdrawn_handoff_ids")
+    source = provenance.get("active_ledger_source")
+    captured_at = _utc_timestamp(ledger_document.get("captured_at"))
+    if (
+        frozenset(ledger_document) != _LEDGER_FIELDS
+        or ledger_document.get("schema_version") != 1
+        or type(active) is not list
+        or type(withdrawn) is not list
+        or not all(type(item) is str and _HANDOFF_ID.fullmatch(item) for item in active + withdrawn)
+        or len(active) != len(set(active))
+        or len(withdrawn) != len(set(withdrawn))
+        or set(active) & set(withdrawn)
+        or ledger_document.get("source") != source
+        or type(source) is not str
+        or _SOURCE.fullmatch(source) is None
+        or captured_at is None
+    ):
+        diagnostics.append(_diagnostic("RESUME_ACTIVE_LEDGER_INVALID", "artifacts/b28-discovery/active-handoff-ledger.json", "active ledger is not a canonical compatible control"))
+    elif captured_at > now.astimezone(UTC):
+        diagnostics.append(_diagnostic("RESUME_ACTIVE_LEDGER_FUTURE", "artifacts/b28-discovery/active-handoff-ledger.json", "active ledger is captured in the future"))
+    elif now.astimezone(UTC) - captured_at > timedelta(hours=24):
+        diagnostics.append(_diagnostic("RESUME_ACTIVE_LEDGER_STALE", "artifacts/b28-discovery/active-handoff-ledger.json", "active ledger is older than 24 hours"))
+    elif state["active_handoff_id"] in withdrawn:
+        diagnostics.append(_diagnostic("RESUME_ACTIVE_HANDOFF_WITHDRAWN", "artifacts/b28-discovery/active-handoff-ledger.json", "active handoff is withdrawn"))
+    elif state["active_handoff_id"] not in active:
+        diagnostics.append(_diagnostic("RESUME_ACTIVE_HANDOFF_INACTIVE", "artifacts/b28-discovery/active-handoff-ledger.json", "active handoff is not active in the ledger"))
+    expiry = _utc_timestamp(state["expiry"])
+    if expiry is None or expiry <= now.astimezone(UTC):
+        diagnostics.append(_diagnostic("RESUME_HANDOFF_EXPIRED", "expiry", "active handoff is expired"))
+    return diagnostics
+
+
 def _inspect_repository(
     repo_root: Path,
     state_path: Path,
@@ -452,11 +557,8 @@ def _inspect_repository(
             artifact = _internal_path(root, relative)
             if artifact is None or not artifact.exists():
                 diagnostics.append(_diagnostic("RESUME_ACTIVE_ARTIFACT_MISSING", str(relative), "state references a missing artifact"))
-    expiry = state["expiry"]
-    if expiry is not None:
-        expires = _utc_timestamp(expiry)
-        if expires is None or expires <= now.astimezone(UTC):
-            diagnostics.append(_diagnostic("RESUME_HANDOFF_EXPIRED", "expiry", "active handoff is expired"))
+    if state["active_bundle_path"] is not None:
+        diagnostics.extend(_active_delivery_diagnostics(root, state, now))
     facts["release_eligible"] = state["release_eligible"]
     return _resume_report(diagnostics, facts)
 

@@ -81,7 +81,7 @@ G0/G1 不证明 CATIA、VBE References、DSLS checkout、Compile、运行或发�
    public receipts/CURRENT/ledger；不运行 CATIA。
 4. Task 12 只推本分支，监控 CI，再从新的完整 clone 执行 bootstrap/doctor/verify。
 5. 只有 active ledger fresh 且 bundle 验证通过，才把目标包交给 B28 操作员，按
-   `Docs/runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md` 采集 raw/untrusted。
+   `Docs/runbooks/b28-target/README_TARGET_B28.md` 与同目录的 `QUICKSTART_B28.md` 采集 raw/untrusted。
 6. 目标机回传后，A 环境核 hash、严格 ingest、独立脱敏复核；只在 A 环境生成 blocked Discovery receipt、
    observation approval/seal。真实 evidence 不进入公开 Git，仅提交脱敏 public attestation。
 

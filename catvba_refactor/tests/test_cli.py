@@ -243,6 +243,7 @@ def test_build_operator_bundle_dispatch_uses_exact_repository_defaults(
             bundle_id="bundle-" + "1" * 24,
             bundle_dir=tmp_path / "output" / ("bundle-" + "1" * 24),
             bundle_sha256="2" * 64,
+            bundle_content_sha256="2" * 64,
             provenance_sha256="2" * 64,
             pyz_sha256="3" * 64,
             kit_id="kit-" + "4" * 20,

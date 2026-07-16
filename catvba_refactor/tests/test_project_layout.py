@@ -83,30 +83,26 @@ def test_target_bundle_document_sources_and_cmd_wrapper_exist() -> None:
     docs_index = (ROOT / "Docs/README.md").read_text("utf-8")
     status = (ROOT / "Docs/STATUS.md").read_text("utf-8")
     resume = (ROOT / "RESUME.md").read_text("utf-8")
-    assert "2026-07-15-catvba-b28-discovery-operator-bundle.md" in docs_index
+    assert "b28-target/README_TARGET_B28.md" in docs_index
+    assert "2026-07-15-catvba-b28-discovery-operator-bundle.md" not in docs_index
+    assert "b28-target/README_TARGET_B28.md" in status
+    assert "b28-target/README_TARGET_B28.md" in resume
     assert "complete-evidence-implementation" in status
     assert "resume/state.json" in resume
     runbook = (
         ROOT / "Docs/runbooks/2026-07-15-catvba-b28-discovery-operator-bundle.md"
     ).read_text("utf-8")
+    assert "状态：SUPERSEDED" in runbook
+    assert "任何代码块均不可执行" in runbook
     quickstart = (
         ROOT / "Docs/runbooks/b28-target/QUICKSTART_B28.md"
     ).read_text("utf-8")
-    for guide in (runbook, quickstart):
-        assert "python --version" not in guide
-        assert guide.index("where py") < guide.index("where python")
-        assert "sys.implementation.name == 'cpython'" in guide
-        assert "sys.version_info[:2] == (3, 12)" in guide
-        assert 'set "PY312_MODE=py"' in guide
-        assert 'set "PY312_MODE=python"' in guide
-    assert 'if /i "%PY312_MODE%"=="py" py -3.12 -c' in runbook
-    assert 'if /i "%PY312_MODE%"=="python" python -c' in runbook
-    assert "screen-redacted.redaction-review.json" in runbook
-    assert "review_record_ids" in runbook
-    assert "certutil-sha256.txt" in runbook
-    assert "'reviewers'" not in runbook
-    assert "COLLECTOR_PYTHON_312_REQUIRED" in runbook
-    assert "exit 2" in runbook and "exit 4" in runbook
+    assert "python --version" not in quickstart
+    assert quickstart.index("where py") < quickstart.index("where python")
+    assert "sys.implementation.name == 'cpython'" in quickstart
+    assert "sys.version_info[:2] == (3, 12)" in quickstart
+    assert 'set "PY312_MODE=py"' in quickstart
+    assert 'set "PY312_MODE=python"' in quickstart
     old_runbook = (
         ROOT / "Docs/runbooks/2026-07-14-catvba-b28-g2-g3-core.md"
     ).read_text("utf-8")

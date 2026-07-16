@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -41,26 +42,61 @@ def _issued_bundle(repo: Path) -> Path:
     root = repo / "artifacts/b28-discovery"
     bundles = root / "bundles"
     bundles.mkdir(parents=True)
-    provenance = b'{"handoff_id":"handoff-selector-fixture","schema_version":1}\n'
-    digest = hashlib.sha256(provenance).hexdigest()
-    bundle_id = "bundle-" + digest[:24]
-    bundle = bundles / bundle_id
+    bundle = bundles / "stage"
     bundle.mkdir()
-    (bundle / "provenance.json").write_bytes(provenance)
+    now = datetime.now(UTC).replace(microsecond=0)
+    handoff = {
+        "expires_at": (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        "handoff_id": "handoff-selector-fixture",
+        "revocation_status": "active",
+    }
+    (bundle / "handoff.json").write_bytes(
+        json.dumps(handoff, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("ascii") + b"\n"
+    )
     (bundle / "run-discovery.cmd").write_bytes(b"@echo off\r\n")
     (bundle / "target-discovery.pyz").write_bytes(b"fixture-pyz")
     (bundle / "receipts").mkdir()
     (bundle / "receipts/smoke.json").write_bytes(b'{"ok":true}\n')
+    provenance = json.dumps(
+        {
+            "bundle_content_sha256": _fixture_content_digest(bundle),
+            "active_ledger_source": "repository-active-handoff-ledger",
+            "handoff_id": "handoff-selector-fixture",
+            "schema_version": 1,
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("ascii") + b"\n"
+    digest = hashlib.sha256(provenance).hexdigest()
+    bundle_id = "bundle-" + digest[:24]
+    (bundle / "provenance.json").write_bytes(provenance)
     _rewrite_sums(bundle)
-    tree_digest = _fixture_tree_digest(bundle)
+    bundle.rename(bundles / bundle_id)
+    bundle = bundles / bundle_id
     current = {
         "schema_version": 1,
         "bundle_id": bundle_id,
-        "bundle_sha256": tree_digest,
+        "bundle_sha256": digest,
         "handoff_id": "handoff-selector-fixture",
     }
     (root / "CURRENT.json").write_text(
         json.dumps(current, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="ascii",
+    )
+    (root / "active-handoff-ledger.json").write_text(
+        json.dumps(
+            {
+                "active_handoff_ids": ["handoff-selector-fixture"],
+                "captured_at": now.isoformat().replace("+00:00", "Z"),
+                "schema_version": 1,
+                "source": "repository-active-handoff-ledger",
+                "withdrawn_handoff_ids": [],
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ) + "\n",
         encoding="ascii",
     )
     return bundle
@@ -79,14 +115,15 @@ def _rewrite_sums(bundle: Path) -> None:
     )
 
 
-def _fixture_tree_digest(bundle: Path) -> str:
+def _fixture_content_digest(bundle: Path) -> str:
     records = [
         {
             "path": path.relative_to(bundle).as_posix(),
             "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             "size": len(path.read_bytes()),
         }
-        for path in sorted(bundle.rglob("*")) if path.is_file()
+        for path in sorted(bundle.rglob("*"))
+        if path.is_file() and path.name not in {"provenance.json", "SHA256SUMS"}
     ]
     data = (json.dumps(records, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii")
     return hashlib.sha256(data).hexdigest()
@@ -140,12 +177,12 @@ def test_verify_resume_runs_required_stages_in_order(
     receipt = module.verify_resume(repo, state, tmp_path / "out")
 
     assert calls == [
-        "lock-check", "pytest", "inventory", "check", "build-1", "build-2",
+        "lock-check", "doctor", "pytest", "inventory", "check", "build-1", "build-2",
         "verify-dir-1", "verify-zip-1", "verify-dir-2", "verify-zip-2",
         "collector-smoke",
     ]
     assert [record["stage"] for record in receipt["stages"]] == [
-        "lock-check", "pytest", "inventory", "check", "build-1", "build-2",
+        "lock-check", "doctor", "pytest", "inventory", "check", "build-1", "build-2",
         "verify-dir-1", "verify-zip-1", "verify-dir-2", "verify-zip-2",
         "compare", "collector-smoke",
     ]
@@ -367,7 +404,7 @@ def test_selector_rejects_tree_tamper_even_when_sha_file_is_recomputed(
     with (bundle / relative).open("ab") as stream:
         stream.write(b"tamper")
     _rewrite_sums(bundle)
-    with pytest.raises(selector.SelectionError, match="BUNDLE_TREE_DIGEST_MISMATCH"):
+    with pytest.raises(selector.SelectionError, match="BUNDLE_CONTENT_DIGEST_MISMATCH"):
         selector.select_operator_bundle(tmp_path, tmp_path / "github-output", tmp_path / "snapshot")
 
 

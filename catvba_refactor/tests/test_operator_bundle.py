@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -32,6 +33,8 @@ from catvba_refactor.target_collector.raw_validation import (
     ENVELOPE,
     TARGET_CASE_IDS,
 )
+from catvba_refactor.target_collector import workspace as collector_workspace
+from catvba_refactor.target_collector.workspace import preflight
 
 
 NOW = datetime(2026, 7, 15, 12, 2, tzinfo=UTC)
@@ -47,6 +50,28 @@ def _write_json(path: Path, value: object) -> None:
 
 def _build(request: OperatorBundleRequest):
     return build_operator_bundle(request, _clock=lambda: NOW)
+
+
+def _selector_module():
+    path = Path(__file__).parents[2] / "scripts" / "select_operator_bundle.py"
+    spec = importlib.util.spec_from_file_location("operator_bundle_selector_test", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _rewrite_sums(bundle: Path) -> None:
+    files = [
+        path for path in sorted(bundle.rglob("*"), key=lambda item: item.as_posix().encode("ascii"))
+        if path.is_file() and path.relative_to(bundle).as_posix() != "SHA256SUMS"
+    ]
+    (bundle / "SHA256SUMS").write_bytes(
+        b"".join(
+            f"{_sha(path.read_bytes())}  {path.relative_to(bundle).as_posix()}\n".encode("ascii")
+            for path in files
+        )
+    )
 
 
 def _write_valid_skeleton(root: Path) -> None:
@@ -331,6 +356,17 @@ def test_provenance_binds_handoff_ledgers_skeleton_and_boundaries(
     assert provenance["target_case_status"] == "not-run"
     assert provenance["artifact_status"] == "not-produced"
     assert provenance["release_eligible"] is False
+    content = [
+        {
+            "path": path.relative_to(root).as_posix(),
+            "sha256": _sha(path.read_bytes()),
+            "size": path.stat().st_size,
+        }
+        for path in sorted(root.rglob("*"), key=lambda item: item.as_posix().encode("ascii"))
+        if path.is_file() and path.relative_to(root).as_posix() not in {"provenance.json", "SHA256SUMS"}
+    ]
+    assert provenance["bundle_content_sha256"] == _sha(canonical_json_bytes(content))
+    assert receipt.bundle_content_sha256 == provenance["bundle_content_sha256"]
     skeleton_members = [
         {"path": p.relative_to(bundle_request.session_skeleton).as_posix(), "sha256": _sha(p.read_bytes()), "size": p.stat().st_size}
         for p in sorted(bundle_request.session_skeleton.rglob("*"), key=lambda p: p.as_posix().encode("ascii")) if p.is_file()
@@ -345,6 +381,58 @@ def test_provenance_binds_handoff_ledgers_skeleton_and_boundaries(
     assert len(set(recomputed.values())) == 4
     assert receipt.active_ledger_sha256 == _sha(ledger)
     assert receipt.active_ledger_captured_at == json.loads(ledger)["captured_at"]
+
+
+def test_real_bundle_current_contract_passes_ci_and_target_then_rejects_payload_drift(
+    bundle_request: OperatorBundleRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipt = _build(bundle_request)
+    repository = bundle_request.repo_root
+    root = repository / "artifacts" / "b28-discovery"
+    destination = root / "bundles" / receipt.bundle_id
+    destination.parent.mkdir(parents=True)
+    shutil.copytree(receipt.bundle_dir, destination)
+    provenance = (destination / "provenance.json").read_bytes()
+    _write_json(root / "CURRENT.json", {
+        "schema_version": 1,
+        "bundle_id": receipt.bundle_id,
+        "bundle_sha256": _sha(provenance),
+        "handoff_id": receipt.handoff_id,
+    })
+    now = datetime.now(UTC).replace(microsecond=0)
+    _write_json(root / "active-handoff-ledger.json", {
+        "schema_version": 1,
+        "captured_at": now.isoformat().replace("+00:00", "Z"),
+        "source": "repository-active-handoff-ledger",
+        "active_handoff_ids": [receipt.handoff_id],
+        "withdrawn_handoff_ids": [],
+    })
+    selector = _selector_module()
+    selected = selector.select_operator_bundle(
+        repository, repository / "github-output", repository / "snapshot"
+    )
+    assert selected["available"] is True
+    monkeypatch.setattr(collector_workspace.platform, "system", lambda: "Windows")
+    assert preflight(
+        bundle=destination,
+        current=root / "CURRENT.json",
+        ledger=root / "active-handoff-ledger.json",
+        _clock=lambda: now,
+    ).ok
+
+    with (destination / "run-discovery.cmd").open("ab") as stream:
+        stream.write(b"tamper")
+    _rewrite_sums(destination)
+    with pytest.raises(selector.SelectionError, match="BUNDLE_CONTENT_DIGEST_MISMATCH"):
+        selector.select_operator_bundle(
+            repository, repository / "github-output-after-tamper", repository / "snapshot-after-tamper"
+        )
+    assert preflight(
+        bundle=destination,
+        current=root / "CURRENT.json",
+        ledger=root / "active-handoff-ledger.json",
+        _clock=lambda: now,
+    ).codes == ("COLLECTOR_BUNDLE_CONTENT_MISMATCH",)
 
 
 @pytest.mark.parametrize(

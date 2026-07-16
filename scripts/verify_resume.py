@@ -218,6 +218,13 @@ def verify_resume(
 
     commands: list[tuple[str, list[str]]] = [
         ("lock-check", ["uv", "lock", "--check"]),
+        (
+            "doctor",
+            [
+                "uv", "run", "macro-menu-build", "doctor", "--state",
+                os.fspath(state_file), "--format", "json",
+            ],
+        ),
         ("pytest", ["uv", "run", "pytest", "-q"]),
         ("inventory", ["uv", "run", "macro-menu-build", "inventory", "--format", "json"]),
         ("check", ["uv", "run", "macro-menu-build", "check", "--format", "json"]),
