@@ -269,6 +269,13 @@ def _documents() -> dict[str, dict]:
                 "status": "observed",
                 "operator_record_id": "record-entitlement-tool",
             },
+            "licenses": {
+                "AB3": {"availability": "observed-available", "checkout": "observed-checked-out"},
+                "HD2": {"availability": "observed-unavailable", "checkout": "not-checked-out"},
+                "MD2": {"availability": "observed-unavailable", "checkout": "not-checked-out"},
+                "SPA": {"availability": "observed-available", "checkout": "observed-checked-out"},
+                "FTA": {"availability": "observed-available", "checkout": "observed-checked-out"},
+            },
             "baseline_any_of": ["AB3"],
             "additional_required": ["SPA", "FTA"],
             "set_license_used": False,
@@ -655,22 +662,45 @@ def test_artifact_status_and_file_metadata_must_match(schemas) -> None:
     document["artifact_status"] = "returned"
     assert not validate_target_document("artifact-manifest.json", document, schemas).ok
 
-    document["artifact"] = {
-        "relative_path": "returned-catvba/not-core.catvba",
-        "filename": "not-core.catvba",
-        "package_id": "core",
-        "sha256": SHA,
-        "size": 12,
-        "post_import_compile_record_id": "compile-post-import",
-        "post_restart_compile_record_id": "compile-post-restart",
-        "modules_sha256": SHA,
-        "form_frx_sha256": SHA_B,
-        "reference_observation_sha256": SHA,
-        "signature_stream_status": "absent",
-        "kit_source_receipt_sha256": SHA_B,
-        "readonly": True,
-    }
-    assert not validate_target_document("artifact-manifest.json", document, schemas).ok
+
+def test_discovery_schema_forbids_an_otherwise_valid_returned_artifact(schemas) -> None:
+    document = copy.deepcopy(
+        _formal_documents("g3-c")["artifact-manifest.json"]
+    )
+    document["binding"] = copy.deepcopy(
+        _documents()["artifact-manifest.json"]["binding"]
+    )
+
+    assert not validate_target_document(
+        "artifact-manifest.json", document, schemas
+    ).ok
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("relative_path", "returned-catvba/not-core.catvba"),
+        ("filename", "not-core.catvba"),
+    ],
+)
+def test_formal_returned_artifact_rejects_metadata_mismatch(
+    schemas, field: str, bad_value: str
+) -> None:
+    document = copy.deepcopy(
+        _formal_documents("g3-c")["artifact-manifest.json"]
+    )
+    assert validate_target_document(
+        "artifact-manifest.json", document, schemas
+    ).ok
+
+    document["artifact"][field] = bad_value
+    report = validate_target_document("artifact-manifest.json", document, schemas)
+
+    assert not report.ok
+    assert any(
+        diagnostic.path == f"artifact-manifest.json#/artifact/{field}"
+        for diagnostic in report.diagnostics
+    )
 
 
 def test_reference_evidence_requires_all_five_ordered_points(schemas) -> None:

@@ -563,6 +563,10 @@ def _documents(mode: str) -> tuple[dict[str, dict[str, Any]], dict[str, bytes]]:
                     "tool_result",
                 )
             },
+            "licenses": {
+                license_id: {"availability": "unknown", "checkout": "unknown"}
+                for license_id in ("AB3", "HD2", "MD2", "SPA", "FTA")
+            },
             "baseline_any_of": [] if mode == "discovery" else ["AB3"],
             "additional_required": ["SPA", "FTA"],
             "set_license_used": False,
@@ -677,6 +681,7 @@ def _executed_g3_files() -> dict[str, bytes]:
             "operator_record_id": operator_id,
         }
         operator_ids[operator_id] = "entitlement"
+    documents["entitlements.json"]["licenses"] = _license_records(selected="AB3")
 
     for ordinal, point in enumerate(documents["references.json"]["points"], start=1):
         operator_id = f"record-reference-point-{ordinal:02d}"
@@ -972,6 +977,189 @@ def test_capture_accepts_truthful_in_progress_unobserved_skeleton() -> None:
     report = _validate(skeleton, "discovery")
 
     assert report.ok, report.diagnostics
+
+
+def test_discovery_rejects_any_compile_attempt() -> None:
+    def attempt_compile(document: dict[str, Any]) -> None:
+        document["records"][0].update(
+            status="passed",
+            started_at="2026-07-14T12:01:00Z",
+            ended_at="2026-07-14T12:02:00Z",
+            catia_operator_record_id="record-discovery-compile-catia",
+            vbe_operator_record_id="record-discovery-compile-vbe",
+        )
+
+    report = _validate(
+        _replace_json(
+            _capture_files("discovery"),
+            "compile-result.json",
+            attempt_compile,
+        ),
+        "discovery",
+    )
+
+    _assert_invalid(report, "DISCOVERY_COMPILE_FORBIDDEN")
+
+
+@pytest.mark.parametrize(
+    "trace",
+    [
+        {"attempts": [{"phase": "post-import", "status": "passed"}]},
+        {"started_at": "2026-07-14T12:01:00Z"},
+        {"ended_at": "2026-07-14T12:02:00Z"},
+        {"catia_operator_record_id": "record-discovery-compile-catia"},
+        {"vbe_operator_record_id": "record-discovery-compile-vbe"},
+        {"error_stage": "compile"},
+        {"error_module": "MacroEntry"},
+        {"redacted_error_summary": "compile was attempted"},
+    ],
+)
+def test_discovery_rejects_not_run_compile_records_with_any_trace(
+    trace: dict[str, Any],
+) -> None:
+    def add_trace(document: dict[str, Any]) -> None:
+        assert document["records"][0]["status"] == "not-run"
+        document["records"][0].update(trace)
+
+    report = _validate(
+        _replace_json(
+            _capture_files("discovery"), "compile-result.json", add_trace
+        ),
+        "discovery",
+    )
+
+    _assert_invalid(report, "DISCOVERY_COMPILE_FORBIDDEN")
+
+
+def test_discovery_rejects_top_level_compile_attempt_trace() -> None:
+    report = _validate(
+        _replace_json(
+            _capture_files("discovery"),
+            "compile-result.json",
+            lambda document: document.__setitem__(
+                "attempts", [{"phase": "post-import", "status": "passed"}]
+            ),
+        ),
+        "discovery",
+    )
+
+    _assert_invalid(report, "DISCOVERY_COMPILE_FORBIDDEN")
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        None,
+        "compile-result",
+        [],
+        {"binding": _binding("discovery")},
+        {"binding": _binding("discovery"), "records": None},
+    ],
+)
+def test_discovery_rejects_scalar_or_missing_compile_records(
+    malformed: Any,
+) -> None:
+    files = _capture_files("discovery")
+    files["compile-result.json"] = canonical_json_bytes(malformed)
+
+    report = _validate(dict(sorted(files.items())), "discovery")
+
+    _assert_invalid(report, "DISCOVERY_COMPILE_FORBIDDEN")
+
+
+def test_discovery_rejects_non_object_compile_record() -> None:
+    def replace_record(document: dict[str, Any]) -> None:
+        document["records"][0] = "not-an-object"
+
+    report = _validate(
+        _replace_json(
+            _capture_files("discovery"),
+            "compile-result.json",
+            replace_record,
+        ),
+        "discovery",
+    )
+
+    _assert_invalid(report, "DISCOVERY_COMPILE_FORBIDDEN")
+
+
+def test_discovery_rejects_returned_artifact_status() -> None:
+    def claim_returned(document: dict[str, Any]) -> None:
+        document["artifact_status"] = "returned"
+
+    report = _validate(
+        _replace_json(
+            _capture_files("discovery"),
+            "artifact-manifest.json",
+            claim_returned,
+        ),
+        "discovery",
+    )
+
+    _assert_invalid(report, "DISCOVERY_ARTIFACT_FORBIDDEN")
+
+
+def test_discovery_rejects_returned_catvba_member_even_if_manifest_is_not_produced() -> None:
+    files = _capture_files("discovery")
+    files["returned-catvba/core.catvba"] = b"synthetic returned bytes"
+
+    report = _validate(dict(sorted(files.items())), "discovery")
+
+    _assert_invalid(report, "DISCOVERY_ARTIFACT_FORBIDDEN")
+
+
+def _license_records(*, selected: str | None) -> dict[str, dict[str, str]]:
+    return {
+        license_id: {
+            "availability": (
+                "observed-available"
+                if license_id in {selected, "SPA", "FTA"}
+                else "observed-unavailable"
+            ),
+            "checkout": (
+                "observed-checked-out"
+                if license_id in {selected, "SPA", "FTA"}
+                else "not-checked-out"
+            ),
+        }
+        for license_id in ("AB3", "HD2", "MD2", "SPA", "FTA")
+    }
+
+
+def test_entitlements_accept_exact_per_license_records() -> None:
+    files = _replace_json(
+        _capture_files("g2"),
+        "entitlements.json",
+        lambda document: document.__setitem__(
+            "licenses", _license_records(selected="AB3")
+        ),
+    )
+
+    report = _validate(files, "g2")
+
+    assert report.ok, report.diagnostics
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra"])
+def test_entitlements_require_exact_five_license_keys(mutation: str) -> None:
+    def mutate(document: dict[str, Any]) -> None:
+        licenses = _license_records(selected="AB3")
+        if mutation == "missing":
+            licenses.pop("FTA")
+        else:
+            licenses["EXTRA"] = {
+                "availability": "unknown",
+                "checkout": "unknown",
+            }
+        document["licenses"] = licenses
+
+    _assert_invalid(
+        _validate(
+            _replace_json(_capture_files("g2"), "entitlements.json", mutate),
+            "g2",
+        ),
+        "TARGET_EVIDENCE_SCHEMA_INVALID",
+    )
 
 
 def test_handoff_record_ids_are_detached_provenance_not_current_operator_links() -> None:
@@ -1644,8 +1832,6 @@ def test_reference_observations_use_exact_stable_path_record_sort_order() -> Non
     [
         ("references.json", lambda d: d["points"][0].update(status="blocked")),
         ("references.json", lambda d: d["points"][0].update(status="failed")),
-        ("compile-result.json", lambda d: d["records"][0].update(status="failed", error_stage="compile", redacted_error_summary="synthetic failure")),
-        ("compile-result.json", lambda d: d["records"][0].update(status="blocked")),
     ],
 )
 def test_business_failed_blocked_and_not_run_outcomes_remain_structurally_valid(filename: str, mutate: Callable[[dict[str, Any]], None]) -> None:

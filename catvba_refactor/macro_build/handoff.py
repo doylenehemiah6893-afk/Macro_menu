@@ -4,10 +4,10 @@ import os
 import re
 import secrets
 import stat
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .canonical import (
     CanonicalJsonError,
@@ -141,6 +141,10 @@ def _utc(value: object) -> datetime | None:
     except ValueError:
         return None
     return parsed.replace(tzinfo=UTC)
+
+
+def _trusted_utc() -> str:
+    return datetime.now(UTC).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _diagnostic(code: str, path: str, message: str) -> Diagnostic:
@@ -611,6 +615,8 @@ def _validate_request(request: HandoffRequest) -> tuple[datetime, dict[str, Any]
         or _RECORD_ID.fullmatch(request.review_record_id) is None
     ):
         raise _evidence_error("HANDOFF_REQUEST_INVALID")
+    if expires > created + timedelta(days=7):
+        raise _evidence_error("HANDOFF_TTL_INVALID")
     snapshot = _parse_revocation_snapshot(
         request.revocation_snapshot, created_at=created
     )
@@ -956,8 +962,14 @@ def issue_target_handoff(
     comparison_build_root: str | os.PathLike[str],
     request: HandoffRequest,
     output_root: str | os.PathLike[str],
+    *,
+    _clock: Callable[[], str] = _trusted_utc,
 ) -> HandoffReceipt:
     """Authenticate two independent Kit builds and issue one detached handoff."""
+    # ``created_at`` remains in the immutable request for deterministic tests and
+    # receipt comparison, but production issuance always replaces it with the
+    # trusted clock.  The underscored injection exists only for deterministic tests.
+    request = replace(request, created_at=_clock())
     _created, revocations = _validate_request(request)
     primary_dir, primary_zip, _primary_sidecar = _triplet(primary_build_root)
     comparison_dir, comparison_zip, _comparison_sidecar = _triplet(

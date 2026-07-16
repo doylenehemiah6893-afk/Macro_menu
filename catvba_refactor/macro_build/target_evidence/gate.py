@@ -396,14 +396,54 @@ def _common_rules(
                 )
             )
     baseline = entitlements.get("baseline_any_of")
-    if type(baseline) is not list or not baseline:
+    profile = _mapping(session.get("binding"))
+    profile_id = profile.get("profile_id") if profile is not None else None
+    selected = {
+        "P-AB3": "AB3",
+        "P-HD2": "HD2",
+        "P-MD2": "MD2",
+    }.get(profile_id)
+    licenses = _mapping(entitlements.get("licenses"))
+    exact_keys = {"AB3", "HD2", "MD2", "SPA", "FTA"}
+    if (
+        selected is None
+        or type(baseline) is not list
+        or baseline != [selected]
+        or licenses is None
+        or set(licenses) != exact_keys
+    ):
         blockers.append(
             _diagnostic(
                 "GATE_ENTITLEMENT_BASELINE_UNOBSERVED",
-                "entitlements.json#/baseline_any_of",
-                "target baseline configuration has not been observed",
+                "entitlements.json#/licenses",
+                "exact formal license selection has not been observed",
             )
         )
+    else:
+        for license_id in (selected, "SPA", "FTA"):
+            record = _mapping(licenses.get(license_id))
+            if (
+                record is None
+                or record.get("availability") != "observed-available"
+                or record.get("checkout") != "observed-checked-out"
+            ):
+                blockers.append(
+                    _diagnostic(
+                        "GATE_ENTITLEMENT_NOT_CHECKED_OUT",
+                        f"entitlements.json#/licenses/{license_id}",
+                        "required license is not observed available and checked out",
+                    )
+                )
+        for license_id in ({"AB3", "HD2", "MD2"} - {selected}):
+            record = _mapping(licenses.get(license_id))
+            if record is not None and record.get("checkout") == "observed-checked-out":
+                blockers.append(
+                    _diagnostic(
+                        "GATE_ENTITLEMENT_MULTIPLE_BASELINES",
+                        f"entitlements.json#/licenses/{license_id}/checkout",
+                        "more than one baseline license is checked out",
+                    )
+                )
 
 
 def _reference_rules(

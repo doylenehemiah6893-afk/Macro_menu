@@ -24,7 +24,11 @@
     {
       "if": {
         "properties": {
-          "binding": {"properties": {"session_mode": {"const": "g2"}}}
+          "binding": {
+            "properties": {
+              "session_mode": {"enum": ["discovery", "g2"]}
+            }
+          }
         }
       },
       "then": {

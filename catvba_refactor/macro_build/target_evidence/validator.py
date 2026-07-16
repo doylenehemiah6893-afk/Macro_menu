@@ -65,7 +65,7 @@ _COMPILE_POINTS = (
     "post-restart",
 )
 _MODE_GATE = {"discovery": "DISCOVERY", "g2": "G2", "g3-c": "G3-C"}
-_FORMAL_PROFILES = frozenset({"P-AB3", "P-HD2", "P-MD2", "P-ALL", "P-PROD"})
+_FORMAL_PROFILES = frozenset({"P-AB3", "P-HD2", "P-MD2"})
 _UNRESOLVED_ID = re.compile(r"^unresolved\.([0-9a-f]{16,64})$")
 
 
@@ -351,10 +351,28 @@ def _file_policy(
     artifact_status = (
         artifact_document.get("artifact_status") if artifact_document is not None else None
     )
+    returned_members = tuple(
+        path for path in files if path.startswith("returned-catvba/")
+    )
     returned = "returned-catvba/core.catvba" in files
     prerequisite = NESTED_G2_PATH in files
 
-    if mode == "g2" and returned:
+    if mode == "discovery" and (
+        returned_members
+        or artifact_status != "not-produced"
+        or (
+            artifact_document is not None
+            and artifact_document.get("artifact") is not None
+        )
+    ):
+        diagnostics.append(
+            _diagnostic(
+                "DISCOVERY_ARTIFACT_FORBIDDEN",
+                "artifact-manifest.json",
+                "Discovery forbids returned CATVBA artifacts and members",
+            )
+        )
+    if mode == "g2" and returned_members:
         diagnostics.append(
             _diagnostic(
                 "TARGET_EVIDENCE_FILE_POLICY",
@@ -770,6 +788,44 @@ def _compile_diagnostics(
         )
 
 
+def _discovery_compile_diagnostics(
+    document: object, diagnostics: list[Diagnostic]
+) -> None:
+    records = document.get("records") if isinstance(document, Mapping) else None
+    forbidden = (
+        not isinstance(document, Mapping)
+        or frozenset(document) != {"binding", "records"}
+        or type(records) is not list
+        or len(records) != len(_COMPILE_POINTS)
+    )
+    if type(records) is list:
+        forbidden = forbidden or any(
+            type(record) is not dict
+            or record
+            != {
+                "record_id": f"record-compile-{point}",
+                "point": point,
+                "status": "not-run",
+                "started_at": None,
+                "ended_at": None,
+                "catia_operator_record_id": None,
+                "vbe_operator_record_id": None,
+                "error_stage": None,
+                "error_module": None,
+                "redacted_error_summary": None,
+            }
+            for point, record in zip(_COMPILE_POINTS, records, strict=False)
+        )
+    if forbidden:
+        diagnostics.append(
+            _diagnostic(
+                "DISCOVERY_COMPILE_FORBIDDEN",
+                "compile-result.json#/records",
+                "Discovery must never attempt Compile",
+            )
+        )
+
+
 def _test_plan_diagnostics(
     document: Mapping[str, Any],
     mode: str,
@@ -833,7 +889,6 @@ def _entitlement_diagnostics(
         "P-AB3": ["AB3"],
         "P-HD2": ["HD2"],
         "P-MD2": ["MD2"],
-        "P-ALL": ["AB3", "HD2", "MD2"],
     }.get(profile) if type(profile) is str else None
     valid = (
         type(baseline) is list
@@ -845,10 +900,6 @@ def _entitlement_diagnostics(
         valid = valid and baseline == expected
     elif profile == "DISCOVERY":
         valid = valid and baseline == []
-    elif profile == "P-PROD" and type(baseline) is list:
-        valid = valid and baseline == [
-            item for item in ("AB3", "HD2", "MD2") if item in baseline
-        ]
     else:
         valid = False
     if not valid:
@@ -1366,6 +1417,16 @@ def _inspect_snapshot(
 
     binding, mode = _binding_diagnostics(documents, kit_binding, diagnostics)
     session = _mapping(documents.get("session.json"))
+    session_binding = (
+        _mapping(session.get("binding")) if session is not None else None
+    )
+    if (
+        session_binding is not None
+        and session_binding.get("session_mode") == "discovery"
+    ):
+        _discovery_compile_diagnostics(
+            documents.get("compile-result.json"), diagnostics
+        )
     if binding is not None and mode is not None:
         handoff = documents.get("handoff.json")
         if session is not None and type(session.get("started_at")) is str:

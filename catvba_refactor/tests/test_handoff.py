@@ -20,7 +20,7 @@ from catvba_refactor.macro_build.errors import (
 from catvba_refactor.macro_build.handoff import (
     HandoffReceipt,
     HandoffRequest,
-    issue_target_handoff,
+    issue_target_handoff as _production_issue_target_handoff,
     validate_handoff,
 )
 from catvba_refactor.macro_build.kit import inspect_build_kit, stage_build_kit
@@ -38,6 +38,23 @@ CREATED = "2026-07-14T12:00:00Z"
 EXPIRES = "2026-07-21T12:00:00Z"
 
 
+def issue_target_handoff(
+    primary_build_root: str | os.PathLike[str],
+    comparison_build_root: str | os.PathLike[str],
+    request: HandoffRequest,
+    output_root: str | os.PathLike[str],
+) -> HandoffReceipt:
+    """Inject deterministic issuance time for the handoff unit tests."""
+
+    return _production_issue_target_handoff(
+        primary_build_root,
+        comparison_build_root,
+        request,
+        output_root,
+        _clock=lambda: request.created_at,
+    )
+
+
 def _revocations(
     *,
     captured_at: str = "2026-07-14T11:59:00Z",
@@ -48,7 +65,7 @@ def _revocations(
         {
             "schema_version": 1,
             "captured_at": captured_at,
-            "source": "a-env-active-handoff-ledger",
+            "source": "repository-active-handoff-ledger",
             "active_handoff_ids": active or [],
             "withdrawn_handoff_ids": withdrawn or [],
         }
@@ -206,6 +223,26 @@ def test_handoff_validation_uses_explicit_effective_time_not_wall_clock(
     assert validate_handoff(inspection, document, effective_at=CREATED).ok
 
 
+def test_production_issuance_uses_injected_trusted_clock_not_request_history(
+    tmp_path: Path,
+) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+    trusted_now = "2026-07-14T13:00:00Z"
+
+    receipt = _production_issue_target_handoff(
+        primary_root,
+        comparison_root,
+        _request(
+            created_at="2020-01-01T00:00:00Z",
+            expires_at="2026-07-21T13:00:00Z",
+        ),
+        tmp_path / "trusted-clock-handoffs",
+        _clock=lambda: trusted_now,
+    )
+
+    assert _document(receipt.handoff_path)["created_at"] == trusted_now
+
+
 @pytest.mark.parametrize(
     "field",
     [
@@ -318,7 +355,7 @@ def test_issuance_rejects_output_inside_an_authenticated_kit(tmp_path: Path) -> 
             {
                 "schema_version": 1,
                 "captured_at": "2026-07-14T11:59:00Z",
-                "source": "a-env-active-handoff-ledger",
+                "source": "repository-active-handoff-ledger",
                 "active_handoff_ids": ["handoff-existing-discovery"],
                 "withdrawn_handoff_ids": ["handoff-existing-discovery"],
             }
@@ -428,7 +465,7 @@ def test_formal_handoff_supersedes_withdrawn_discovery_across_new_approved_kit(
     formal_request = _request(
         purpose="formal",
         created_at="2026-07-14T13:00:00Z",
-        expires_at="2026-07-22T13:00:00Z",
+        expires_at="2026-07-21T13:00:00Z",
         revocation_snapshot=_revocations(
             captured_at="2026-07-14T12:59:00Z",
             withdrawn=[discovery_receipt.handoff_id],
@@ -485,7 +522,7 @@ def test_formal_rejects_superseded_branch_or_cutoff_mismatch(
             _request(
                 purpose="formal",
                 created_at="2026-07-14T13:00:00Z",
-                expires_at="2026-07-22T13:00:00Z",
+                expires_at="2026-07-21T13:00:00Z",
                 revocation_snapshot=_revocations(
                     captured_at="2026-07-14T12:59:00Z",
                     withdrawn=[changed_id],
@@ -524,7 +561,7 @@ def test_formal_rejects_noncanonical_or_not_withdrawn_superseded_handoff(
                 _request(
                     purpose="formal",
                     created_at="2026-07-14T13:00:00Z",
-                    expires_at="2026-07-22T13:00:00Z",
+                    expires_at="2026-07-21T13:00:00Z",
                     revocation_snapshot=_revocations(
                         captured_at="2026-07-14T12:59:00Z",
                         withdrawn=withdrawn,
@@ -563,7 +600,7 @@ def test_formal_rejects_reidentified_but_structurally_invalid_discovery(
             _request(
                 purpose="formal",
                 created_at="2026-07-14T13:00:00Z",
-                expires_at="2026-07-22T13:00:00Z",
+                expires_at="2026-07-21T13:00:00Z",
                 revocation_snapshot=_revocations(
                     captured_at="2026-07-14T12:59:00Z",
                     withdrawn=[changed_id],
@@ -783,3 +820,15 @@ def test_temp_cleanup_failure_chains_primary_publication_error(
 
     assert isinstance(raised.value.__cause__, InfrastructureError)
     assert "HANDOFF_ID_CONTENT_MISMATCH" in str(raised.value.__cause__)
+
+
+def test_handoff_rejects_expiry_beyond_seven_day_ttl(tmp_path: Path) -> None:
+    primary_root, comparison_root, _primary, _comparison = _stage_pair(tmp_path)
+
+    with pytest.raises(EvidenceError, match="HANDOFF_TTL_INVALID"):
+        issue_target_handoff(
+            primary_root,
+            comparison_root,
+            _request(expires_at="2026-07-21T12:00:01Z"),
+            tmp_path / "handoffs",
+        )

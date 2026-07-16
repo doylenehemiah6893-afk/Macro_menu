@@ -4,7 +4,7 @@ import copy
 import os
 import re
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -17,6 +17,7 @@ from ..canonical import (
 from ..errors import EvidenceError, InfrastructureError
 from ..handoff import validate_handoff
 from ..model import BuildKitInspection
+from ..resume import validate_active_ledger
 from . import container as _container
 from .container import (
     EvidenceContainerSnapshot,
@@ -30,7 +31,7 @@ from .validator import environment_fingerprint, validate_target_evidence
 
 
 _SESSION_ID = re.compile(r"^session-[a-z0-9][a-z0-9-]{2,94}$")
-_FORMAL_PROFILES = frozenset({"P-AB3", "P-HD2", "P-MD2", "P-ALL", "P-PROD"})
+_FORMAL_PROFILES = frozenset({"P-AB3", "P-HD2", "P-MD2"})
 _REFERENCE_POINTS = (
     "blank-project",
     "post-form-import",
@@ -40,6 +41,8 @@ _REFERENCE_POINTS = (
 )
 _COMPILE_POINTS = ("blank-project", "post-import", "post-save", "post-restart")
 _MAX_HANDOFF_BYTES = 4 * 1024 * 1024
+_LEDGER_SOURCE = "repository-active-handoff-ledger"
+_REAL_DATETIME = datetime
 
 
 def _error(code: str, *details: object) -> EvidenceError:
@@ -55,7 +58,7 @@ def _utc(value: object) -> datetime | None:
     if type(value) is not str or not value.endswith("Z"):
         return None
     try:
-        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+        parsed = _REAL_DATETIME.fromisoformat(value[:-1] + "+00:00")
     except ValueError:
         return None
     return parsed.astimezone(UTC)
@@ -99,13 +102,48 @@ def _profile_baseline(profile_id: str) -> list[str]:
         "P-AB3": ["AB3"],
         "P-HD2": ["HD2"],
         "P-MD2": ["MD2"],
-        "P-ALL": ["AB3", "HD2", "MD2"],
     }
     if profile_id in fixed:
         return fixed[profile_id]
-    if profile_id in {"DISCOVERY", "P-PROD"}:
+    if profile_id == "DISCOVERY":
         return []
     raise _error("TARGET_SESSION_PROFILE_INVALID")
+
+
+def _validate_external_ledger(
+    path: os.PathLike[str] | str,
+    *,
+    handoff_id: str,
+    effective_at: datetime,
+) -> None:
+    try:
+        data = _read_regular_file(path)
+        document = parse_canonical_json_bytes(data)
+    except (CanonicalJsonError, EvidenceError) as error:
+        raise _error("HANDOFF_LEDGER_INVALID") from error
+    if not isinstance(document, Mapping):
+        raise _error("HANDOFF_LEDGER_INVALID")
+    try:
+        validate_active_ledger(document, effective_at=effective_at)
+    except EvidenceError as error:
+        raise _error(str(error).split(":", 1)[0]) from error
+    captured_at = _utc(document.get("captured_at"))
+    if captured_at is None:
+        raise _error("HANDOFF_LEDGER_INVALID")
+    diagnostics: list[str] = []
+    if effective_at - captured_at > timedelta(hours=24):
+        diagnostics.append("HANDOFF_LEDGER_STALE")
+    if document.get("source") != _LEDGER_SOURCE:
+        diagnostics.append("HANDOFF_LEDGER_SOURCE_MISMATCH")
+    active = document.get("active_handoff_ids")
+    withdrawn = document.get("withdrawn_handoff_ids")
+    is_withdrawn = isinstance(withdrawn, list) and handoff_id in withdrawn
+    if is_withdrawn:
+        diagnostics.append("HANDOFF_WITHDRAWN")
+    elif not isinstance(active, list) or handoff_id not in active:
+        diagnostics.append("HANDOFF_NOT_ACTIVE")
+    if diagnostics:
+        raise _error("TARGET_SESSION_LEDGER_INVALID", *sorted(diagnostics))
 
 
 def _binding(
@@ -440,6 +478,7 @@ def init_target_session(
     package_id: str,
     profile_id: str,
     schema_dir: os.PathLike[str] | str,
+    revocation_ledger: os.PathLike[str] | str,
     prerequisite_evidence: os.PathLike[str] | str | None = None,
     session_id: str | None = None,
     created_at: str | None = None,
@@ -472,6 +511,9 @@ def init_target_session(
         or type(stable_created_at) is not str
     ):
         raise _error("TARGET_SESSION_IDENTITY_INVALID")
+    effective_at = _utc(stable_created_at)
+    if effective_at is None:
+        raise _error("TARGET_SESSION_IDENTITY_INVALID")
 
     kit_binding, kit_diagnostics = load_kit_evidence_binding(kit)
     if kit_binding is None:
@@ -481,6 +523,11 @@ def init_target_session(
         handoff,
         kit,
         effective_at=stable_created_at,
+    )
+    _validate_external_ledger(
+        revocation_ledger,
+        handoff_id=str(handoff_document.get("handoff_id")),
+        effective_at=effective_at,
     )
     expected_purpose = (
         "discovery" if stable_mode is SessionMode.DISCOVERY else "formal"
@@ -594,6 +641,10 @@ def init_target_session(
         "api_workbench": dict(status_record),
         "session_checkout": dict(status_record),
         "tool_result": dict(status_record),
+        "licenses": {
+            license_id: {"availability": "unknown", "checkout": "unknown"}
+            for license_id in ("AB3", "HD2", "MD2", "SPA", "FTA")
+        },
         "baseline_any_of": _profile_baseline(profile_id),
         "additional_required": ["SPA", "FTA"],
         "set_license_used": False,

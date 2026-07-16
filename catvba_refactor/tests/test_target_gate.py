@@ -107,6 +107,9 @@ def _eligible_g2_files() -> dict[str, bytes]:
             "operator_record_id": record_id,
         }
         _add_operator_record(documents, members, record_id, "entitlement")
+    documents["entitlements.json"]["licenses"] = evidence._license_records(
+        selected="AB3"
+    )
 
     reference_record_id = "record-reference-point-01"
     documents["references.json"]["points"][0].update(
@@ -294,6 +297,72 @@ def test_discovery_is_always_blocked_discovery_only(explicit_status: str) -> Non
 
     assert result.computed_outcome is ComputedOutcome.BLOCKED
     assert result.reason == "discovery-only"
+
+
+def test_discovery_with_every_license_checked_out_is_still_never_eligible() -> None:
+    def all_checked_out(
+        documents: dict[str, dict[str, Any]], _members: dict[str, bytes]
+    ) -> None:
+        documents["entitlements.json"]["licenses"] = {
+            license_id: {
+                "availability": "observed-available",
+                "checkout": "observed-checked-out",
+            }
+            for license_id in ("AB3", "HD2", "MD2", "SPA", "FTA")
+        }
+
+    result = evaluate_gate_rules(
+        _mutated_inspection(
+            evidence._capture_files("discovery"), "discovery", all_checked_out
+        ),
+        gate_id=GateId.DISCOVERY,
+        audit_report=None,
+    )
+
+    assert result.computed_outcome is ComputedOutcome.BLOCKED
+    assert result.reason == "discovery-only"
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda d, _m: d["entitlements.json"].__setitem__(
+            "baseline_any_of", ["AB3", "HD2"]
+        ),
+        lambda d, _m: d["entitlements.json"].__setitem__(
+            "baseline_any_of", ["HD2"]
+        ),
+        lambda d, _m: d["entitlements.json"]["licenses"].pop("AB3"),
+        lambda d, _m: d["entitlements.json"]["licenses"]["AB3"].update(
+            availability="unknown", checkout="unknown"
+        ),
+        lambda d, _m: d["entitlements.json"]["licenses"]["HD2"].update(
+            availability="observed-available", checkout="observed-checked-out"
+        ),
+        lambda d, _m: d["entitlements.json"]["licenses"]["SPA"].update(
+            availability="observed-unavailable", checkout="not-checked-out"
+        ),
+        lambda d, _m: d["entitlements.json"]["licenses"]["FTA"].update(
+            checkout="not-checked-out"
+        ),
+    ],
+    ids=[
+        "multiple-baselines", "profile-mismatch", "missing-baseline",
+        "unknown-baseline", "second-baseline-checked-out", "spa-unavailable",
+        "fta-not-checked-out",
+    ],
+)
+def test_formal_gate_requires_exact_checked_out_profile_and_spa_fta(
+    mutate: Callable[[dict[str, dict[str, Any]], dict[str, bytes]], None]
+) -> None:
+    result = evaluate_gate_rules(
+        _mutated_inspection(_eligible_g2_files(), "g2", mutate),
+        gate_id=GateId.G2,
+        audit_report=None,
+    )
+
+    assert result.computed_outcome is not ComputedOutcome.ELIGIBLE
+    assert result.diagnostics
 
 
 @pytest.mark.parametrize(

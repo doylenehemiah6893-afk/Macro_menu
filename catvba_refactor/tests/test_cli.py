@@ -411,8 +411,6 @@ def _target_command_arguments(
             "record-handoff-prepared",
             "--review-record-id",
             "record-handoff-reviewed",
-            "--created-at",
-            "2026-07-14T12:00:00Z",
             "--expires-at",
             "2026-07-21T12:00:00Z",
         ],
@@ -427,10 +425,10 @@ def _target_command_arguments(
             "P-AB3",
             "--handoff",
             "formal-handoff.json",
+            "--revocation-ledger",
+            "active-handoff-ledger.json",
             "--session-id",
             "session-cli-contract",
-            "--created-at",
-            "2026-07-14T12:00:00Z",
         ],
         "validate-target-evidence": [
             "validate-target-evidence",
@@ -622,9 +620,9 @@ _TARGET_SCALAR_OPTIONS = {
         "--package": "core",
         "--profile": "P-AB3",
         "--handoff": "formal-handoff.json",
+        "--revocation-ledger": "active-handoff-ledger.json",
         "--prerequisite-evidence": "g2-evidence.zip",
         "--session-id": "session-cli-contract",
-        "--created-at": "2026-07-14T12:00:00Z",
         "--output-root": "target-output",
     },
     "validate-target-evidence": {
@@ -756,9 +754,9 @@ def test_init_target_session_dispatches_one_authenticated_kit_snapshot(
                 "package_id": "core",
                 "profile_id": "P-AB3",
                 "schema_dir": tmp_path / "schemas" / "target_evidence",
+                "revocation_ledger": Path("active-handoff-ledger.json"),
                 "prerequisite_evidence": None,
                 "session_id": "session-cli-contract",
-                "created_at": "2026-07-14T12:00:00Z",
             },
         )
     ]
@@ -1135,6 +1133,7 @@ def test_create_target_handoff_forwards_exact_frozen_request_and_emits_receipt(
         )
 
     monkeypatch.setattr(cli, "issue_target_handoff", issue, raising=False)
+    monkeypatch.setattr(cli, "_current_utc", lambda: "2026-07-14T12:00:00Z")
     result = cli.main(
         [
             "create-target-handoff",
@@ -1151,8 +1150,6 @@ def test_create_target_handoff_forwards_exact_frozen_request_and_emits_receipt(
             "record-handoff-prepared",
             "--review-record-id",
             "record-handoff-reviewed",
-            "--created-at",
-            "2026-07-14T12:00:00Z",
             "--expires-at",
             "2026-07-21T12:00:00Z",
             "--output-root",
@@ -1210,8 +1207,6 @@ def _handoff_arguments(tmp_path: Path) -> list[str]:
         "record-prepared",
         "--review-record-id",
         "record-reviewed",
-        "--created-at",
-        "2026-07-14T12:00:00Z",
         "--expires-at",
         "2026-07-21T12:00:00Z",
         "--output-root",
@@ -1250,7 +1245,6 @@ def test_create_target_handoff_rejects_abbreviated_scalar_options(
         "--revocation-snapshot",
         "--prepared-record-id",
         "--review-record-id",
-        "--created-at",
         "--expires-at",
         "--output-root",
     ],
@@ -1630,3 +1624,34 @@ def test_infrastructure_error_maps_only_at_main_and_keyboard_interrupt_escapes(
     )
     with pytest.raises(KeyboardInterrupt):
         cli.main(["verify-kit", "kit"])
+
+
+@pytest.mark.parametrize("profile", ["P-ALL", "P-PROD"])
+def test_formal_cli_rejects_aggregate_profiles(profile: str) -> None:
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(
+            [
+                "init-target-session", "kit.zip",
+                "--mode", "g2",
+                "--package", "core",
+                "--profile", profile,
+                "--handoff", "handoff.json",
+                "--revocation-ledger", "active-handoff-ledger.json",
+            ]
+        )
+
+
+def test_production_cli_does_not_expose_created_at() -> None:
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(
+            [
+                "create-target-handoff", "primary",
+                "--compare-build-root", "comparison",
+                "--purpose", "discovery",
+                "--revocation-snapshot", "revocations.json",
+                "--prepared-record-id", "record-prepared",
+                "--review-record-id", "record-reviewed",
+                "--created-at", "2026-07-14T12:00:00Z",
+                "--expires-at", "2026-07-21T12:00:00Z",
+            ]
+        )

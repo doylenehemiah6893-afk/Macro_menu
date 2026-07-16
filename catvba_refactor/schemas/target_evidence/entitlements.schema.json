@@ -10,6 +10,7 @@
     "api_workbench",
     "session_checkout",
     "tool_result",
+    "licenses",
     "baseline_any_of",
     "additional_required",
     "set_license_used",
@@ -23,6 +24,18 @@
     "api_workbench": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
     "session_checkout": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
     "tool_result": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/status_with_record"},
+    "licenses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["AB3", "HD2", "MD2", "SPA", "FTA"],
+      "properties": {
+        "AB3": {"$ref": "#/$defs/license_observation"},
+        "HD2": {"$ref": "#/$defs/license_observation"},
+        "MD2": {"$ref": "#/$defs/license_observation"},
+        "SPA": {"$ref": "#/$defs/license_observation"},
+        "FTA": {"$ref": "#/$defs/license_observation"}
+      }
+    },
     "baseline_any_of": {
       "type": "array",
       "minItems": 0,
@@ -39,5 +52,20 @@
     "set_license_used": {"type": "boolean"},
     "scripted_reference_selection_used": {"type": "boolean"},
     "licensing_repository_modified": {"type": "boolean"}
+  },
+  "$defs": {
+    "license_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "checkout"],
+      "properties": {
+        "availability": {
+          "enum": ["unknown", "observed-available", "observed-unavailable"]
+        },
+        "checkout": {
+          "enum": ["unknown", "observed-checked-out", "not-checked-out"]
+        }
+      }
+    }
   }
 }

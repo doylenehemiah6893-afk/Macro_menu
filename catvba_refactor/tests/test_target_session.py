@@ -24,7 +24,9 @@ from catvba_refactor.macro_build.target_evidence.model import (
     GateId,
     SessionMode,
 )
-from catvba_refactor.macro_build.target_evidence.session import init_target_session
+from catvba_refactor.macro_build.target_evidence.session import (
+    init_target_session as _production_init_target_session,
+)
 from catvba_refactor.macro_build.target_evidence.validator import (
     validate_target_evidence,
 )
@@ -57,7 +59,7 @@ SEAL_MEMBERS = {
     "SESSION_COMPLETE",
     "payload-manifest.json",
 }
-FORMAL_PROFILES = ("P-AB3", "P-HD2", "P-MD2", "P-ALL", "P-PROD")
+FORMAL_PROFILES = ("P-AB3", "P-HD2", "P-MD2")
 REFERENCE_POINTS = (
     "blank-project",
     "post-form-import",
@@ -81,6 +83,140 @@ def _write_handoff(tmp_path: Path, mode: str) -> Path:
     path = tmp_path / f"{mode}-handoff.json"
     path.write_bytes(_handoff_bytes(mode))
     return path
+
+
+def _write_ledger(
+    tmp_path: Path,
+    mode: str,
+    *,
+    captured_at: str = "2026-07-14T11:59:00Z",
+    active: bool = True,
+    withdrawn: bool = False,
+    source: str = "repository-active-handoff-ledger",
+) -> Path:
+    handoff_id = evidence._handoff_id(mode)
+    path = tmp_path / "active-handoff-ledger.json"
+    path.write_bytes(
+        canonical_json_bytes(
+            {
+                "schema_version": 1,
+                "captured_at": captured_at,
+                "source": source,
+                "active_handoff_ids": [handoff_id] if active else [],
+                "withdrawn_handoff_ids": [handoff_id] if withdrawn else [],
+            }
+        )
+    )
+    return path
+
+
+def init_target_session(
+    kit: object,
+    handoff: Path,
+    output_root: Path,
+    **kwargs: Any,
+) -> object:
+    """Supply a current external ledger to legacy session construction tests."""
+
+    if "revocation_ledger" not in kwargs:
+        try:
+            handoff_document = json.loads(Path(handoff).read_bytes())
+        except (OSError, ValueError):
+            handoff_document = {
+                "handoff_id": "handoff-invalid-placeholder",
+                "created_at": FIXED_UTC,
+            }
+        ledger = Path(handoff).parent / (
+            f"ledger-{handoff_document['handoff_id']}.json"
+        )
+        ledger.write_bytes(
+            canonical_json_bytes(
+                {
+                    "schema_version": 1,
+                    "captured_at": handoff_document["created_at"],
+                    "source": "repository-active-handoff-ledger",
+                    "active_handoff_ids": [handoff_document["handoff_id"]],
+                    "withdrawn_handoff_ids": [],
+                }
+            )
+        )
+        kwargs["revocation_ledger"] = ledger
+    return _production_init_target_session(
+        kit, handoff, output_root, **kwargs  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.parametrize(
+    ("captured_at", "active", "withdrawn", "source", "code"),
+    [
+        ("2026-07-13T11:59:59Z", True, False, "repository-active-handoff-ledger", "HANDOFF_LEDGER_STALE"),
+        (FIXED_G3_UTC, True, False, "repository-active-handoff-ledger", "HANDOFF_LEDGER_CAPTURED_IN_FUTURE"),
+        ("2026-07-14T11:59:00Z", False, False, "repository-active-handoff-ledger", "HANDOFF_NOT_ACTIVE"),
+        ("2026-07-14T11:59:00Z", False, True, "repository-active-handoff-ledger", "HANDOFF_WITHDRAWN"),
+        ("2026-07-14T11:59:00Z", True, False, "untrusted-ledger", "HANDOFF_LEDGER_SOURCE_MISMATCH"),
+    ],
+)
+def test_target_session_rejects_untrusted_external_ledger(
+    tmp_path: Path,
+    captured_at: str,
+    active: bool,
+    withdrawn: bool,
+    source: str,
+    code: str,
+) -> None:
+    ledger = _write_ledger(
+        tmp_path,
+        "discovery",
+        captured_at=captured_at,
+        active=active,
+        withdrawn=withdrawn,
+        source=source,
+    )
+
+    with pytest.raises(BuildKitError, match=code):
+        init_target_session(
+            evidence._kit(formal=False),
+            _write_handoff(tmp_path, "discovery"),
+            tmp_path / "sessions",
+            mode=SessionMode.DISCOVERY,
+            package_id="core",
+            profile_id="DISCOVERY",
+            schema_dir=SCHEMA_DIR,
+            revocation_ledger=ledger,
+            session_id=FIXED_SESSION_ID,
+            created_at=FIXED_UTC,
+        )
+
+
+def test_stale_withdrawn_ledger_does_not_also_report_not_active(
+    tmp_path: Path,
+) -> None:
+    ledger = _write_ledger(
+        tmp_path,
+        "discovery",
+        captured_at="2026-07-13T11:59:59Z",
+        active=False,
+        withdrawn=True,
+    )
+
+    with pytest.raises(BuildKitError) as raised:
+        init_target_session(
+            evidence._kit(formal=False),
+            _write_handoff(tmp_path, "discovery"),
+            tmp_path / "sessions",
+            mode=SessionMode.DISCOVERY,
+            package_id="core",
+            profile_id="DISCOVERY",
+            schema_dir=SCHEMA_DIR,
+            revocation_ledger=ledger,
+            session_id=FIXED_SESSION_ID,
+            created_at=FIXED_UTC,
+        )
+
+    assert str(raised.value).split(":")[1:] == [
+        "HANDOFF_LEDGER_STALE",
+        "HANDOFF_WITHDRAWN",
+    ]
 
 
 def _write_mutated_formal_handoff(tmp_path: Path, mismatch: str) -> Path:
@@ -241,13 +377,16 @@ def _assert_safe_not_run_documents(
         "P-AB3": ["AB3"],
         "P-HD2": ["HD2"],
         "P-MD2": ["MD2"],
-        "P-ALL": ["AB3", "HD2", "MD2"],
     }.get(profile)
     if expected_baseline is not None:
         assert entitlements["baseline_any_of"] == expected_baseline
     else:
         assert entitlements["baseline_any_of"] == []
     assert entitlements["additional_required"] == ["SPA", "FTA"]
+    assert entitlements["licenses"] == {
+        license_id: {"availability": "unknown", "checkout": "unknown"}
+        for license_id in ("AB3", "HD2", "MD2", "SPA", "FTA")
+    }
     assert entitlements["set_license_used"] is False
     assert entitlements["scripted_reference_selection_used"] is False
     assert entitlements["licensing_repository_modified"] is False

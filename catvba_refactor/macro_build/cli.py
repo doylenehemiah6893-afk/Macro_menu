@@ -74,9 +74,9 @@ _SCALAR_OPTIONS = frozenset(
         "--purpose",
         "--supersedes-handoff",
         "--revocation-snapshot",
+        "--revocation-ledger",
         "--prepared-record-id",
         "--review-record-id",
-        "--created-at",
         "--expires-at",
         "--mode",
         "--profile",
@@ -96,7 +96,7 @@ _SCALAR_OPTIONS = frozenset(
     }
 )
 
-_FORMAL_PROFILES = ("P-AB3", "P-HD2", "P-MD2", "P-ALL", "P-PROD")
+_FORMAL_PROFILES = ("P-AB3", "P-HD2", "P-MD2")
 
 
 def _global_parent() -> argparse.ArgumentParser:
@@ -190,7 +190,6 @@ def build_parser() -> argparse.ArgumentParser:
     handoff.add_argument("--revocation-snapshot", required=True, type=Path)
     handoff.add_argument("--prepared-record-id", required=True)
     handoff.add_argument("--review-record-id", required=True)
-    handoff.add_argument("--created-at")
     handoff.add_argument("--expires-at", required=True)
 
     session = commands.add_parser(
@@ -211,9 +210,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("DISCOVERY", *_FORMAL_PROFILES),
     )
     session.add_argument("--handoff", required=True, type=Path)
+    session.add_argument("--revocation-ledger", required=True, type=Path)
     session.add_argument("--prerequisite-evidence", type=Path)
     session.add_argument("--session-id")
-    session.add_argument("--created-at")
 
     validate = commands.add_parser(
         "validate-target-evidence",
@@ -764,7 +763,7 @@ def _read_handoff_input(path: Path) -> bytes:
 
 def _create_target_handoff_command(args: argparse.Namespace) -> int:
     supersedes_path = getattr(args, "supersedes_handoff", None)
-    created_at = getattr(args, "created_at", None) or _current_utc()
+    created_at = _current_utc()
     request = HandoffRequest(
         purpose=args.purpose,
         created_at=created_at,
@@ -798,9 +797,9 @@ def _init_target_session_command(args: argparse.Namespace) -> int:
         package_id=args.package_id,
         profile_id=args.profile_id,
         schema_dir=_target_schema_dir(args),
+        revocation_ledger=args.revocation_ledger,
         prerequisite_evidence=getattr(args, "prerequisite_evidence", None),
         session_id=getattr(args, "session_id", None),
-        created_at=getattr(args, "created_at", None),
     )
     _emit(
         {
