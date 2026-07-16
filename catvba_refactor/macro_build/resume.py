@@ -657,7 +657,15 @@ def _inspect_repository(
             artifact = _internal_path(root, relative)
             if artifact is None or not artifact.exists():
                 diagnostics.append(_diagnostic("RESUME_ACTIVE_ARTIFACT_MISSING", str(relative), "state references a missing artifact"))
-    if state["active_bundle_path"] is not None:
+    if state["active_bundle_path"] is None and scope == "delivery":
+        diagnostics.append(
+            _diagnostic(
+                "RESUME_DELIVERY_NOT_ISSUED",
+                "active_bundle_path",
+                "delivery scope requires an active issued bundle",
+            )
+        )
+    elif state["active_bundle_path"] is not None:
         diagnostics.extend(
             _active_delivery_diagnostics(
                 root,

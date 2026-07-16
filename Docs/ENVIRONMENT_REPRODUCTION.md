@@ -53,6 +53,7 @@ uv run macro-menu-build doctor --state resume/state.json --scope delivery --form
 ```
 
 Windows 将斜杠改为反斜杠即可。若返回 ledger stale、handoff expired/withdrawn/inactive 或摘要错误，开发工作可继续，但目标机必须停止并重新签发控制文件；不得手改 JSON 延期。
+preparation 或 `active_bundle_path=null` 时，Delivery doctor 必须返回 `RESUME_DELIVERY_NOT_ISSUED`；这表示没有可转运制品，不是开发环境失败。
 
 ## 5. 原生 B28 目标机
 

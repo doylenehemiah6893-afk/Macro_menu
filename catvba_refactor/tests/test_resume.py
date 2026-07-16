@@ -289,12 +289,17 @@ def test_doctor_reports_dirty_governed_paths_but_ignores_egg_info(
     (clone / "macro_menu.egg-info/PKG-INFO").write_text("generated", encoding="utf-8")
     (clone / "Src/dirty.bas").write_text("dirty", encoding="utf-8")
 
-    report = doctor_repository(clone, state_path, now=datetime.fromisoformat(UTC.replace("Z", "+00:00")))
+    report = doctor_repository(
+        clone,
+        state_path,
+        now=datetime.fromisoformat(UTC.replace("Z", "+00:00")),
+        scope="development",
+    )
 
     assert [item.code for item in report.diagnostics] == ["RESUME_GOVERNED_TREE_DIRTY"]
 
 
-def test_doctor_accepts_clean_preparation_state_without_evidence_baseline(
+def test_development_doctor_accepts_clean_preparation_but_delivery_rejects_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     clone, state_path = _fresh_clone(tmp_path)
@@ -310,12 +315,21 @@ def test_doctor_accepts_clean_preparation_state_without_evidence_baseline(
         clone,
         state_path,
         now=datetime.fromisoformat(UTC.replace("Z", "+00:00")),
+        scope="development",
     )
 
     assert report.ok
     assert "RESUME_GOVERNED_HISTORY_CHANGED" not in {
         item.code for item in report.diagnostics
     }
+    delivery = doctor_repository(
+        clone,
+        state_path,
+        now=datetime.fromisoformat(UTC.replace("Z", "+00:00")),
+    )
+    assert [item.code for item in delivery.diagnostics] == [
+        "RESUME_DELIVERY_NOT_ISSUED"
+    ]
 
 
 def test_stdlib_bootstrap_accepts_clean_preparation_state(tmp_path: Path) -> None:
@@ -349,6 +363,7 @@ def test_doctor_rejects_dirty_tracked_non_governed_paths(
         clone,
         state_path,
         now=datetime.fromisoformat(UTC.replace("Z", "+00:00")),
+        scope="development",
     )
 
     assert [item.code for item in report.diagnostics] == ["RESUME_TRACKED_TREE_DIRTY"]

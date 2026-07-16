@@ -20,6 +20,7 @@
 - `.gitattributes` 固定文本 LF，并对 `artifacts/b28-discovery/**` 使用 byte-preserved 属性；新增对应回归。
 - Python 合同统一为 `>=3.12,<3.13`，lock 与项目元数据一致；bootstrap 在 sync/`.venv` 变更前验证 `uv 0.9.25`。
 - `doctor --scope development|delivery` 分层：开发范围不因 ledger/handoff 时效失败，交付范围默认且继续 fail-closed。
+- preparation/无 active bundle 时，Development doctor 可验证源码环境，Delivery doctor 必须返回 `RESUME_DELIVERY_NOT_ISSUED`。
 - bootstrap、verify-resume 和 Linux/Windows CI 使用 development scope；Windows CI 改为实际 console entrypoint。
 - 删除无效代理/IDE个人配置；忽略 `.context/`、`.antigravity/`、`.cursorrules`、`.vscode/`、根 `build/` 与 `user_data.json`，新增无绝对路径的 `user_data.example.json`。
 - 建立当前开发规格、唯一活动计划、环境复刻指南和日期化审查；同步根入口、STATUS、RESUME、发版、项目结构、子目录 README、历史计划状态和决策台账。
@@ -45,7 +46,7 @@ origin/dev observed 688911522f88e2283231fb59232ea43edd3174a5 (not adopted)
 |---|---|
 | `uv lock --check` | PASS；24 packages resolved |
 | focused resume/layout/CLI/verify tests | PASS |
-| 完整 `pytest -q` | `1664 passed, 19 warnings in 218.83s` |
+| 完整 `pytest -q` | 最终修订后 `1664 passed, 19 warnings in 226.04s` |
 | warnings | 仅 oletools 对 pyparsing 旧 API 的第三方 deprecation |
 | `inventory --worktree` | `ok=true`、零 diagnostics；13 candidate + 77 quarantine；worktree 模式不具 formal eligibility |
 | `check --worktree` | `ok=true`、零 diagnostics；16 components、2 tools；worktree 模式不具 formal eligibility |
