@@ -971,6 +971,29 @@ def status(capture: Path) -> CollectorResult:
         elif not operator_records_valid:
             next_action = "add-operator-record"
         else:
+            from .raw_validation import validate_raw_capture_files
+
+            capture_files: dict[str, bytes] = {}
+            try:
+                candidates = sorted(
+                    capture.rglob("*"),
+                    key=lambda item: item.relative_to(capture).as_posix().encode("ascii"),
+                )
+            except (OSError, UnicodeError) as error:
+                raise CollectorError("COLLECTOR_CAPTURE_INVALID") from error
+            for candidate in candidates:
+                info = candidate.lstat()
+                if stat.S_ISLNK(info.st_mode) or _path_has_reparse(info):
+                    raise CollectorError("COLLECTOR_CAPTURE_INVALID", str(candidate))
+                if stat.S_ISDIR(info.st_mode):
+                    continue
+                if not stat.S_ISREG(info.st_mode):
+                    raise CollectorError("COLLECTOR_CAPTURE_INVALID", str(candidate))
+                relative = candidate.relative_to(capture).as_posix()
+                capture_files[relative], _digest = _stable_read(
+                    candidate, max_bytes=MAX_MEMBER_BYTES
+                )
+            validate_raw_capture_files(capture_files, controls=False)
             next_action = "finalize-raw"
     except CollectorError as error:
         return _failure(error)

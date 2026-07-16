@@ -646,13 +646,29 @@ def test_active_delivery_controls_bind_state_and_fail_on_withdrawal(tmp_path: Pa
         "revocation_status": "active",
     }
     handoff_bytes = canonical_json_bytes(handoff)
+    kit_id = "kit-0123456789abcdef0123"
+    kit_zip = b"fixture-kit\n"
+    pyz = b"fixture-pyz\n"
+    kit_sidecar = f"{hashlib.sha256(kit_zip).hexdigest()}  {kit_id}.zip\n".encode("ascii")
+    pyz_sidecar = f"{hashlib.sha256(pyz).hexdigest()}  target-discovery.pyz\n".encode("ascii")
+    receipt_bytes = b'{"ok":true}\n'
+    content_records = tuple(sorted((
+        (f"{kit_id}.zip", kit_zip),
+        (f"{kit_id}.zip.sha256", kit_sidecar),
+        ("handoff.json", handoff_bytes),
+        ("receipts/build-reproducibility.json", receipt_bytes),
+        ("target-discovery.pyz", pyz),
+        ("target-discovery.pyz.sha256", pyz_sidecar),
+    ), key=lambda item: item[0]))
     provenance = {
+        "bundle_content_sha256": resume._bundle_member_digest(content_records),
         "active_ledger_source": "repository-active-handoff-ledger",
         "handoff_expires_at": handoff["expires_at"],
         "handoff_id": handoff["handoff_id"],
         "handoff_sha256": hashlib.sha256(handoff_bytes).hexdigest(),
-        "kit_id": "kit-0123456789abcdef0123",
-        "kit_zip_sha256": SHA,
+        "kit_id": kit_id,
+        "kit_zip_sha256": hashlib.sha256(kit_zip).hexdigest(),
+        "collector_pyz_sha256": hashlib.sha256(pyz).hexdigest(),
     }
     provenance_bytes = canonical_json_bytes(provenance)
     digest = hashlib.sha256(provenance_bytes).hexdigest()
@@ -660,7 +676,20 @@ def test_active_delivery_controls_bind_state_and_fail_on_withdrawal(tmp_path: Pa
     (bundle / "receipts").mkdir(parents=True)
     (bundle / "provenance.json").write_bytes(provenance_bytes)
     (bundle / "handoff.json").write_bytes(handoff_bytes)
-    (bundle / "receipts/build-reproducibility.json").write_bytes(b'{"ok":true}\n')
+    (bundle / f"{kit_id}.zip").write_bytes(kit_zip)
+    (bundle / f"{kit_id}.zip.sha256").write_bytes(kit_sidecar)
+    (bundle / "target-discovery.pyz").write_bytes(pyz)
+    (bundle / "target-discovery.pyz.sha256").write_bytes(pyz_sidecar)
+    (bundle / "receipts/build-reproducibility.json").write_bytes(receipt_bytes)
+    (bundle / "SHA256SUMS").write_bytes(
+        b"".join(
+            f"{hashlib.sha256(data).hexdigest()}  {path}\n".encode("ascii")
+            for path, data in sorted(
+                (*content_records, ("provenance.json", provenance_bytes)),
+                key=lambda item: item[0],
+            )
+        )
+    )
     current = {
         "schema_version": 1,
         "bundle_id": bundle.name,
@@ -681,7 +710,7 @@ def test_active_delivery_controls_bind_state_and_fail_on_withdrawal(tmp_path: Pa
         "active_bundle_path": bundle.relative_to(root).as_posix(),
         "bundle_digest": digest,
         "active_kit_id": provenance["kit_id"],
-        "kit_zip_digest": SHA,
+        "kit_zip_digest": provenance["kit_zip_sha256"],
         "active_handoff_id": handoff["handoff_id"],
         "handoff_digest": provenance["handoff_sha256"],
         "expiry": handoff["expires_at"],
@@ -690,9 +719,15 @@ def test_active_delivery_controls_bind_state_and_fail_on_withdrawal(tmp_path: Pa
     })
     now = datetime.fromisoformat(UTC.replace("Z", "+00:00"))
     assert resume._active_delivery_diagnostics(root, state, now) == []
+    (bundle / "target-discovery.pyz").write_bytes(b"tampered-pyz\n")
+    assert "RESUME_ACTIVE_BUNDLE_INTEGRITY_INVALID" in {
+        item.code for item in resume._active_delivery_diagnostics(root, state, now)
+    }
+    (bundle / "target-discovery.pyz").write_bytes(pyz)
     ledger["active_handoff_ids"] = []
     ledger["withdrawn_handoff_ids"] = [handoff["handoff_id"]]
     (control / "active-handoff-ledger.json").write_bytes(canonical_json_bytes(ledger))
+    state["revocation_status"] = "withdrawn"
     assert [item.code for item in resume._active_delivery_diagnostics(root, state, now)] == [
         "RESUME_ACTIVE_HANDOFF_WITHDRAWN"
     ]

@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -315,6 +316,61 @@ def _canonical_control(path: Path) -> dict[str, Any]:
     return document
 
 
+def _issued_bundle_records(bundle: Path) -> tuple[tuple[str, bytes], ...]:
+    """Read a portable, immutable bundle tree for doctor verification."""
+
+    try:
+        root_info = bundle.lstat()
+        if not stat.S_ISDIR(root_info.st_mode) or stat.S_ISLNK(root_info.st_mode):
+            raise OSError
+        records: list[tuple[str, bytes]] = []
+        for path in sorted(
+            bundle.rglob("*"),
+            key=lambda item: item.relative_to(bundle).as_posix().encode("ascii"),
+        ):
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                raise OSError
+            if stat.S_ISDIR(info.st_mode):
+                continue
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise OSError
+            relative = path.relative_to(bundle).as_posix()
+            if not validate_portable_ascii_paths((relative,)).ok:
+                raise OSError
+            records.append((relative, path.read_bytes()))
+    except (OSError, UnicodeError):
+        raise ValueError("unsafe bundle tree") from None
+    if not records:
+        raise ValueError("empty bundle tree")
+    return tuple(records)
+
+
+def _bundle_member_digest(records: tuple[tuple[str, bytes], ...]) -> str:
+    return hashlib.sha256(
+        (
+            json.dumps(
+                [
+                    {"path": path, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+                    for path, data in records
+                ],
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("ascii")
+    ).hexdigest()
+
+
+def _bundle_sums(records: tuple[tuple[str, bytes], ...]) -> bytes:
+    return b"".join(
+        f"{hashlib.sha256(data).hexdigest()}  {path}\n".encode("ascii")
+        for path, data in records
+        if path != "SHA256SUMS"
+    )
+
+
 def _active_delivery_diagnostics(
     root: Path, state: Mapping[str, Any], now: datetime
 ) -> list[ResumeDiagnostic]:
@@ -372,10 +428,32 @@ def _active_delivery_diagnostics(
     )
     if not all(bindings):
         diagnostics.append(_diagnostic("RESUME_ACTIVE_BINDING_MISMATCH", "artifacts/b28-discovery", "state, CURRENT, provenance, and handoff must bind one identity"))
+    try:
+        records = _issued_bundle_records(bundle)
+        file_map = dict(records)
+        content = tuple(
+            (path, data)
+            for path, data in records
+            if path not in {"provenance.json", "SHA256SUMS"}
+        )
+        kit_id = provenance.get("kit_id")
+        if (
+            file_map.get("SHA256SUMS") != _bundle_sums(records)
+            or _bundle_member_digest(content) != provenance.get("bundle_content_sha256")
+            or type(kit_id) is not str
+            or hashlib.sha256(file_map[f"{kit_id}.zip"]).hexdigest() != provenance.get("kit_zip_sha256")
+            or file_map[f"{kit_id}.zip.sha256"] != f"{provenance['kit_zip_sha256']}  {kit_id}.zip\n".encode("ascii")
+            or hashlib.sha256(file_map["target-discovery.pyz"]).hexdigest() != provenance.get("collector_pyz_sha256")
+            or file_map["target-discovery.pyz.sha256"] != f"{provenance['collector_pyz_sha256']}  target-discovery.pyz\n".encode("ascii")
+        ):
+            raise ValueError("bundle integrity mismatch")
+    except (KeyError, TypeError, ValueError):
+        diagnostics.append(_diagnostic("RESUME_ACTIVE_BUNDLE_INTEGRITY_INVALID", str(state["active_bundle_path"]), "bundle content, checksum, Kit, or collector binding is invalid"))
     active = ledger_document.get("active_handoff_ids")
     withdrawn = ledger_document.get("withdrawn_handoff_ids")
     source = provenance.get("active_ledger_source")
     captured_at = _utc_timestamp(ledger_document.get("captured_at"))
+    observed_revocation = "unavailable"
     if (
         frozenset(ledger_document) != _LEDGER_FIELDS
         or ledger_document.get("schema_version") != 1
@@ -397,11 +475,17 @@ def _active_delivery_diagnostics(
         diagnostics.append(_diagnostic("RESUME_ACTIVE_LEDGER_STALE", "artifacts/b28-discovery/active-handoff-ledger.json", "active ledger is older than 24 hours"))
     elif state["active_handoff_id"] in withdrawn:
         diagnostics.append(_diagnostic("RESUME_ACTIVE_HANDOFF_WITHDRAWN", "artifacts/b28-discovery/active-handoff-ledger.json", "active handoff is withdrawn"))
+        observed_revocation = "withdrawn"
     elif state["active_handoff_id"] not in active:
         diagnostics.append(_diagnostic("RESUME_ACTIVE_HANDOFF_INACTIVE", "artifacts/b28-discovery/active-handoff-ledger.json", "active handoff is not active in the ledger"))
+    else:
+        observed_revocation = "active"
     expiry = _utc_timestamp(state["expiry"])
     if expiry is None or expiry <= now.astimezone(UTC):
         diagnostics.append(_diagnostic("RESUME_HANDOFF_EXPIRED", "expiry", "active handoff is expired"))
+        observed_revocation = "expired"
+    if state["revocation_status"] != observed_revocation:
+        diagnostics.append(_diagnostic("RESUME_REVOCATION_STATUS_MISMATCH", "revocation_status", "state revocation status does not match current handoff control"))
     return diagnostics
 
 

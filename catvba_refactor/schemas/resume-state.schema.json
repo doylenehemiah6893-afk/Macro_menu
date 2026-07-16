@@ -77,7 +77,7 @@
           "handoff_digest": {"$ref": "#/$defs/sha256"},
           "expiry": {"$ref": "#/$defs/utc"},
           "last_reproducibility_receipt": {"$ref": "#/$defs/portable_path"},
-          "revocation_status": {"const": "active"}
+          "revocation_status": {"enum": ["active", "withdrawn", "expired", "unavailable"]}
         }
       }
     }
