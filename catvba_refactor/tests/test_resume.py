@@ -575,6 +575,9 @@ def valid_bundle_provenance() -> dict:
         "collector_pyz_sha256": SHA,
         "python_requirement": "CPython 3.12",
         "session_skeleton_sha256": SHA_B,
+        "session_skeleton_members": [
+            {"path": "templates/readme.txt", "sha256": SHA, "size": 23}
+        ],
         "tutorials_sha256": SHA,
         "templates_sha256": SHA_B,
         "schemas_sha256": SHA,
