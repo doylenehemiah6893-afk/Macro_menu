@@ -279,3 +279,8 @@ delivery、双平台 CI 与 GitHub fresh clone 完成前，B28 继续禁止执�
 
 所有 target truth 仍为 not-run/not-produced，`release_eligible=false`。delivery commit、clone QA、远端双平台与
 GitHub URL fresh clone 完成前，B28 继续 BLOCKED。
+
+delivery record 已提交为 `105bfadac76aad96307166d39b2f2c05a1f91c56`，其父提交精确为 evidence
+`957d0f23c40513a9b82d583e8428d7c85d1710c5`。autocrlf/quotepath `--no-local` 新克隆中，Development/Delivery
+doctor、严格 selector 与 CURRENT/ledger/provenance/handoff/Kit ZIP/collector pyz 六项 byte compare 全通过；
+工作树干净，唯一选择 `bundle-e4d5b791d8ce5dd442529605`。

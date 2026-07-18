@@ -4,7 +4,7 @@
 
 唯一仓库：`doylenehemiah6893-afk/Macro_menu`
 唯一工作分支：`codex/dev-review-report`
-当前开发动作：提交并 clone 验证 R9D delivery，再复跑远端双平台 CI/GitHub clone
+当前开发动作：推送已完成 local clone QA 的 R9D delivery，再复跑远端双平台 CI/GitHub clone
 
 当前目标机动作：BLOCKED；新 local bundle 已签发，但尚未通过远端验证
 
@@ -13,7 +13,7 @@
 
 > GitHub 远端已普通 fast-forward 到 `cfb9b0908c5368f91bc31ac5fd76fa38707ad3ad`。run `29651458545`
 > 的 Linux job 成功；Windows 已启动解析后的 uv.exe，但 `--version` 的 build metadata 被精确整行校验拒绝。
-> R9D 改用官方稳定短格式 `uv -V`；新 evidence/delivery 已闭合，但尚未提交和通过远端验证。
+> R9D 改用官方稳定短格式 `uv -V`；delivery `105bfad` 与 local clone QA 已闭合，但尚未推送。
 
 ## 1. 当前机器状态
 
@@ -27,6 +27,7 @@
 | Gate / next action | G0/G1=`PASS`，G2–G7=`BLOCKED`；`run-b28-discovery` |
 | remote CI | run `29651458545`：Linux `88098390129` SUCCESS；Windows `88098390116` 因 `--version` build metadata 精确校验失败 |
 | 本轮本地测试 | 独立复审 0 findings；正式 receipt `1683 passed, 19 warnings`；双 Kit/四 verifier/双 bundle 全通过 |
+| local clone QA | `105bfad` autocrlf/quotepath `--no-local` clone：两种 doctor、严格 selector、六项 byte compare 全通过 |
 
 `bundle-95bce...`、`bundle-6b7518...` 与 `bundle-ab5205...` 仍保留供审计，但其 handoff 均已撤回；更早的
 `handoff-6ed312...` 也保持 withdrawn。不得因历史 expiry 尚未到达就直接复用，也不得手改 JSON 延期或恢复。
