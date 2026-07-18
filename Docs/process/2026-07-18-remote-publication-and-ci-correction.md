@@ -172,5 +172,10 @@ GitHub 分支 SHA 与本地精确一致。新 Fresh-clone reproducibility run �
 | provenance / content SHA-256 | `44c7a1ae951d2917309fc9d5d5aea8bf583b080254a512dc8b8e7d789430c5de` / `b144330c4517407927152295c7510a283c953f09c3df0b9d566c14cde51bf092` |
 
 两个 Discovery skeleton 与两个 operator bundle 分别逐字节相同；公开 bundle 不含 CATVBA、用户/主机/DSLS 标识、
-客户路径或真实现场数据。G0/G1 仅为 A 环境离线 `PASS`；delivery commit、本地 clone QA、远端 Linux/Windows 与
-GitHub URL fresh clone 完成前，B28 继续 BLOCKED，G2–G7 与 release 继续 BLOCKED。
+客户路径或真实现场数据。delivery record 已提交为 `8dac3a48a060566b3fc5b2ab8cb287066f141b62`，其父提交精确为
+evidence `982ce2bd11ad971b9614e12d38a6830b5a7789ba`。随后以 `core.autocrlf=true`、
+`core.quotepath=true`、`--no-local` 新克隆：Development/Delivery doctor、严格 selector 均通过，source 与 clone 的
+CURRENT、ledger、provenance、handoff、Kit ZIP、collector pyz SHA-256 全部一致，工作树干净。
+
+G0/G1 仅为 A 环境离线 `PASS`；远端 Linux/Windows 与 GitHub URL fresh clone 完成前，B28 继续 BLOCKED，
+G2–G7 与 release 继续 BLOCKED。

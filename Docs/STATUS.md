@@ -15,7 +15,7 @@
 开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。初始仓库同步已完成，
 远端已发布到 `55cbef2`。run `29649284949` 的 Linux job 成功，Windows job `88092722616` 仍在 bootstrap uv
 preflight 失败。实现修复已形成新 clean evidence 与本地 delivery：`next_action=run-b28-discovery`、
-`revocation_status=active`。但 delivery 尚未提交/通过远端双平台与 GitHub clone QA，目标机不得开始。
+`revocation_status=active`。delivery `8dac3a4` 与本地 clone QA 已通过，但尚未推送/通过远端双平台和 GitHub clone，目标机不得开始。
 
 ## 1. 立即停止条件
 
@@ -38,7 +38,7 @@ preflight 失败。实现修复已形成新 clean evidence 与本地 delivery：
 | SPA/FTA | 目标机保证权益；物理隔离为默认部署 Fleet Extensions |
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
-| 本地/远端 | 远端 `codex/dev-review-report=55cbef2`；本地 evidence=`982ce2b`，新 delivery worktree 待提交/推送 |
+| 本地/远端 | 远端 `codex/dev-review-report=55cbef2`；本地 evidence=`982ce2b`、delivery=`8dac3a4` 与 clone QA 已通过，待推送 |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |

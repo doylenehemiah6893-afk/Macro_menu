@@ -1,12 +1,12 @@
 # Macro_menu 新环境续作入口
 
-状态：CURRENT / refreshed local delivery / remote verification pending / **NO-GO for B28 and release**
+状态：CURRENT / refreshed delivery clone-verified / remote verification pending / **NO-GO for B28 and release**
 
 唯一仓库：`doylenehemiah6893-afk/Macro_menu`
 唯一工作分支：`codex/dev-review-report`
-当前开发动作：提交新 delivery、完成 clone QA，并复跑远端双平台 CI
+当前开发动作：fast-forward 推送新 evidence/delivery，并复跑远端双平台 CI 与 GitHub clone
 
-当前目标机动作：BLOCKED；已有新 local delivery，但远端双平台与 GitHub clone 尚未通过
+当前目标机动作：BLOCKED；新 local delivery 已 clone-verified，但远端双平台与 GitHub clone 尚未通过
 
 机器状态首先以 `resume/state.json` 为准；只有 `active_bundle_path` 非空时，CURRENT 与 bundle provenance 才能
 共同选择活动制品。本文件不把 A 环境验证说成 CATIA 验证。
@@ -21,13 +21,14 @@
 |---|---|
 | remote published HEAD | `55cbef2ec3afc63d876c624ee174df8798ef2dbc` |
 | current evidence / tree | `982ce2bd11ad971b9614e12d38a6830b5a7789ba` / `b4e423ac2faccbcc0c11e65e8a10917ece862c88` |
+| local delivery commit | `8dac3a48a060566b3fc5b2ab8cb287066f141b62`；父提交精确为 evidence |
 | active bundle / provenance | `bundle-44c7a1ae951d2917309fc9d5` / `44c7a1ae951d2917309fc9d5d5aea8bf583b080254a512dc8b8e7d789430c5de` |
 | active Kit / ZIP | `kit-a235b5dd5fc27d09b7de` / `cee08464bf22024f733b2277e61defdf448e76f41b18082225ffb880fec7fe45` |
 | active handoff / expiry | `handoff-be908ee37a9b5beba0b5` / `2026-07-25T14:33:26Z` |
 | ledger | captured `2026-07-18T15:33:33Z`；只激活新 handoff，五份旧 handoff withdrawn |
 | Gate / next action | G0/G1=`PASS`，G2–G7=`BLOCKED`；`run-b28-discovery` |
 | remote CI | run `29649284949`：Linux success，Windows job `88092722616` 在 bootstrap uv preflight 失败；上一 run `29644483056` 亦为 failure |
-| 本轮本地测试 | 最终独立复审 Critical/Important=0；clean evidence receipt `1678 passed, 19 warnings`，双 Kit/四 verifier/collector smoke 与双 operator bundle 全通过 |
+| 本轮本地测试 | 最终独立复审 Critical/Important=0；clean evidence receipt `1678 passed, 19 warnings`；双 Kit/四 verifier/collector smoke/双 bundle；autocrlf/quotepath clone 两种 doctor、strict selector 与关键摘要全部通过 |
 
 `bundle-95bce...`、`bundle-6b7518...` 与 `bundle-ab5205...` 仍保留供审计，但其 handoff 均已撤回；更早的
 `handoff-6ed312...` 也保持 withdrawn。不得因历史 expiry 尚未到达就直接复用，也不得手改 JSON 延期或恢复。
