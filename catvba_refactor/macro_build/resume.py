@@ -748,8 +748,14 @@ def _resolve_uv_executable() -> str | None:
     if "MACRO_MENU_UV_EXECUTABLE" in os.environ:
         explicit = os.environ["MACRO_MENU_UV_EXECUTABLE"]
         candidate = Path(explicit)
-        if candidate.is_absolute() and candidate.is_file():
-            return os.fspath(candidate)
+        if not candidate.is_absolute():
+            return None
+        candidates = (candidate,)
+        if os.name == "nt" and candidate.name and candidate.suffix == "":
+            candidates += (candidate.with_name(candidate.name + ".exe"),)
+        for resolved in candidates:
+            if resolved.is_file():
+                return os.fspath(resolved)
         return None
     names = ("uv.exe", "uv") if os.name == "nt" else ("uv",)
     for name in names:

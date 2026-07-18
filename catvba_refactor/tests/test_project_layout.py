@@ -216,6 +216,7 @@ def test_resume_state_matches_schema_and_never_claims_release() -> None:
         assert ledger["active_handoff_ids"] == []
         assert "handoff-07bbe55bc7552489cd55" in ledger["withdrawn_handoff_ids"]
         assert "handoff-80d8cb2c06104fcf3c74" in ledger["withdrawn_handoff_ids"]
+        assert "handoff-be908ee37a9b5beba0b5" in ledger["withdrawn_handoff_ids"]
     else:
         bundle = ROOT / state["active_bundle_path"]
         assert bundle.is_dir()

@@ -179,3 +179,18 @@ CURRENT、ledger、provenance、handoff、Kit ZIP、collector pyz SHA-256 全部
 
 G0/G1 仅为 A 环境离线 `PASS`；远端 Linux/Windows 与 GitHub URL fresh clone 完成前，B28 继续 BLOCKED，
 G2–G7 与 release 继续 BLOCKED。
+
+## 8. 第三次远端运行与 Windows extensionless action output
+
+evidence/delivery/clone 记录推送后，远端精确为 `768a4d1ac4f9c96f9586944c8596f723d3394efc`，run
+`29650442197` 的 Linux job `88095767311` SUCCESS，Windows job `88095767287` FAILURE。Windows 日志提供了新的
+精确事实：setup-uv 0.9.25 成功，官方 `uv-path` output 为
+`C:\hostedtoolcache\windows\uv\0.9.25\x86_64\uv`，即省略 `.exe`；代码按“原样路径必须存在”正确 fail-closed，
+但没有实现 Windows command extension 语义。
+
+R9C 只允许以下窄修复：显式路径必须绝对；仅当 `os.name == "nt"` 且路径无后缀时，检查同目录同名 `.exe`；不得
+搜索 PATH、其他目录或其他扩展名；解析后继续执行精确 `uv 0.9.25` 校验。Linux 与带后缀路径行为不变。新增脚本层和
+doctor 层 extensionless Windows action-output 回归。
+
+该修改再次触及 evidence 输入，故 `handoff-be908ee37a9b5beba0b5` 已撤回，CURRENT 移除，ledger active 清空，
+state 回到 preparation。上一 `982ce2b` Kit/bundle 只保留历史审计身份，不能继续授权 B28。

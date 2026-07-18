@@ -46,6 +46,7 @@ py -3.12 scripts\verify_resume.py --repo-root . --state resume\state.json --outp
 普通 clone 的 bootstrap 从完整父 PATH 固定 uv 绝对路径；GitHub Actions 则使用固定 setup-uv action 官方
 `uv-path` output 显式设置 `MACRO_MENU_UV_EXECUTABLE`。两条路径都再次验证绝对文件与精确版本，并用保留
 `PATHEXT/TEMP/TMP/UV_CACHE_DIR` 的受控环境执行。显式变量存在但为空、相对或非文件时不会回退 PATH。
+setup-uv 的 Windows `uv-path` 可能省略 `.exe`；bootstrap 只会在同目录检查同名 `.exe` 并验证精确版本，不做一般 PATH 搜索。
 
 ## 4. Delivery control 单独验证
 

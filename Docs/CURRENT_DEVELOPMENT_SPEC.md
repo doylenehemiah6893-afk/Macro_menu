@@ -46,6 +46,8 @@ GitHub Actions 的 operator-bundle selector 与 Delivery doctor 职责不同：�
 8. GitHub Actions 必须把固定 setup-uv action 的官方 `uv-path` output 作为 `MACRO_MENU_UV_EXECUTABLE` 显式传入；
    bootstrap/doctor 只接受存在的绝对文件路径并再次验证精确 `uv 0.9.25`。变量存在但为空、相对或非文件时必须
    fail-closed，不能回退 PATH；普通外部 clone 未设置该变量时才允许从完整父 PATH 解析。
+   setup-uv 在 Windows 可返回省略 `.exe` 的绝对 command path；仅在 Windows、仅对无后缀显式路径，允许验证同目录
+   同名 `.exe` 文件，不能搜索其他目录或扩展名。
 9. Windows uv 版本检查与 frozen sync 必须保留受控 runtime 变量 `PATH/SYSTEMROOT/PATHEXT/TEMP/TMP/UV_CACHE_DIR/UV_LINK_MODE`；CI 后续 native pytest 继续使用同一显式 uv 路径。
 
 仓库目前没有 wheelhouse，因此“仅 clone 即可完全断网安装依赖”不成立。若未来要求断网复刻，必须另建按操作系统/架构签名并带哈希的 wheelhouse 制品和验证清单，不能放宽 frozen lock。

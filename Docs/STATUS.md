@@ -13,9 +13,9 @@
 本文是当前状态与上下文恢复入口。详细事实以 Git 文件、固定哈希和目标机证据为准。
 
 开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。初始仓库同步已完成，
-远端已发布到 `55cbef2`。run `29649284949` 的 Linux job 成功，Windows job `88092722616` 仍在 bootstrap uv
-preflight 失败。实现修复已形成新 clean evidence 与本地 delivery：`next_action=run-b28-discovery`、
-`revocation_status=active`。delivery `8dac3a4` 与本地 clone QA 已通过，但尚未推送/通过远端双平台和 GitHub clone，目标机不得开始。
+远端已发布到 `768a4d1`。run `29650442197` 的 Windows job `88095767287` 证明官方 setup-uv `uv-path` 省略
+`.exe`，原样路径不存在而被 fail-closed。实现输入再次变化，已撤回上一 handoff 并退回 preparation：
+`next_action=complete-evidence-implementation`、`revocation_status=preparation`。当前无 active bundle/CURRENT，目标机不得开始。
 
 ## 1. 立即停止条件
 
@@ -38,16 +38,16 @@ preflight 失败。实现修复已形成新 clean evidence 与本地 delivery：
 | SPA/FTA | 目标机保证权益；物理隔离为默认部署 Fleet Extensions |
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
-| 本地/远端 | 远端 `codex/dev-review-report=55cbef2`；本地 evidence=`982ce2b`、delivery=`8dac3a4` 与 clone QA 已通过，待推送 |
+| 本地/远端 | 远端 `codex/dev-review-report=768a4d1`；本地正在其上形成 extensionless uv-path evidence |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
 | 实施计划 | 离线 Build Kit、baseline intake、Core Runtime MVP 和 B28 evidence harness 的 A 环境实现已完成 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | `982ce2b` 正式 receipt：1678 passed、19 warnings；inventory/check、双 Kit、四 verifier、collector smoke 全通过 |
-| active discovery bundle | `bundle-44c7a1ae951d2917309fc9d5`；provenance SHA-256 `44c7a1ae951d2917309fc9d5d5aea8bf583b080254a512dc8b8e7d789430c5de` |
-| active Kit / handoff | `kit-a235b5dd5fc27d09b7de` / `handoff-be908ee37a9b5beba0b5`；expires `2026-07-25T14:33:26Z` |
-| 环境复刻修订 | 官方 setup-uv output-path 合同已由独立复审 Critical/Important=0 与完整 receipt 关闭；待真实 Windows CI |
+| 离线测试 | 上一 receipt 1678 passed；extensionless Windows output 聚焦回归 89 passed，完整新 evidence 尚待运行 |
+| active discovery bundle | 无；`active_bundle_path=null`，CURRENT 已移除 |
+| active Kit / handoff | 无；`handoff-be908ee37a9b5beba0b5` 已加入 withdrawn |
+| 环境复刻修订 | 仅 Windows、仅无后缀显式 path 可验证同目录 `.exe`；仍禁止 PATH fallback 并验证精确版本 |
 | 当前仓库 CLI | 离线 Build Kit/audit/handoff 命令与 target evidence 命令均已具备；已生成确定性 discovery raw skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
@@ -81,7 +81,7 @@ preflight 失败。实现修复已形成新 clean evidence 与本地 delivery：
 | Gate | 状态 | 原因 |
 |---|---|---|
 | G0 INPUT-FROZEN | `PASS` | 批准 cutoff 与 A 环境离线输入合同已冻结 |
-| G1 KIT-READY | `PASS` | `982ce2b` 双 Kit/ZIP、四 verifier、双 operator bundle 与 fresh handoff 已闭合；仅为 A 环境离线证据 |
+| G1 KIT-READY | `BLOCKED` | 实现输入变化，上一 Kit/handoff 已撤回；待新 clean evidence/delivery |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -89,14 +89,14 @@ preflight 失败。实现修复已形成新 clean evidence 与本地 delivery：
 | G6 SECURITY-PILOT-READY | `BLOCKED` | 缺回传审计、安全包装、试点和回滚 |
 | G7 RELEASE-APPROVED | `BLOCKED` | 缺全部上游门和正式审批 |
 
-G0/G1 `PASS` 只说明固定 Git 输入与本地可复算 delivery chain。它们都不是 CATIA Compile、References、
+G0 `PASS` 只说明固定 Git 输入；G1 已因实现变化回到 `BLOCKED`。它们都不是 CATIA Compile、References、
 许可证 checkout、UI 或运行通过。
 
-## 6. 当前 Discovery 交付状态（本地已签发 / 远端未验证）
+## 6. 当前 Discovery 交付状态（preparation / 无 active 授权）
 
-当前 `bundle-44c7a1...` 与 `handoff-be908...` 只在本地签发；ledger 只激活它并撤回五份历史 handoff。只有 delivery
-commit、远端双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 全部通过后，B28 才可能取得它。不得使用
-WSL、PowerShell、uv 或自动化 CATIA/VBE/DSLS。
+CURRENT 不存在，ledger active 为空并撤回包括 `handoff-be908...` 在内的六份历史 handoff。只有新 evidence/delivery、
+远端双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 全部通过后，B28 才可能取得新包。不得使用 WSL、
+PowerShell、uv 或自动化 CATIA/VBE/DSLS。
 
 这不是 Compile、References、DSLS checkout、运行、G2/G3 或 release 通过。bundle 固定
 `compile_status=not-run`、target cases=`not-run`、`artifact_status=not-produced`、`release_eligible=false`。

@@ -657,6 +657,62 @@ def test_stdlib_bootstrap_prefers_authenticated_explicit_uv_path(
     assert observed["args"] == [os.fspath(executable), "--version"]
 
 
+def test_stdlib_bootstrap_resolves_extensionless_windows_action_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _bootstrap_script_module()
+    output_path = tmp_path / "uv"
+    executable = tmp_path / "uv.exe"
+    executable.write_bytes(b"fixture")
+    environment = dict(os.environ)
+    environment["MACRO_MENU_UV_EXECUTABLE"] = os.fspath(output_path)
+    monkeypatch.setattr(
+        module,
+        "os",
+        SimpleNamespace(name="nt", environ=environment, fspath=os.fspath),
+    )
+    monkeypatch.setattr(
+        module.shutil,
+        "which",
+        lambda name: pytest.fail(f"unexpected PATH lookup for {name}"),
+    )
+
+    assert module._resolve_uv_executable() == os.fspath(executable)
+
+
+def test_stdlib_bootstrap_prefers_exact_extensionless_windows_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exact = tmp_path / "uv"
+    exact.write_bytes(b"exact")
+    (tmp_path / "uv.exe").write_bytes(b"fallback")
+    environment = dict(os.environ)
+    environment["MACRO_MENU_UV_EXECUTABLE"] = os.fspath(exact)
+    module = _bootstrap_script_module()
+    monkeypatch.setattr(
+        module,
+        "os",
+        SimpleNamespace(name="nt", environ=environment, fspath=os.fspath),
+    )
+
+    assert module._resolve_uv_executable() == os.fspath(exact)
+
+
+def test_stdlib_bootstrap_rejects_extensionless_root_without_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _bootstrap_script_module()
+    environment = dict(os.environ)
+    environment["MACRO_MENU_UV_EXECUTABLE"] = os.path.abspath(os.sep)
+    monkeypatch.setattr(
+        module,
+        "os",
+        SimpleNamespace(name="nt", environ=environment, fspath=os.fspath),
+    )
+
+    assert module._resolve_uv_executable() is None
+
+
 def test_stdlib_bootstrap_rejects_invalid_explicit_uv_without_path_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -693,6 +749,28 @@ def test_resume_prefers_authenticated_explicit_uv_path(
     executable = tmp_path / "uv.exe"
     executable.write_bytes(b"fixture")
     monkeypatch.setenv("MACRO_MENU_UV_EXECUTABLE", os.fspath(executable))
+    monkeypatch.setattr(
+        resume.shutil,
+        "which",
+        lambda name: pytest.fail(f"unexpected PATH lookup for {name}"),
+    )
+
+    assert resume._resolve_uv_executable() == os.fspath(executable)
+
+
+def test_resume_resolves_extensionless_windows_action_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output_path = tmp_path / "uv"
+    executable = tmp_path / "uv.exe"
+    executable.write_bytes(b"fixture")
+    environment = dict(os.environ)
+    environment["MACRO_MENU_UV_EXECUTABLE"] = os.fspath(output_path)
+    monkeypatch.setattr(
+        resume,
+        "os",
+        SimpleNamespace(name="nt", environ=environment, fspath=os.fspath),
+    )
     monkeypatch.setattr(
         resume.shutil,
         "which",

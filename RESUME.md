@@ -1,34 +1,31 @@
 # Macro_menu 新环境续作入口
 
-状态：CURRENT / refreshed delivery clone-verified / remote verification pending / **NO-GO for B28 and release**
+状态：CURRENT / Windows extensionless uv-path correction in preparation / **NO-GO for B28 and release**
 
 唯一仓库：`doylenehemiah6893-afk/Macro_menu`
 唯一工作分支：`codex/dev-review-report`
-当前开发动作：fast-forward 推送新 evidence/delivery，并复跑远端双平台 CI 与 GitHub clone
+当前开发动作：完成 Windows extensionless uv-path 的新 evidence/delivery 周期并复跑 CI
 
-当前目标机动作：BLOCKED；新 local delivery 已 clone-verified，但远端双平台与 GitHub clone 尚未通过
+当前目标机动作：BLOCKED；当前无 active bundle/CURRENT，上一 handoff 已撤回
 
 机器状态首先以 `resume/state.json` 为准；只有 `active_bundle_path` 非空时，CURRENT 与 bundle provenance 才能
 共同选择活动制品。本文件不把 A 环境验证说成 CATIA 验证。
 
-> GitHub 远端已普通 fast-forward 到 `55cbef2ec3afc63d876c624ee174df8798ef2dbc`。run `29649284949`
-> 的 Linux job 成功，Windows job 仍在 bootstrap uv preflight 失败。该 handoff 已撤回；显式 uv-path 修复已形成新的
-> clean evidence 与本地 delivery，但远端尚未包含它们。
+> GitHub 远端已普通 fast-forward 到 `768a4d1ac4f9c96f9586944c8596f723d3394efc`。run `29650442197`
+> 的 Windows 日志证明 setup-uv `uv-path` 为省略 `.exe` 的绝对路径；原样路径不存在而被 fail-closed。该 handoff 已撤回，
+> 当前退回 preparation；本轮 extensionless Windows 修复尚未推送。
 
 ## 1. 当前机器状态
 
 | 项目 | 固定值 |
 |---|---|
-| remote published HEAD | `55cbef2ec3afc63d876c624ee174df8798ef2dbc` |
-| current evidence / tree | `982ce2bd11ad971b9614e12d38a6830b5a7789ba` / `b4e423ac2faccbcc0c11e65e8a10917ece862c88` |
-| local delivery commit | `8dac3a48a060566b3fc5b2ab8cb287066f141b62`；父提交精确为 evidence |
-| active bundle / provenance | `bundle-44c7a1ae951d2917309fc9d5` / `44c7a1ae951d2917309fc9d5d5aea8bf583b080254a512dc8b8e7d789430c5de` |
-| active Kit / ZIP | `kit-a235b5dd5fc27d09b7de` / `cee08464bf22024f733b2277e61defdf448e76f41b18082225ffb880fec7fe45` |
-| active handoff / expiry | `handoff-be908ee37a9b5beba0b5` / `2026-07-25T14:33:26Z` |
-| ledger | captured `2026-07-18T15:33:33Z`；只激活新 handoff，五份旧 handoff withdrawn |
-| Gate / next action | G0/G1=`PASS`，G2–G7=`BLOCKED`；`run-b28-discovery` |
-| remote CI | run `29649284949`：Linux success，Windows job `88092722616` 在 bootstrap uv preflight 失败；上一 run `29644483056` 亦为 failure |
-| 本轮本地测试 | 最终独立复审 Critical/Important=0；clean evidence receipt `1678 passed, 19 warnings`；双 Kit/四 verifier/collector smoke/双 bundle；autocrlf/quotepath clone 两种 doctor、strict selector 与关键摘要全部通过 |
+| remote published HEAD | `768a4d1ac4f9c96f9586944c8596f723d3394efc` |
+| current evidence / delivery | `null` / `null`；本轮实现修复尚未形成 clean evidence |
+| active bundle / Kit / handoff | 全部 `null`；CURRENT 已移除 |
+| ledger | captured `2026-07-18T15:44:19Z`；active 为空，六份历史 handoff withdrawn |
+| Gate / next action | G0=`PASS`，G1–G7=`BLOCKED`；`complete-evidence-implementation` |
+| remote CI | run `29650442197`：Windows job `88095767287` 因官方 extensionless uv-path 原样文件不存在而失败；Linux 结果另见 process 记录 |
+| 本轮本地测试 | extensionless Windows action output 聚焦回归 `89 passed`；完整 evidence 尚待运行 |
 
 `bundle-95bce...`、`bundle-6b7518...` 与 `bundle-ab5205...` 仍保留供审计，但其 handoff 均已撤回；更早的
 `handoff-6ed312...` 也保持 withdrawn。不得因历史 expiry 尚未到达就直接复用，也不得手改 JSON 延期或恢复。
@@ -39,7 +36,7 @@
 ## 2. 取得与开发续作
 
 开发续作必须完整 clone，不能使用 GitHub Download ZIP；后者没有 object/ref 历史，无法验证 approved cutoff 与
-intake baseline。当前远端可取得已发布 HEAD `55cbef2`；本轮 uv-path 修复推送前，外部 clone 不包含当前修复。
+intake baseline。当前远端可取得已发布 HEAD `768a4d1`；本轮 extensionless uv-path 修复推送前，外部 clone 不包含当前修复。
 
 ```bash
 git clone --branch codex/dev-review-report --single-branch https://github.com/doylenehemiah6893-afk/Macro_menu.git
@@ -68,9 +65,9 @@ bootstrap 会优先接收经版本校验的显式绝对 uv 路径；没有显式
 
 ## 3. B28 目标机唯一入口
 
-目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。新 local
-bundle 为 `bundle-44c7a1...`，但目标机仍不得开始。只有 delivery commit、远端双平台 CI、GitHub fresh clone 与
-Delivery doctor 全部通过后，才可在批准的 blank VM、标准用户和原生 `cmd.exe` 中执行它；所有历史 bundle 均不可执行。
+目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。当前无
+active bundle/CURRENT，目标机不得开始。只有新 evidence/delivery、远端双平台 CI、GitHub fresh clone 与 Delivery
+doctor 全部通过后，才可在批准的 blank VM、标准用户和原生 `cmd.exe` 中执行新签发包；所有历史 bundle 均不可执行。
 
 仓库中的 `Docs/runbooks/b28-target/README_TARGET_B28.md` 仅保留为源教程/审查入口；目标机执行时以已签发 bundle
 内同名文件为准，避免把源工作树、控制文件与现场 capture 混在一起。
@@ -95,6 +92,6 @@ raw/untrusted 当作 PASS 或 sealed evidence。完成后只通过批准通道�
 - 试图 Compile、运行 30 cases、生成 CATVBA，或把 raw/untrusted 当 sealed/PASS；
 - 试图记录/提交客户路径、主机/用户标识、DSLS server 或未脱敏数据；
 - 试图把 G2–G7 或 `release_eligible` 改为通过，或复活旧 handoff `handoff-6ed312ee18b254cb3c13` / `handoff-b8d9d535604e78551423`。
-- 试图把远端已发布 `55cbef2` 说成本轮 uv-path 修复，或用 API 重建提交 SHA。
+- 试图把远端已发布 `768a4d1` 说成本轮 extensionless uv-path 修复，或用 API 重建提交 SHA。
 
 发生任一项时保留现有日志和 hash，停止并回到本文件与 `resume/state.json`，不要自行扩大授权。
