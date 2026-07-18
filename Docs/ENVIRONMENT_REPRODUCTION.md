@@ -43,6 +43,8 @@ py -3.12 scripts\verify_resume.py --repo-root . --state resume\state.json --outp
 ```
 
 `uv --version` 必须精确输出 `uv 0.9.25`。`.gitattributes` 已使常见 `core.autocrlf=true` clone 仍保持受哈希文件的稳定 bytes；不要手工批量转换行尾。bootstrap 使用 NUL 分隔的 Git 原始路径核对 evidence 后的 delivery 边界，因此 `core.quotepath=true` 与中文文档名不会被误判；这不放宽允许路径集合。
+bootstrap 先通过 Windows 父进程环境定位 `uv.exe` 并固定绝对路径，再用受控子进程环境执行版本检查和 frozen sync；
+这避免 GitHub Hosted Windows 上 setup-uv 已安装成功却因裸命令二次搜索失败而误报缺少 uv。
 
 ## 4. Delivery control 单独验证
 
@@ -98,6 +100,10 @@ git rev-parse refs/heads/dev
 
 HEAD 必须等于已推送本地提交，工作树为空，本地 `dev` 必须等于批准 cutoff `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`。
 
+GitHub Actions 中的 selector 显式使用 `--inactive-as-unavailable`：控制文件仅因 stale、expired、withdrawn 或 inactive
+而不再可交付时，Development CI 继续成功并令 `available=false`，不上传 operator bundle。该模式不用于 B28 转运；
+future timestamp、结构/摘要/内容错误仍使 CI 失败。B28 前必须使用严格 Delivery doctor 和默认 selector。
+
 ## 8. 故障判断
 
 | 现象 | 含义 | 动作 |
@@ -106,6 +112,8 @@ HEAD 必须等于已推送本地提交，工作树为空，本地 `dev` 必须�
 | uv cache 只读 | HOME/缓存权限问题 | 指定可写 `UV_CACHE_DIR` |
 | Development doctor 失败 | Git/lock/toolchain/immutable bytes 不可复刻 | 停止构建并修复根因 |
 | Delivery doctor 失败 | 当前操作授权不可用 | 停止 B28，重新获取或签发控制文件 |
+| CI Development 全部通过但 bundle `available=false` | 已发布代码可复刻，但当前交付控制因时效/撤回不可用 | 不重跑开发测试冒充授权；从新 evidence 正式重签发 |
+| Windows 报 `bootstrap requires the pinned uv`，但 `uv --version` 正确 | 使用未包含绝对 `uv.exe` 修复的旧提交，或 uv 实际不在父进程 PATH | 拉取本轮修复；先在同一 `cmd.exe` 验证精确版本和 `where uv` |
 | GitHub clone 缺当前 bundle | 本地提交尚未推送 | 取得认证并 fast-forward 推送本分支 |
 | `delivery commits changed implementation inputs` | evidence 后确有越界路径，或使用了未修复的旧 bootstrap | 查看 NUL 安全的 commit diff；不得靠关闭 `core.quotepath` 绕过，升级到含回归修复的提交 |
 | 断网且 cache 为空 | 仓库没有依赖 wheelhouse | 使用批准镜像或另行构建受控 wheelhouse |

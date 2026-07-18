@@ -8,8 +8,9 @@
 
 本分支正在把原有单体 CATVBA 恢复为源码优先、可离线审查、可在 CATIA V5-6R2018（R28/B28）和
 VBA7 64 位目标机从空白工程重建与现场调试的交付体系。A 环境离线 Build Kit、严格证据链、原生
-Windows Discovery collector 与公开 operator bundle 已在本地实现和验证；目标机 Compile/运行证据仍未取得。
-当前本地提交尚未同步到 GitHub，因此远端 fresh clone 暂时不能取得这些实现和制品。
+Windows Discovery collector 与公开 operator bundle 已实现；目标机 Compile/运行证据仍未取得。初始整理提交已同步到
+GitHub，远端 CI 又发现 Windows uv 解析和陈旧 selector 两个问题；当前正从新的 clean evidence 重新构建和签发，
+所以 `resume/state.json` 为 preparation，仓库暂时没有 active B28 制品。
 
 ## 当前目标环境
 

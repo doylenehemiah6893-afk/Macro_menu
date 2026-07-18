@@ -31,6 +31,14 @@ _LEDGER_FIELDS = frozenset(
     {"schema_version", "captured_at", "source", "active_handoff_ids", "withdrawn_handoff_ids"}
 )
 _LEDGER_MAX_AGE = timedelta(hours=24)
+_INACTIVE_CONTROL_ERRORS = frozenset(
+    {
+        "ACTIVE_CONTROL_STALE",
+        "ACTIVE_CONTROL_EXPIRED",
+        "ACTIVE_CONTROL_WITHDRAWN",
+        "ACTIVE_CONTROL_NOT_ACTIVE",
+    }
+)
 _FORBIDDEN_SUFFIXES = (".catvba", ".bas", ".cls", ".frm", ".frx")
 _WINDOWS_RESERVED = frozenset(
     {"con", "prn", "aux", "nul"}
@@ -163,9 +171,10 @@ def _validate_active_control(
         or document.get("source") != source
         or handoff.get("handoff_id") != handoff_id
         or handoff.get("revocation_status") != "active"
-        or _utc(handoff.get("expires_at"), "HANDOFF_INVALID") <= now
     ):
         raise SelectionError("ACTIVE_CONTROL_INVALID")
+    if _utc(handoff.get("expires_at"), "HANDOFF_INVALID") <= now:
+        raise SelectionError("ACTIVE_CONTROL_EXPIRED")
     active = document.get("active_handoff_ids")
     withdrawn = document.get("withdrawn_handoff_ids")
     if (
@@ -329,7 +338,11 @@ def _publish_snapshot(path: Path, data: bytes) -> None:
 
 
 def select_operator_bundle(
-    repo_root: Path | str, github_output: Path | str, snapshot_root: Path | str
+    repo_root: Path | str,
+    github_output: Path | str,
+    snapshot_root: Path | str,
+    *,
+    inactive_as_unavailable: bool = False,
 ) -> dict[str, object]:
     repo = Path(repo_root).resolve()
     current = repo / "artifacts/b28-discovery/CURRENT.json"
@@ -396,9 +409,16 @@ def select_operator_bundle(
         or _bundle_tree_digest(content_files) != provenance["bundle_content_sha256"]
     ):
         raise SelectionError("BUNDLE_CONTENT_DIGEST_MISMATCH")
-    _validate_active_control(
-        repo, provenance=provenance, handoff=handoff, now=datetime.now(UTC)
-    )
+    try:
+        _validate_active_control(
+            repo, provenance=provenance, handoff=handoff, now=datetime.now(UTC)
+        )
+    except SelectionError as error:
+        if not inactive_as_unavailable or str(error) not in _INACTIVE_CONTROL_ERRORS:
+            raise
+        result = {"available": False, "path": "", "bundle_id": "", "sha256": ""}
+        _write_outputs(Path(github_output), result)
+        return result
     snapshot_directory = Path(snapshot_root).resolve()
     try:
         snapshot_relative = snapshot_directory.relative_to(repo)
@@ -425,13 +445,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--github-output", type=Path, required=True)
     parser.add_argument("--snapshot-root", type=Path, required=True)
+    parser.add_argument(
+        "--inactive-as-unavailable",
+        action="store_true",
+        help="Return available=false for stale, expired, withdrawn, or inactive delivery control",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        select_operator_bundle(args.repo_root, args.github_output, args.snapshot_root)
+        select_operator_bundle(
+            args.repo_root,
+            args.github_output,
+            args.snapshot_root,
+            inactive_as_unavailable=args.inactive_as_unavailable,
+        )
     except SelectionError as error:
         print(str(error), file=sys.stderr)
         return 4

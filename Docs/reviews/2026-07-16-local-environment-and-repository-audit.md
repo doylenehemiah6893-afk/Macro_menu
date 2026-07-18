@@ -4,6 +4,9 @@
 
 范围：`codex/dev-review-report` 本地工作树、GitHub 远端、Python/uv、CI、恢复脚本、文档和已签发 discovery bundle。
 
+> 历史快照说明：以下“远端阻塞”是 2026-07-16 审查时事实。2026-07-18 已首次发布到 `2098484`；远端 CI
+> 反馈与当前 corrective evidence 状态见 `../process/2026-07-18-remote-publication-and-ci-correction.md`。
+
 ## 结论
 
 现有离线工具与 bundle 架构可保留，但审查时还不能从 GitHub 复刻当前本地环境：远端分支停在 `037ab40696744678a57781d5197c152687520d84`，本地交付 HEAD 为 `2e3be7442734c57af6cde39f5f6f51025095de4f`，本地领先 22 个提交，且当前执行环境没有 HTTPS/SSH/gh 推送凭据。

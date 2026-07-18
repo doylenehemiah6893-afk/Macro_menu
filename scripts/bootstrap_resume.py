@@ -6,6 +6,7 @@ import json
 import ntpath
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -59,9 +60,12 @@ def _stdlib_uv_preflight(requirement: object) -> None:
 
     if type(requirement) is not str:
         raise SystemExit("bootstrap uv requirement is invalid")
+    uv_executable = shutil.which("uv.exe" if os.name == "nt" else "uv")
+    if uv_executable is None:
+        raise SystemExit("bootstrap requires the pinned uv")
     try:
         result = subprocess.run(
-            ["uv", "--version"],
+            [uv_executable, "--version"],
             check=False,
             capture_output=True,
             text=True,
@@ -78,9 +82,20 @@ def _stdlib_uv_preflight(requirement: object) -> None:
 
 
 def _sync_dependencies(repo_root: Path) -> None:
+    uv_executable = shutil.which("uv.exe" if os.name == "nt" else "uv")
+    if uv_executable is None:
+        raise SystemExit("uv sync --frozen could not be started")
     environment = {
         name: os.environ[name]
-        for name in ("PATH", "SYSTEMROOT", "UV_CACHE_DIR", "UV_LINK_MODE")
+        for name in (
+            "PATH",
+            "SYSTEMROOT",
+            "PATHEXT",
+            "TEMP",
+            "TMP",
+            "UV_CACHE_DIR",
+            "UV_LINK_MODE",
+        )
         if name in os.environ
     }
     environment["UV_PROJECT_ENVIRONMENT"] = os.fspath(repo_root / ".venv")
@@ -97,7 +112,7 @@ def _sync_dependencies(repo_root: Path) -> None:
                 target.chmod(0o600)
             result = subprocess.run(
                 [
-                    "uv",
+                    uv_executable,
                     "sync",
                     "--project",
                     os.fspath(project),

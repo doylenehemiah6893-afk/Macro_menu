@@ -587,6 +587,7 @@ def test_stdlib_bootstrap_rejects_wrong_uv_before_sync(
     monkeypatch: pytest.MonkeyPatch,
 ):
     module = _bootstrap_script_module()
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/tools/uv")
     monkeypatch.setattr(
         module.subprocess,
         "run",
@@ -597,6 +598,27 @@ def test_stdlib_bootstrap_rejects_wrong_uv_before_sync(
 
     with pytest.raises(SystemExit, match="pinned uv"):
         module._stdlib_uv_preflight("uv 0.9.25")
+
+
+def test_stdlib_bootstrap_resolves_uv_before_minimizing_windows_environment(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module = _bootstrap_script_module()
+    executable = r"C:\hostedtoolcache\windows\uv\0.9.25\x86_64\uv.exe"
+    observed: dict[str, object] = {}
+    monkeypatch.setattr(module.shutil, "which", lambda name: executable)
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+
+    def record_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        observed["args"] = args[0]
+        observed["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(args[0], 0, stdout="uv 0.9.25\n", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", record_run)
+    module._stdlib_uv_preflight("uv 0.9.25")
+
+    assert observed["args"] == [executable, "--version"]
+    assert "PATHEXT" not in observed["env"]
 
 
 def test_bootstrap_rejects_partial_expiry_state_never_creates_dev(

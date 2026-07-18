@@ -1,3 +1,0 @@
-# Historical marker only. The former tag-triggered CATVBA release workflow was
-# disabled on 2026-07-16. See Docs/发版.md. This file intentionally defines no
-# trigger, permission, job, artifact selection, tag, or release behavior.

@@ -45,6 +45,7 @@
 
 ## 审查与过程记录
 
+- [2026-07-18 远端首次发布与 CI 修正](process/2026-07-18-remote-publication-and-ci-correction.md)
 - [2026-07-16 本地环境、代码与仓库同步审查](reviews/2026-07-16-local-environment-and-repository-audit.md)
 - [2026-07-16 环境复刻与仓库治理修订](process/2026-07-16-environment-reproducibility-refresh.md)
 - [B28 operator 实施审查](process/2026-07-16-b28-discovery-operator-implementation-review.md)

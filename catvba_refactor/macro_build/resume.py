@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -613,9 +614,12 @@ def _inspect_repository(
         diagnostics.append(_diagnostic("RESUME_LOCK_READ_FAILED", "uv.lock", "uv.lock is unavailable"))
     if platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 12):
         diagnostics.append(_diagnostic("RESUME_PYTHON_MISMATCH", "python", "CPython 3.12 is required"))
+    uv_executable = shutil.which("uv.exe" if os.name == "nt" else "uv")
     try:
+        if uv_executable is None:
+            raise OSError("uv is unavailable")
         uv_result = subprocess.run(
-            ["uv", "--version"], check=False, capture_output=True, text=True,
+            [uv_executable, "--version"], check=False, capture_output=True, text=True,
             env={name: os.environ[name] for name in ("PATH", "SYSTEMROOT") if name in os.environ},
         )
         if uv_result.returncode or uv_result.stdout.strip() != state["uv_requirement"]:
@@ -696,9 +700,20 @@ def doctor_repository(
 
 
 def _frozen_sync(repo_root: Path) -> ResumeDiagnostic | None:
+    uv_executable = shutil.which("uv.exe" if os.name == "nt" else "uv")
+    if uv_executable is None:
+        return _diagnostic("RESUME_FROZEN_SYNC_FAILED", "uv.lock", "uv could not be started")
     environment = {
         name: os.environ[name]
-        for name in ("PATH", "SYSTEMROOT", "UV_CACHE_DIR", "UV_LINK_MODE")
+        for name in (
+            "PATH",
+            "SYSTEMROOT",
+            "PATHEXT",
+            "TEMP",
+            "TMP",
+            "UV_CACHE_DIR",
+            "UV_LINK_MODE",
+        )
         if name in os.environ
     }
     environment["UV_PROJECT_ENVIRONMENT"] = os.fspath(repo_root / ".venv")
@@ -713,7 +728,7 @@ def _frozen_sync(repo_root: Path) -> ResumeDiagnostic | None:
                 target.chmod(0o600)
             result = subprocess.run(
                 [
-                    "uv",
+                    uv_executable,
                     "sync",
                     "--project",
                     os.fspath(project),

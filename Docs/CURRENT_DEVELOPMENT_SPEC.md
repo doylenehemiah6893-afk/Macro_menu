@@ -2,7 +2,7 @@
 
 状态：APPROVED WORKING BASELINE
 
-日期：2026-07-16
+日期：2026-07-18
 
 适用分支：`doylenehemiah6893-afk/Macro_menu:codex/dev-review-report`
 
@@ -26,6 +26,10 @@
 
 `bootstrap_resume.py` 只依赖 Development 层。`doctor --scope development` 可在 ledger 或 handoff 过期后继续验证开发环境；`doctor --scope delivery` 必须继续严格拒绝 stale、expired、withdrawn、inactive 或摘要不符的操作授权。
 
+GitHub Actions 的 operator-bundle selector 与 Delivery doctor 职责不同：默认 selector 仍严格失败；CI 仅可显式使用
+`--inactive-as-unavailable`，把 stale、expired、withdrawn、inactive 这四种预期时效状态报告为
+`available=false`，从而继续上传开发复现收据。future timestamp、结构错误、摘要或内容篡改仍必须让 CI 失败。
+
 ## 3. 可复刻开发环境
 
 唯一 Python 真源为根 `.python-version`、`pyproject.toml` 与 `uv.lock`。合同为 CPython `>=3.12,<3.13`、uv `0.9.25`；最后验证的 A 环境为 CPython 3.12.13，但其他 CPython 3.12 patch 由测试和 CI 证明兼容性。
@@ -39,6 +43,7 @@
 5. `.venv`、cache、build、egg-info 和本机配置由仓库重新生成，绝不复制或提交；
 6. Git for Windows 的行尾设置不得改变受哈希保护的文件；`.gitattributes` 固定 LF，并将已签发 bundle 作为字节不透明内容。
 7. evidence 与 delivery commit 之间的路径边界必须用 `git diff --name-only -z` 的原始 NUL 分隔路径解析；不得依赖会受 `core.quotepath`、非 ASCII 文件名或换行文件名影响的展示文本。
+8. Windows 必须先在完整父环境中解析 `uv.exe` 的绝对路径，再用该路径执行版本检查和 frozen sync；不得依赖裁剪后的子进程环境再次搜索裸 `uv`。
 
 仓库目前没有 wheelhouse，因此“仅 clone 即可完全断网安装依赖”不成立。若未来要求断网复刻，必须另建按操作系统/架构签名并带哈希的 wheelhouse 制品和验证清单，不能放宽 frozen lock。
 
@@ -60,7 +65,7 @@
 - 本地提交必须形成现有远端分支的 fast-forward；推送前验证 remote old SHA，推送后验证 remote HEAD 等于本地 HEAD。
 - 不在连接器/API 中重建已有本地提交；重建会改变 commit SHA，破坏 evidence、bundle 和 state 绑定。
 - 凭据只配置在外部 credential manager、SSH agent 或已认证 GitHub CLI 中，不写仓库。
-- 在远端包含全部提交之前，文档必须明确标记“local-only / remote publication blocked”，不得声称 GitHub fresh clone 可取得当前制品。
+- 文档必须分别记录远端已发布 SHA、远端 CI 结果与当前本地 corrective SHA；未完成本轮 push/CI/fresh-clone 时，不得声称 GitHub fresh clone 已验证当前修订。
 - 推送后必须从第二个临时目录真正 clone GitHub 分支，并分别在 Linux 与原生 Windows 验证。
 
 ## 6. 文档权威与变更规则
@@ -74,6 +79,7 @@
 - Linux 与原生 Windows fresh clone 均通过 Development bootstrap/doctor；`core.autocrlf=true` 不改变 lock、intake、state 或 bundle bytes。
 - evidence 后仅包含 `Docs/`、`artifacts/`、`resume/` 和 `RESUME.md` 的 delivery commit，在 `core.quotepath=true` 且含中文文件名时仍通过 bootstrap；任何其他路径仍 fail-closed。
 - 模拟 ledger 超过 24 小时或 handoff 过期：Development doctor 仍通过，Delivery doctor 稳定失败。
+- 同一时效 fixture 下，默认 selector 失败；CI 显式模式只返回 `available=false`，且 future/tamper fixture 仍失败。
 - `uv lock --check`、完整 pytest、inventory/check、双 Kit 构建、四路 verifier 和 collector smoke 全部通过。
 - Git 跟踪列表不含本地代理/IDE配置、secret、本机路径或未脱敏目标数据。
 - 远端分支 HEAD 与本地一致，Linux/Windows CI 成功，第二次 GitHub fresh clone 可复刻。

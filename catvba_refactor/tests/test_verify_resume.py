@@ -385,6 +385,52 @@ def test_operator_bundle_selector_emits_one_precise_issued_path(tmp_path: Path) 
         assert {name: selected.read(name) for name in selected.namelist()} == expected
 
 
+def test_ci_selector_reports_stale_delivery_as_unavailable(tmp_path: Path) -> None:
+    selector = _selector_module()
+    _issued_bundle(tmp_path)
+    ledger_path = tmp_path / "artifacts/b28-discovery/active-handoff-ledger.json"
+    ledger = json.loads(ledger_path.read_text("ascii"))
+    ledger["captured_at"] = "2000-01-01T00:00:00Z"
+    ledger_path.write_text(
+        json.dumps(ledger, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="ascii",
+    )
+    output = tmp_path / "github-output"
+
+    with pytest.raises(selector.SelectionError, match="ACTIVE_CONTROL_STALE"):
+        selector.select_operator_bundle(tmp_path, output, tmp_path / "strict-snapshot")
+
+    result = selector.select_operator_bundle(
+        tmp_path,
+        output,
+        tmp_path / "ci-snapshot",
+        inactive_as_unavailable=True,
+    )
+    assert result == {"available": False, "path": "", "bundle_id": "", "sha256": ""}
+    assert output.read_text("ascii") == "available=false\npath=\nbundle_id=\nsha256=\n"
+    assert not (tmp_path / "ci-snapshot").exists()
+
+
+def test_ci_selector_still_rejects_future_control(tmp_path: Path) -> None:
+    selector = _selector_module()
+    _issued_bundle(tmp_path)
+    ledger_path = tmp_path / "artifacts/b28-discovery/active-handoff-ledger.json"
+    ledger = json.loads(ledger_path.read_text("ascii"))
+    ledger["captured_at"] = "2999-01-01T00:00:00Z"
+    ledger_path.write_text(
+        json.dumps(ledger, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="ascii",
+    )
+
+    with pytest.raises(selector.SelectionError, match="ACTIVE_CONTROL_FUTURE"):
+        selector.select_operator_bundle(
+            tmp_path,
+            tmp_path / "github-output",
+            tmp_path / "snapshot",
+            inactive_as_unavailable=True,
+        )
+
+
 def test_operator_bundle_selector_fails_if_current_bundle_is_missing(tmp_path: Path) -> None:
     selector = _selector_module()
     bundle = _issued_bundle(tmp_path)

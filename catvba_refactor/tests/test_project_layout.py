@@ -345,8 +345,9 @@ def test_repro_workflow_is_pinned_native_and_never_publishes_catvba() -> None:
 
 def test_release_workflow_cannot_trigger_on_tags() -> None:
     workflows = list((ROOT / ".github/workflows").glob("*.yml"))
-    assert workflows
+    assert {path.name for path in workflows} == {"repro.yml"}
     assert all("tags:" not in path.read_text("utf-8") for path in workflows)
+    assert not (ROOT / ".github/workflows/auto-release.yml").exists()
     assert "历史" in (ROOT / "Docs/发版.md").read_text("utf-8")
 
 

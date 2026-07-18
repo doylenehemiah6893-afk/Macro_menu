@@ -1,10 +1,13 @@
 # 环境复刻与仓库治理修订记录
 
-状态：LOCAL EVIDENCE AND DELIVERY RECORD / REMOTE PUBLICATION BLOCKED
+状态：HISTORICAL EVIDENCE AND DELIVERY RECORD / REMOTE FOLLOW-UP RECORDED 2026-07-18
 
 日期：2026-07-16
 
 范围：`codex/dev-review-report` 的开发环境合同、恢复脚本、CI、状态机、文档与仓库同步边界。本文记录 A 环境事实，不是 B28/CATIA 执行或发布证据。
+
+> 2026-07-18 更新：本文记录的远端阻塞后来已解除，分支发布到 `2098484`。首轮远端 CI 的反馈与下一 evidence
+> 周期见 `2026-07-18-remote-publication-and-ci-correction.md`；本文中的旧 active handoff 已撤回，不再授权 B28。
 
 ## 1. 复现的根因
 

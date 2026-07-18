@@ -27,7 +27,7 @@ jobs:
         run: python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root repro-output
       - name: Select authenticated operator bundle
         id: bundle
-        run: python scripts/select_operator_bundle.py --repo-root . --github-output "$GITHUB_OUTPUT" --snapshot-root repro-output/operator-upload
+        run: python scripts/select_operator_bundle.py --repo-root . --github-output "$GITHUB_OUTPUT" --snapshot-root repro-output/operator-upload --inactive-as-unavailable
       - name: Upload JSON reproducibility receipt only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -77,7 +77,7 @@ jobs:
       - name: Select authenticated operator bundle
         id: bundle
         shell: cmd
-        run: .venv\Scripts\python.exe scripts\select_operator_bundle.py --repo-root . --github-output "%GITHUB_OUTPUT%" --snapshot-root windows-output\operator-upload
+        run: .venv\Scripts\python.exe scripts\select_operator_bundle.py --repo-root . --github-output "%GITHUB_OUTPUT%" --snapshot-root windows-output\operator-upload --inactive-as-unavailable
       - name: Upload Windows collector smoke JSON receipt only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
