@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：CURRENT IMPLEMENTATION / WINDOWS EXTENSIONLESS UV-PATH PREPARATION — 当前无 active bundle；CATIA/目标机测试未运行
+> 状态：CURRENT IMPLEMENTATION / EXTENSIONLESS UV-PATH LOCAL DELIVERY — 等待远端双平台复验；CATIA/目标机测试未运行
 >
 > 更新日期：2026-07-18
 >
@@ -15,7 +15,7 @@
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
 - 离线 Python、manifest/schema、Build Kit/evidence/operator CLI、target collector 和 pytest 已实现；首轮 Core Runtime
   源码已固定为候选输入。远端已发布到 `768a4d1`；run `29650442197` 的 Windows CI 证明 setup-uv output 省略
-  `.exe`。正在形成安全同目录 `.exe` 解析的新 evidence；
+  `.exe`。安全同目录 `.exe` 解析已形成 evidence `7477c28` 与本地 `bundle-9474bfe2...`；
   `bundle-44c7a1...` handoff 已撤回，历史 bundle 只作审计。
   尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
 

@@ -194,3 +194,33 @@ doctor 层 extensionless Windows action-output 回归。
 
 该修改再次触及 evidence 输入，故 `handoff-be908ee37a9b5beba0b5` 已撤回，CURRENT 移除，ledger active 清空，
 state 回到 preparation。上一 `982ce2b` Kit/bundle 只保留历史审计身份，不能继续授权 B28。
+
+## 9. R9C clean evidence 与本地 delivery
+
+窄修复完成后的 clean evidence commit 为
+`7477c28759fcb6a7188caba8dc5386264b90fe2b`，tree 为
+`c1642f2bdccee8f7ca2bd3d0bc6b5d06dfb524ae`。独立复审结论为 Critical=0、Important=0；两个 Minor 是
+Windows 分支在 Linux 上通过 monkeypatch 模拟，以及解析仍服从普通文件系统的 symlink/reparse 语义，均不扩大
+显式路径合同，不阻断 A 环境签发。
+
+从该精确提交运行正式 receipt：
+
+| 项目 | 固定结果 |
+|---|---|
+| lock / Development doctor | 24 packages resolved / PASS |
+| 完整 pytest | `1682 passed, 19 warnings in 248.98s` |
+| inventory / check | 90 records / 16 components、2 tools；零 diagnostics，formal eligible |
+| Kit / ZIP SHA-256 | `kit-256c8986f4a57bc0942f` / `a81d39cc596dff18e84be70f5b910f765a8538d3ed912d8d2c9aeb10cd7e327f` |
+| Kit tree / sidecar SHA-256 | `06f18a766c5769b7c68da963ea590a1992fcca3244add738586fdcbe462fd252` / `7cfb3e72720720e7c74994a885c4bcbe3990b5483f0e6bb81f4389a2f424ce08` |
+| 四 verifier / collector smoke | 全通过；collector pyz SHA-256 `e11da8de8147fbbaab5217f56dde7eea7636cacf8993230c85484b1ef6358301` |
+| pre-issuance snapshot SHA-256 | `d1b33e9d37d0fae8db5ea5bc8b69026e7a6744536b577bbd9bfdc1b4375a4fe7`；active 为空、六份历史 handoff withdrawn |
+| handoff / SHA-256 | `handoff-bc6d14adc7f50224591e` / `8cfc6c442abe985f6f3c7f08e28022603552c6c7cb33c601b262a3c18712875b` |
+| created / expires | `2026-07-18T15:59:00Z` / `2026-07-25T14:59:00Z` |
+| active ledger | captured `2026-07-18T15:59:07Z`；SHA-256 `042c16aba8e28202ebb514c7c94fada709b47c29432de96b8cdbb1e77fefa561` |
+| operator bundle | `bundle-9474bfe2ad5dda7fc64f5ce2`；两次完整目录相同，61 files |
+| provenance / content SHA-256 | `9474bfe2ad5dda7fc64f5ce2c87198589d9297ce69ac84c989b6505c6d0a3ba9` / `2beedfefade73206f2b3e1a9381c3c54cfc73615a39fa5e0e965f50f231d7356` |
+
+两个 raw Discovery skeleton 与两个 operator bundle 分别逐字节相同；公开 bundle 不含 CATVBA、用户/主机/DSLS
+标识、客户路径或真实现场数据。当前只允许认定 G0/G1 为 A 环境离线 `PASS`；delivery commit、本地
+autocrlf/quotepath clone QA、远端 Linux/Windows CI 与 GitHub URL fresh clone 完成前，B28 继续 BLOCKED，
+G2–G7 与 release 继续 BLOCKED。
