@@ -15,7 +15,7 @@
 开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。初始仓库同步已完成，
 但远端首轮 CI 暴露 Windows `uv.exe` 发现和陈旧 delivery selector 两个缺陷；comments-only workflow 也被 GitHub 判为
 无效启动。修复已形成新的 clean evidence、独立复审、完整 receipt 和 fresh delivery：
-`next_action=run-b28-discovery`、`revocation_status=active`。但本轮 delivery 尚未推送/通过远端双平台复验，目标机不得开始。
+`next_action=run-b28-discovery`、`revocation_status=active`。本轮 delivery 已本地提交并通过 clone QA，但尚未推送/通过远端双平台复验，目标机不得开始。
 
 ## 1. 立即停止条件
 
@@ -38,7 +38,7 @@
 | SPA/FTA | 目标机保证权益；物理隔离为默认部署 Fleet Extensions |
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
-| 本地/远端 | 首次远端发布已从 `037ab406` fast-forward 到 `2098484`；本地新 evidence=`0b28548`，delivery worktree 待提交/推送 |
+| 本地/远端 | 首次远端发布已从 `037ab406` fast-forward 到 `2098484`；本地新 evidence=`0b28548`，delivery=`657d1f5`，待推送 |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
@@ -47,7 +47,7 @@
 | 离线测试 | `0b28548` 正式 receipt：1672 passed、19 warnings；inventory/check、双 Kit、四 verifier、collector smoke 全通过；均非 CATIA 证据 |
 | active discovery bundle | `bundle-64084c5ea0dfd63e24d861cb`；provenance SHA-256 `64084c5ea0dfd63e24d861cbf948b05a4af3e33a7268290eb8ecca8158373ffe` |
 | active Kit / handoff | `kit-d5ea863e68ba6af1cefa` / `handoff-80d8cb2c06104fcf3c74`；expires `2026-07-25T12:38:11Z` |
-| 环境复刻修订 | 首轮远端缺陷已修复并由独立复审确认 Critical/Important=0；本地 delivery 仍等待提交、autocrlf/quotepath clone 和远端双平台复跑 |
+| 环境复刻修订 | 首轮远端缺陷已修复并由独立复审确认 Critical/Important=0；本地 autocrlf/quotepath clone 两种 doctor、严格 selector 与关键摘要一致性通过，待远端双平台复跑 |
 | 当前仓库 CLI | 离线 Build Kit/audit/handoff 命令与 target evidence 命令均已具备；已生成确定性 discovery raw skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
@@ -100,7 +100,7 @@ SHA-256 `64084c5ea0dfd63e24d861cbf948b05a4af3e33a7268290eb8ecca8158373ffe`。act
 collector pyz、哈希、handoff、教程和 sanitized offline receipts；本轮记录见
 `Docs/process/2026-07-18-remote-publication-and-ci-correction.md`。
 
-只有本轮 delivery commit、远端同步、双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 全部通过后，B28
+只有本轮 delivery 的远端同步、双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 全部通过后，B28
 才可能按当前 bundle quick-start 以原生 Windows `cmd.exe` 和 CPython 3.12 人工执行 raw Discovery。不得使用
 WSL、PowerShell、uv 或自动化 CATIA/VBE/DSLS；不得使用任何历史 bundle 的 handoff。
 

@@ -118,6 +118,16 @@ doctor 内部 uv 版本子进程参数，但同型路径已有测试，且 Windo
 两个 raw Discovery skeleton 的三个成员与完整目录逐字节相同；它们只含 `not-run` 模板，未提交 raw fixture 或现场数据。
 两个 operator bundle 构建目录逐字节相同，公开 bundle 不含 CATVBA、用户/主机/DSLS 标识或客户路径。
 
-本地 delivery record 尚待提交和 autocrlf/quotepath fresh-clone 验证；随后必须一次 fast-forward 推送 evidence+delivery，
-确认远端 Linux/Windows CI 与 GitHub fresh clone。完成前 B28 仍不得执行。G0/G1 可在提交后为 A 环境离线 `PASS`，
-G2–G7 保持 `BLOCKED`；其余 NO-GO 事实不变。
+delivery record 已提交为 `657d1f51ff18d8374e2e685d8b6797c334a5ebed`，其父提交精确为 evidence
+`0b28548e5ebe1ee6f5c174122d56c92c2e6005ed`。提交后在新目录以 `core.autocrlf=true`、
+`core.quotepath=true`、`--no-local` 克隆，原子建立批准的本地 `refs/heads/dev`，并得到以下结果：
+
+- Development doctor 与 Delivery doctor 均 `ok=true`；严格 selector 唯一选择
+  `bundle-64084c5ea0dfd63e24d861cb`；
+- source clone 与 fresh clone 的 CURRENT、active ledger、provenance、handoff、Kit ZIP 和 collector pyz
+  SHA-256 逐项相同；克隆工作树保持干净；
+- 当前托管执行环境无法解析 `files.pythonhosted.org`，因此不能把这里的在线依赖下载作为额外证据；这项网络路径留给
+  GitHub Hosted Linux/Windows runner，正式 evidence receipt 已在冻结 Python 3.12 环境完成全部 1672 tests。
+
+下一步只允许一次普通 fast-forward 推送，确认远端 Linux/Windows CI 与 GitHub URL fresh clone。完成前 B28 仍不得
+执行。G0/G1 为 A 环境离线 `PASS`，G2–G7 保持 `BLOCKED`；其余 NO-GO 事实不变。
