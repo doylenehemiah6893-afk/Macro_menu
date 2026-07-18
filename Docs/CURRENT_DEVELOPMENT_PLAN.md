@@ -13,7 +13,7 @@
 | Discovery Task 1–9 | 本地完成 | schema、bootstrap、collector、raw finalizer、bundle builder、教程、CI 已实现 |
 | Task 10 | 本地完成 | 实施审查与回归关闭记录已提交 |
 | Task 11 | 本地重新完成 | quoted-path 修复后已从新 evidence 双构建并签发 public discovery bundle；不是 B28 执行完成 |
-| Task 12 | IN PROGRESS | 远端已到 `768a4d1`；R9C evidence `7477c28` 与 local delivery 已闭合，等待 commit/clone QA/push/CI |
+| Task 12 | IN PROGRESS | 远端已到 `768a4d1`；R9C evidence `7477c28`、delivery `b6a3bbf` 与 local clone QA 已闭合，等待 push/CI/GitHub clone |
 | B28 Discovery | BLOCKED | 新 local bundle/handoff 已签发；等待远端双平台与 GitHub clone Delivery doctor |
 | G2–G7 | BLOCKED | Compile、References、权益、profile、试点和发布证据均未取得 |
 
@@ -33,13 +33,13 @@
 | R9 | Linux/Windows CI 与第二 fresh clone | CORRECTIVE IN PROGRESS | run `29644483056`：Linux 完整 Development 1665 tests 通过后被 stale selector 阻断；Windows 因裁剪环境中裸 `uv` 发现失败；comments-only workflow 另产生 startup failure `29644481596` |
 | R9A | 首轮远端 CI 缺陷修复并重签发 | REMOTE FAILED / WITHDRAWN | run `29649284949` Linux success；Windows `88092722616` 仍报 pinned uv；`handoff-80d8...` 已撤回 |
 | R9B | setup-uv 官方 output-path 修复 | REMOTE FAILED / WITHDRAWN | run `29650442197` Windows 输出 `...\\uv`，原样路径不存在；`handoff-be908...` 已撤回 |
-| R9C | Windows extensionless output 安全解析 | LOCAL DONE / REMOTE PENDING | `7477c28`、1682 tests、双 Kit/四 verifier、`bundle-9474bfe2...` 与新 handoff 已闭合；待 delivery commit/clone QA/push/CI |
+| R9C | Windows extensionless output 安全解析 | LOCAL DONE / REMOTE PENDING | `7477c28`、1682 tests、双 Kit/四 verifier、`b6a3bbf` delivery 与 local clone QA 已闭合；待 push/CI/GitHub clone |
 | R10 | 原生 B28 Discovery | BLOCKED BY R9C | 从通过 CI/fresh-clone 的新签发包取得 fresh ledger + 未过期 handoff，再人工完成五点 Reference observation；仍禁止 Compile |
 
 ## 3. 当前执行顺序
 
-1. 提交 delivery record 并完成 autocrlf/quotepath clone QA。
-2. 普通 fast-forward 推送，要求 Linux/Windows CI 与 GitHub clone Delivery doctor 全部通过。
+1. 普通 fast-forward 推送 evidence、delivery 与 clone QA 记录。
+2. 要求 Linux/Windows CI 与 GitHub URL fresh-clone Delivery doctor 全部通过。
 3. 仅随后按新 bundle quick-start 在原生 Windows `cmd.exe` 人工执行 Discovery。
 
 ## 4. 停止条件

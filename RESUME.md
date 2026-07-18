@@ -4,7 +4,7 @@
 
 唯一仓库：`doylenehemiah6893-afk/Macro_menu`
 唯一工作分支：`codex/dev-review-report`
-当前开发动作：提交/clone 验证新 delivery，并复跑远端双平台 CI
+当前开发动作：推送已完成 local clone QA 的 R9C delivery，并复跑远端双平台 CI/GitHub clone
 
 当前目标机动作：BLOCKED；新 local delivery 已签发，但尚未通过远端验证
 
@@ -13,7 +13,7 @@
 
 > GitHub 远端已普通 fast-forward 到 `768a4d1ac4f9c96f9586944c8596f723d3394efc`。run `29650442197`
 > 的 Windows 日志证明 setup-uv `uv-path` 为省略 `.exe` 的绝对路径；原样路径不存在而被 fail-closed。该 handoff 已撤回；
-> R9C 修复已形成新 clean evidence 与本地 delivery，但尚未推送。
+> R9C 修复已形成新 clean evidence、delivery `b6a3bbf` 与通过的 local clone QA，但尚未推送。
 
 ## 1. 当前机器状态
 
@@ -28,6 +28,7 @@
 | Gate / next action | G0/G1=`PASS`，G2–G7=`BLOCKED`；`run-b28-discovery` |
 | remote CI | run `29650442197`：Windows job `88095767287` 因官方 extensionless uv-path 原样文件不存在而失败；Linux 结果另见 process 记录 |
 | 本轮本地测试 | 独立复审 Critical/Important=0；正式 receipt `1682 passed, 19 warnings`；双 Kit/四 verifier/collector smoke/双 operator bundle 全通过 |
+| local clone QA | `b6a3bbf` autocrlf/quotepath `--no-local` clone：Development/Delivery doctor、严格 selector、六项关键 byte compare 全通过；在线 sync 因当前 DNS 受限留给 GitHub runner |
 
 `bundle-95bce...`、`bundle-6b7518...` 与 `bundle-ab5205...` 仍保留供审计，但其 handoff 均已撤回；更早的
 `handoff-6ed312...` 也保持 withdrawn。不得因历史 expiry 尚未到达就直接复用，也不得手改 JSON 延期或恢复。
@@ -68,7 +69,7 @@ bootstrap 会优先接收经版本校验的显式绝对 uv 路径；没有显式
 ## 3. B28 目标机唯一入口
 
 目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。新 local
-`bundle-9474bfe2...` 已签发，但目标机不得开始。只有 delivery commit、远端双平台 CI、GitHub fresh clone 与
+`bundle-9474bfe2...` 已签发，但目标机不得开始。只有普通推送、远端双平台 CI、GitHub fresh clone 与
 Delivery doctor 全部通过后，才可在批准的 blank VM、标准用户和原生 `cmd.exe` 中执行它；所有历史 bundle 均不可执行。
 
 仓库中的 `Docs/runbooks/b28-target/README_TARGET_B28.md` 仅保留为源教程/审查入口；目标机执行时以已签发 bundle

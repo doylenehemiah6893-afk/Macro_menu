@@ -180,6 +180,16 @@ CURRENT、ledger、provenance、handoff、Kit ZIP、collector pyz SHA-256 全部
 G0/G1 仅为 A 环境离线 `PASS`；远端 Linux/Windows 与 GitHub URL fresh clone 完成前，B28 继续 BLOCKED，
 G2–G7 与 release 继续 BLOCKED。
 
+delivery record 已提交为 `b6a3bbf3f901c5e53c2d532da6f4c65762961dee`，其父提交精确为 evidence
+`7477c28759fcb6a7188caba8dc5386264b90fe2b`。随后以 `core.autocrlf=true`、
+`core.quotepath=true`、`--no-local` 新克隆并原子建立批准的本地 `dev`：Development/Delivery doctor 均
+`ok=true`，严格 selector 唯一选择 `bundle-9474bfe2ad5dda7fc64f5ce2`；source 与 clone 的 CURRENT、ledger、
+provenance、handoff、Kit ZIP、collector pyz 逐字节相同，克隆工作树干净。
+
+bootstrap 已通过 Git/控制文件预检，但当前托管环境无法解析 `files.pythonhosted.org`，故 fresh clone 的在线
+`uv sync --frozen` 停在依赖下载。该网络限制不计作仓库通过，也不计作实现失败；GitHub Hosted Linux/Windows runner
+必须从零完成在线安装和后续测试，成功前远端状态保持 pending。
+
 ## 8. 第三次远端运行与 Windows extensionless action output
 
 evidence/delivery/clone 记录推送后，远端精确为 `768a4d1ac4f9c96f9586944c8596f723d3394efc`，run
