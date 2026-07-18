@@ -44,7 +44,7 @@
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
 | 实施计划 | 离线 Build Kit、baseline intake、Core Runtime MVP 和 B28 evidence harness 的 A 环境实现已完成 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | 上一 evidence `4327491` 为 1665 passed；本轮聚焦 `122 passed`，pre-evidence 完整回归 `1668 passed, 19 warnings`；clean evidence receipt 待提交后执行；均非 CATIA 证据 |
+| 离线测试 | 上一 evidence `4327491` 为 1665 passed；独立审查修复后聚焦 `126 passed`，pre-evidence 完整回归 `1672 passed, 19 warnings`；clean evidence receipt 待提交后执行；均非 CATIA 证据 |
 | active discovery bundle | 无；`CURRENT.json` 已移除，旧 `bundle-95bce...` 仅作审计 |
 | active Kit / handoff | 无；`handoff-07bbe55bc7552489cd55` 已加入 withdrawn，等待本轮重签发 |
 | 环境复刻修订 | 首轮 run `29644483056` 的 Linux 完成 1665 tests、双 Kit/四 verifier/collector smoke；Windows 在 bootstrap 裸 `uv` 启动失败；修复正纳入新 evidence |

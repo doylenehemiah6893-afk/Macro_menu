@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import shutil
+from types import SimpleNamespace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -605,8 +606,18 @@ def test_stdlib_bootstrap_resolves_uv_before_minimizing_windows_environment(
 ):
     module = _bootstrap_script_module()
     executable = r"C:\hostedtoolcache\windows\uv\0.9.25\x86_64\uv.exe"
-    observed: dict[str, object] = {}
-    monkeypatch.setattr(module.shutil, "which", lambda name: executable)
+    observed: dict[str, object] = {"which": []}
+    monkeypatch.setattr(
+        module,
+        "os",
+        SimpleNamespace(name="nt", environ=os.environ, fspath=os.fspath),
+    )
+
+    def which(name: str) -> str:
+        observed["which"].append(name)
+        return executable
+
+    monkeypatch.setattr(module.shutil, "which", which)
     monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
 
     def record_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
@@ -617,8 +628,85 @@ def test_stdlib_bootstrap_resolves_uv_before_minimizing_windows_environment(
     monkeypatch.setattr(module.subprocess, "run", record_run)
     module._stdlib_uv_preflight("uv 0.9.25")
 
+    assert observed["which"] == ["uv.exe"]
     assert observed["args"] == [executable, "--version"]
     assert "PATHEXT" not in observed["env"]
+
+
+def test_stdlib_bootstrap_sync_uses_resolved_windows_uv_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _bootstrap_script_module()
+    executable = r"C:\hostedtoolcache\windows\uv\0.9.25\x86_64\uv.exe"
+    observed: dict[str, object] = {"which": []}
+    environment = dict(os.environ)
+    environment["PATHEXT"] = ".COM;.EXE;.BAT;.CMD"
+    monkeypatch.setattr(
+        module,
+        "os",
+        SimpleNamespace(name="nt", environ=environment, fspath=os.fspath),
+    )
+
+    def which(name: str) -> str:
+        observed["which"].append(name)
+        return executable
+
+    def record_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        observed["args"] = args[0]
+        observed["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(args[0], 0)
+
+    monkeypatch.setattr(module.shutil, "which", which)
+    monkeypatch.setattr(module, "_git", lambda *args: GIT)
+    monkeypatch.setattr(module, "_git_bytes", lambda *args: b"fixture\n")
+    monkeypatch.setattr(module.subprocess, "run", record_run)
+
+    module._sync_dependencies(tmp_path)
+
+    assert observed["which"] == ["uv.exe"]
+    assert observed["args"][0] == executable
+    assert observed["env"]["PATHEXT"] == environment["PATHEXT"]
+
+
+def test_resume_frozen_sync_uses_resolved_windows_uv_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = r"C:\hostedtoolcache\windows\uv\0.9.25\x86_64\uv.exe"
+    observed: dict[str, object] = {"which": []}
+    environment = dict(os.environ)
+    environment["PATHEXT"] = ".COM;.EXE;.BAT;.CMD"
+    monkeypatch.setattr(
+        resume,
+        "os",
+        SimpleNamespace(name="nt", environ=environment, fspath=os.fspath),
+    )
+
+    class FixtureRepository:
+        def __init__(self, root: Path) -> None:
+            assert root == tmp_path
+
+        def read_blob(self, revision: str, path: str) -> bytes:
+            assert revision == "HEAD"
+            assert path in {"pyproject.toml", "uv.lock"}
+            return b"fixture\n"
+
+    def which(name: str) -> str:
+        observed["which"].append(name)
+        return executable
+
+    def record_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        observed["args"] = args[0]
+        observed["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(args[0], 0)
+
+    monkeypatch.setattr(resume, "GitRepository", FixtureRepository)
+    monkeypatch.setattr(resume.shutil, "which", which)
+    monkeypatch.setattr(resume.subprocess, "run", record_run)
+
+    assert resume._frozen_sync(tmp_path) is None
+    assert observed["which"] == ["uv.exe"]
+    assert observed["args"][0] == executable
+    assert observed["env"]["PATHEXT"] == environment["PATHEXT"]
 
 
 def test_bootstrap_rejects_partial_expiry_state_never_creates_dev(

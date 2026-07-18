@@ -194,6 +194,8 @@ def test_resume_state_matches_schema_and_never_claims_release() -> None:
     assert state["release_eligible"] is False
     assert isinstance(state["next_action"], str) and state["next_action"]
     if state["active_bundle_path"] is None:
+        assert state["gate_statuses"]["G0"] == "PASS"
+        assert state["gate_statuses"]["G1"] == "BLOCKED"
         assert state["evidence_commit"] is None
         assert state["evidence_tree"] is None
         assert state["delivery_parent_commit"] is None
@@ -207,6 +209,12 @@ def test_resume_state_matches_schema_and_never_claims_release() -> None:
         assert state["last_reproducibility_receipt"] is None
         assert state["next_action"] == "complete-evidence-implementation"
         assert state["revocation_status"] == "preparation"
+        assert not (ROOT / "artifacts/b28-discovery/CURRENT.json").exists()
+        ledger = json.loads(
+            (ROOT / "artifacts/b28-discovery/active-handoff-ledger.json").read_text("ascii")
+        )
+        assert ledger["active_handoff_ids"] == []
+        assert "handoff-07bbe55bc7552489cd55" in ledger["withdrawn_handoff_ids"]
     else:
         bundle = ROOT / state["active_bundle_path"]
         assert bundle.is_dir()
@@ -341,6 +349,14 @@ def test_repro_workflow_is_pinned_native_and_never_publishes_catvba() -> None:
     assert workflow.count("steps.bundle.outputs.available == 'true'") == 2
     assert workflow.count("--snapshot-root") == 2
     assert "operator-bundle-upload.zip" not in workflow
+    for command in (
+        "py -3.12 scripts\\bootstrap_resume.py",
+        ".venv\\Scripts\\macro-menu-build.exe doctor",
+        ".venv\\Scripts\\python.exe scripts\\collector_smoke.py",
+        "call scripts\\run-discovery.cmd --help",
+        ".venv\\Scripts\\python.exe scripts\\target-discovery.pyz --help",
+    ):
+        assert re.search(re.escape(command) + r"[^\n]*\|\| exit /b 1", workflow)
 
 
 def test_release_workflow_cannot_trigger_on_tags() -> None:

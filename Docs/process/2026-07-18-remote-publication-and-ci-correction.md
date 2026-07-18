@@ -36,7 +36,7 @@ B28/CATIA。旧 ledger captured-at 为 `2026-07-16T15:52:25Z`，运行时已超�
 
 生产路径 `scripts/bootstrap_resume.py` 和 `catvba_refactor/macro_build/resume.py` 过去把裸 `uv` 交给裁剪后的子进程
 环境二次发现。GitHub Hosted Windows 已安装精确版本，但该启动方式不可靠。修复先在完整父环境中用
-`shutil.which("uv.exe")` 解析绝对路径，版本检查与 frozen sync 复用该路径；sync 子进程保留 Windows 必要的
+`shutil.which("uv.exe")` 解析绝对路径，版本检查与 frozen sync 各自在进入受控子进程前固定该绝对路径；sync 子进程保留 Windows 必要的
 `PATHEXT`、`TEMP`、`TMP` 等变量。回归路径是 `catvba_refactor/tests/test_resume.py`。
 
 ### CI selector
@@ -67,6 +67,15 @@ pytest catvba_refactor/tests/test_resume.py
 
 实现输入已变化，因此上一 handoff `handoff-07bbe55bc7552489cd55` 已加入 withdrawn，ledger active 集清空，
 `CURRENT.json` 移除，`resume/state.json` 返回 preparation。历史 bundle bytes 保留供审计，不再授权目标机使用。
+
+首次 corrective commit `952c922adda97f0fdff80bdaf42e5940afdf2a64` 的完整 evidence receipt 虽为 `ok=true`，
+但独立审查发现 selector 组合状态可隐藏 future/畸形 ledger、Windows CMD 多命令未逐条 fail-fast、发布文档状态漂移和
+覆盖不足，故明确判定 **不可签发**；没有创建 handoff，也没有激活 ledger。修复必须形成后续 clean evidence commit，
+重新运行整份 receipt，不能复用 `952c922` 的 Kit。
+
+阻断项修复后的聚焦套件为 `126 passed in 84.34s`；pre-evidence 完整回归为
+`1672 passed, 19 warnings in 268.01s`。新增组合回归明确覆盖 expired+future、expired+畸形 ledger、inactive 模式下
+bundle tamper、Windows `uv.exe` preflight/sync、Windows CMD fail-fast 和 preparation 控制完整性。
 
 后续完成条件：
 

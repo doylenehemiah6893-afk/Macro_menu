@@ -25,7 +25,7 @@
 | ledger | active 为空；`handoff-07bbe55bc7552489cd55` 与更早 handoff 全部 withdrawn |
 | Gate / next action | G0=`PASS`，G1–G7=`BLOCKED`；`complete-evidence-implementation` |
 | remote CI | run `29644483056`：Linux Development 全链通过后被 stale selector 阻断；Windows bootstrap 未能启动裸 `uv`；无效 workflow startup run `29644481596` |
-| 本轮本地测试 | 聚焦 `122 passed`；pre-evidence 完整回归 `1668 passed, 19 warnings`；clean evidence receipt 待提交后执行 |
+| 本轮本地测试 | 独立审查修复后聚焦 `126 passed`；pre-evidence 完整回归 `1672 passed, 19 warnings`；clean evidence receipt 待提交后执行 |
 
 `bundle-95bce...`、`bundle-6b7518...` 与 `bundle-ab5205...` 仍保留供审计，但其 handoff 均已撤回；更早的
 `handoff-6ed312...` 也保持 withdrawn。不得因历史 expiry 尚未到达就直接复用，也不得手改 JSON 延期或恢复。

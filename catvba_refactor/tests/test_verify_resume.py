@@ -431,6 +431,53 @@ def test_ci_selector_still_rejects_future_control(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "ledger_update",
+    (
+        {"captured_at": "2999-01-01T00:00:00Z"},
+        {"active_handoff_ids": "not-a-list"},
+    ),
+)
+def test_expired_handoff_never_hides_invalid_ledger_in_ci_mode(
+    tmp_path: Path, ledger_update: dict[str, object]
+) -> None:
+    selector = _selector_module()
+    root = tmp_path / "artifacts/b28-discovery"
+    root.mkdir(parents=True)
+    ledger = {
+        "active_handoff_ids": ["handoff-selector-fixture"],
+        "captured_at": "2026-07-18T00:00:00Z",
+        "schema_version": 1,
+        "source": "repository-active-handoff-ledger",
+        "withdrawn_handoff_ids": [],
+    }
+    ledger.update(ledger_update)
+    (root / "active-handoff-ledger.json").write_text(
+        json.dumps(ledger, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="ascii",
+    )
+    code = (
+        "ACTIVE_CONTROL_FUTURE"
+        if "captured_at" in ledger_update
+        else "ACTIVE_CONTROL_INVALID"
+    )
+
+    with pytest.raises(selector.SelectionError, match=code):
+        selector._validate_active_control(
+            tmp_path,
+            provenance={
+                "active_ledger_source": "repository-active-handoff-ledger",
+                "handoff_id": "handoff-selector-fixture",
+            },
+            handoff={
+                "expires_at": "2000-01-01T00:00:00Z",
+                "handoff_id": "handoff-selector-fixture",
+                "revocation_status": "active",
+            },
+            now=datetime(2026, 7, 18, tzinfo=UTC),
+        )
+
+
 def test_operator_bundle_selector_fails_if_current_bundle_is_missing(tmp_path: Path) -> None:
     selector = _selector_module()
     bundle = _issued_bundle(tmp_path)
@@ -451,7 +498,12 @@ def test_selector_rejects_tree_tamper_even_when_sha_file_is_recomputed(
         stream.write(b"tamper")
     _rewrite_sums(bundle)
     with pytest.raises(selector.SelectionError, match="BUNDLE_CONTENT_DIGEST_MISMATCH"):
-        selector.select_operator_bundle(tmp_path, tmp_path / "github-output", tmp_path / "snapshot")
+        selector.select_operator_bundle(
+            tmp_path,
+            tmp_path / "github-output",
+            tmp_path / "snapshot",
+            inactive_as_unavailable=True,
+        )
 
 
 @pytest.mark.parametrize(

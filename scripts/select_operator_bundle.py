@@ -173,8 +173,7 @@ def _validate_active_control(
         or handoff.get("revocation_status") != "active"
     ):
         raise SelectionError("ACTIVE_CONTROL_INVALID")
-    if _utc(handoff.get("expires_at"), "HANDOFF_INVALID") <= now:
-        raise SelectionError("ACTIVE_CONTROL_EXPIRED")
+    expires_at = _utc(handoff.get("expires_at"), "HANDOFF_INVALID")
     active = document.get("active_handoff_ids")
     withdrawn = document.get("withdrawn_handoff_ids")
     if (
@@ -189,6 +188,8 @@ def _validate_active_control(
     captured_at = _utc(document.get("captured_at"), "ACTIVE_CONTROL_INVALID")
     if captured_at > now:
         raise SelectionError("ACTIVE_CONTROL_FUTURE")
+    if expires_at <= now:
+        raise SelectionError("ACTIVE_CONTROL_EXPIRED")
     if now - captured_at > _LEDGER_MAX_AGE:
         raise SelectionError("ACTIVE_CONTROL_STALE")
     if handoff_id in withdrawn:
