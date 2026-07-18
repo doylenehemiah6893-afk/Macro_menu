@@ -65,7 +65,7 @@ def _stdlib_uv_preflight(requirement: object) -> None:
         raise SystemExit("bootstrap pinned uv path is unavailable")
     try:
         result = subprocess.run(
-            [uv_executable, "--version"],
+            [uv_executable, "-V"],
             check=False,
             capture_output=True,
             text=True,

@@ -619,7 +619,7 @@ def _inspect_repository(
         if uv_executable is None:
             raise OSError("uv is unavailable")
         uv_result = subprocess.run(
-            [uv_executable, "--version"], check=False, capture_output=True, text=True,
+            [uv_executable, "-V"], check=False, capture_output=True, text=True,
             env=_uv_environment(),
         )
         if uv_result.returncode:

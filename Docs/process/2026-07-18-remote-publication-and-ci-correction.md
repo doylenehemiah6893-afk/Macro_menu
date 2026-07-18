@@ -180,16 +180,6 @@ CURRENT、ledger、provenance、handoff、Kit ZIP、collector pyz SHA-256 全部
 G0/G1 仅为 A 环境离线 `PASS`；远端 Linux/Windows 与 GitHub URL fresh clone 完成前，B28 继续 BLOCKED，
 G2–G7 与 release 继续 BLOCKED。
 
-delivery record 已提交为 `b6a3bbf3f901c5e53c2d532da6f4c65762961dee`，其父提交精确为 evidence
-`7477c28759fcb6a7188caba8dc5386264b90fe2b`。随后以 `core.autocrlf=true`、
-`core.quotepath=true`、`--no-local` 新克隆并原子建立批准的本地 `dev`：Development/Delivery doctor 均
-`ok=true`，严格 selector 唯一选择 `bundle-9474bfe2ad5dda7fc64f5ce2`；source 与 clone 的 CURRENT、ledger、
-provenance、handoff、Kit ZIP、collector pyz 逐字节相同，克隆工作树干净。
-
-bootstrap 已通过 Git/控制文件预检，但当前托管环境无法解析 `files.pythonhosted.org`，故 fresh clone 的在线
-`uv sync --frozen` 停在依赖下载。该网络限制不计作仓库通过，也不计作实现失败；GitHub Hosted Linux/Windows runner
-必须从零完成在线安装和后续测试，成功前远端状态保持 pending。
-
 ## 8. 第三次远端运行与 Windows extensionless action output
 
 evidence/delivery/clone 记录推送后，远端精确为 `768a4d1ac4f9c96f9586944c8596f723d3394efc`，run
@@ -234,3 +224,33 @@ Windows 分支在 Linux 上通过 monkeypatch 模拟，以及解析仍服从普�
 标识、客户路径或真实现场数据。当前只允许认定 G0/G1 为 A 环境离线 `PASS`；delivery commit、本地
 autocrlf/quotepath clone QA、远端 Linux/Windows CI 与 GitHub URL fresh clone 完成前，B28 继续 BLOCKED，
 G2–G7 与 release 继续 BLOCKED。
+
+delivery record 已提交为 `b6a3bbf3f901c5e53c2d532da6f4c65762961dee`，其父提交精确为 evidence
+`7477c28759fcb6a7188caba8dc5386264b90fe2b`。随后以 `core.autocrlf=true`、
+`core.quotepath=true`、`--no-local` 新克隆并原子建立批准的本地 `dev`：Development/Delivery doctor 均
+`ok=true`，严格 selector 唯一选择 `bundle-9474bfe2ad5dda7fc64f5ce2`；source 与 clone 的 CURRENT、ledger、
+provenance、handoff、Kit ZIP、collector pyz 逐字节相同，克隆工作树干净。
+
+bootstrap 已通过 Git/控制文件预检，但当前托管环境无法解析 `files.pythonhosted.org`，故 fresh clone 的在线
+`uv sync --frozen` 停在依赖下载。该网络限制不计作仓库通过，也不计作实现失败；GitHub Hosted Linux/Windows runner
+必须从零完成在线安装和后续测试，成功前远端状态保持 pending。
+
+## 10. 第四次远端运行与稳定版本输出根因
+
+R9C evidence/delivery/clone 记录普通 fast-forward 推送后，远端精确为
+`cfb9b0908c5368f91bc31ac5fd76fa38707ad3ad`。Fresh-clone reproducibility run `29651458545` 的 Linux job
+`88098390129` SUCCESS：在线 frozen install、完整 suite、确定性双构建、selector 与 artifact upload 全部通过。
+Windows job `88098390116` 在 bootstrap 版本校验失败；日志显示 setup-uv 0.9.25 成功，extensionless
+`MACRO_MENU_UV_EXECUTABLE` 已不再报 path unavailable，而是 `bootstrap pinned uv version does not match state`。
+
+官方 uv 帮助文档明确：`uv --version` 与 `uv self version` 同输出，可包含 build commit/date；`uv -V` 明确不包含
+build commit/date。根因不是版本错误，而是把跨平台非稳定展示格式用于整行身份校验。R9D 采用最窄合同：两条生产路径
+都调用 `uv -V`，仍要求 stdout 整行精确等于 state 的 `uv 0.9.25`；不做前缀匹配、不截断输出、不放宽显式路径、
+版本、PATH 或受控环境要求。
+
+该修改再次改变 evidence 输入，故 `handoff-bc6d14adc7f50224591e` 已加入 withdrawn，CURRENT 移除，ledger
+active 清空，state 回到 preparation。`bundle-9474bfe2...` 只保留历史审计身份；新完整 receipt、Kit、handoff、
+delivery、双平台 CI 与 GitHub fresh clone 完成前，B28 继续禁止执行。
+
+本地聚焦回归为 `137 passed`；固定 uv 0.9.25 下 `uv lock --check` 通过，pre-evidence 完整回归为
+`1683 passed, 19 warnings in 269.57s`。19 条仍全部来自 oletools/pyparsing 第三方 deprecation。

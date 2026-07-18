@@ -36,13 +36,16 @@ git clone --branch codex/dev-review-report --single-branch https://github.com/do
 cd Macro_menu
 set "UV_CACHE_DIR=%TEMP%\macro-menu-uv-cache"
 py -3.12 --version
-uv --version
+uv -V
 scripts\bootstrap-resume.cmd
 uv run macro-menu-build doctor --state resume\state.json --scope development --format json
 py -3.12 scripts\verify_resume.py --repo-root . --state resume\state.json --output-root catvba_refactor\build\resume-verification
 ```
 
-`uv --version` 必须精确输出 `uv 0.9.25`。`.gitattributes` 已使常见 `core.autocrlf=true` clone 仍保持受哈希文件的稳定 bytes；不要手工批量转换行尾。bootstrap 使用 NUL 分隔的 Git 原始路径核对 evidence 后的 delivery 边界，因此 `core.quotepath=true` 与中文文档名不会被误判；这不放宽允许路径集合。
+`uv -V` 必须精确输出 `uv 0.9.25`。官方说明 `--version` 可包含 build commit/date，而 `-V` 明确省略它们；
+bootstrap/doctor 使用后者保持跨平台确定性，但仍做整行精确比较。`.gitattributes` 已使常见 `core.autocrlf=true`
+clone 仍保持受哈希文件的稳定 bytes；不要手工批量转换行尾。bootstrap 使用 NUL 分隔的 Git 原始路径核对 evidence
+后的 delivery 边界，因此 `core.quotepath=true` 与中文文档名不会被误判；这不放宽允许路径集合。
 普通 clone 的 bootstrap 从完整父 PATH 固定 uv 绝对路径；GitHub Actions 则使用固定 setup-uv action 官方
 `uv-path` output 显式设置 `MACRO_MENU_UV_EXECUTABLE`。两条路径都再次验证绝对文件与精确版本，并用保留
 `PATHEXT/TEMP/TMP/UV_CACHE_DIR` 的受控环境执行。显式变量存在但为空、相对或非文件时不会回退 PATH。
@@ -115,7 +118,7 @@ future timestamp、结构/摘要/内容错误仍使 CI 失败。B28 前必须使
 | Development doctor 失败 | Git/lock/toolchain/immutable bytes 不可复刻 | 停止构建并修复根因 |
 | Delivery doctor 失败 | 当前操作授权不可用 | 停止 B28，重新获取或签发控制文件 |
 | CI Development 全部通过但 bundle `available=false` | 已发布代码可复刻，但当前交付控制因时效/撤回不可用 | 不重跑开发测试冒充授权；从新 evidence 正式重签发 |
-| Windows 报 pinned uv，但 `uv --version` 正确 | 显式 action output 为空/无效、受控 runtime 不完整，或使用旧提交 | 停止；核对 setup-uv `uv-path`、`where uv` 与精确版本，不能改用裸 PATH 绕过 |
+| Windows 报 pinned uv，但 `uv -V` 正确 | 显式 action output 为空/无效、受控 runtime 不完整，或使用旧提交 | 停止；核对 setup-uv `uv-path`、`where uv` 与精确版本，不能改用裸 PATH 绕过 |
 | GitHub clone 缺当前 bundle | 本地提交尚未推送 | 取得认证并 fast-forward 推送本分支 |
 | `delivery commits changed implementation inputs` | evidence 后确有越界路径，或使用了未修复的旧 bootstrap | 查看 NUL 安全的 commit diff；不得靠关闭 `core.quotepath` 绕过，升级到含回归修复的提交 |
 | 断网且 cache 为空 | 仓库没有依赖 wheelhouse | 使用批准镜像或另行构建受控 wheelhouse |

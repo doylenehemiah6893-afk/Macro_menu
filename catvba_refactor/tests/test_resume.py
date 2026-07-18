@@ -333,6 +333,40 @@ def test_development_doctor_accepts_clean_preparation_but_delivery_rejects_it(
     ]
 
 
+def test_development_doctor_uses_stable_short_uv_version_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone, state_path = _fresh_clone(tmp_path)
+    _git(clone, "update-ref", "refs/heads/dev", APPROVED_CUTOFF)
+    executable = tmp_path / "uv.exe"
+    executable.write_bytes(b"fixture")
+    monkeypatch.setenv("MACRO_MENU_UV_EXECUTABLE", os.fspath(executable))
+    original_run = subprocess.run
+    observed: list[list[str]] = []
+
+    def record_uv(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        command = args[0]
+        if command == [os.fspath(executable), "-V"]:
+            observed.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, stdout="uv 0.9.25\n", stderr=""
+            )
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(resume.subprocess, "run", record_uv)
+    report = doctor_repository(
+        clone,
+        state_path,
+        now=datetime.fromisoformat(UTC.replace("Z", "+00:00")),
+        scope="development",
+    )
+
+    assert observed == [[os.fspath(executable), "-V"]]
+    assert "RESUME_UV_MISMATCH" not in {
+        item.code for item in report.diagnostics
+    }
+
+
 def test_stdlib_bootstrap_accepts_clean_preparation_state(tmp_path: Path) -> None:
     clone, state_path = _fresh_clone(tmp_path)
     state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -654,7 +688,7 @@ def test_stdlib_bootstrap_prefers_authenticated_explicit_uv_path(
     monkeypatch.setattr(module.subprocess, "run", record_run)
     module._stdlib_uv_preflight("uv 0.9.25")
 
-    assert observed["args"] == [os.fspath(executable), "--version"]
+    assert observed["args"] == [os.fspath(executable), "-V"]
 
 
 def test_stdlib_bootstrap_resolves_extensionless_windows_action_output(
@@ -808,7 +842,7 @@ def test_stdlib_bootstrap_resolves_uv_with_windows_runtime_environment(
     module._stdlib_uv_preflight("uv 0.9.25")
 
     assert observed["which"] == ["uv.exe"]
-    assert observed["args"] == [executable, "--version"]
+    assert observed["args"] == [executable, "-V"]
     assert observed["env"]["PATHEXT"] == ".COM;.EXE;.BAT;.CMD"
 
 

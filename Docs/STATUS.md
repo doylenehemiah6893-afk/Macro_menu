@@ -13,10 +13,10 @@
 本文是当前状态与上下文恢复入口。详细事实以 Git 文件、固定哈希和目标机证据为准。
 
 开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。初始仓库同步已完成，
-远端已发布到 `768a4d1`。run `29650442197` 的 Windows job `88095767287` 证明官方 setup-uv `uv-path` 省略
-`.exe`，原样路径不存在而被 fail-closed。R9C 已形成新 clean evidence 与本地 delivery：
-`next_action=run-b28-discovery`、`revocation_status=active`。delivery 与 local clone QA 已完成，但尚未推送/通过远端
-双平台与 GitHub URL clone，目标机不得开始。
+远端已发布到 `cfb9b09`。run `29651458545` 的 Linux job `88098390129` SUCCESS；Windows job `88098390116`
+已启动解析后的 uv.exe，但 `--version` 包含 build metadata，被当前整行校验拒绝。R9D 改用官方稳定短格式 `uv -V`
+并继续整行精确比较。实现输入再次变化，上一 handoff 已撤回：`next_action=complete-evidence-implementation`、
+`revocation_status=preparation`。当前无 active bundle/CURRENT，目标机不得开始。
 
 ## 1. 立即停止条件
 
@@ -39,16 +39,16 @@
 | SPA/FTA | 目标机保证权益；物理隔离为默认部署 Fleet Extensions |
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
-| 本地/远端 | 远端 `codex/dev-review-report=768a4d1`；本地 evidence=`7477c28`、delivery=`b6a3bbf`，local clone QA 通过 |
+| 本地/远端 | 远端 `codex/dev-review-report=cfb9b09`；本地正在其上形成 `uv -V` corrective evidence |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
 | 实施计划 | 离线 Build Kit、baseline intake、Core Runtime MVP 和 B28 evidence harness 的 A 环境实现已完成 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | `7477c28` 正式 receipt：1682 passed、19 warnings；inventory/check、双 Kit、四 verifier、collector smoke 全通过 |
-| active discovery bundle | `bundle-9474bfe2ad5dda7fc64f5ce2`；provenance SHA-256 `9474bfe2ad5dda7fc64f5ce2c87198589d9297ce69ac84c989b6505c6d0a3ba9` |
-| active Kit / handoff | `kit-256c8986f4a57bc0942f` / `handoff-bc6d14adc7f50224591e`；expires `2026-07-25T14:59:00Z` |
-| 环境复刻修订 | exact-first、仅 Windows 同目录 `.exe` 解析已独立复审 Critical/Important=0；待真实 Windows CI |
+| 离线测试 | R9D 聚焦 137 passed；pre-evidence 完整回归 1683 passed、19 warnings；正式 receipt 待 clean evidence commit |
+| active discovery bundle | 无；`active_bundle_path=null`，CURRENT 已移除 |
+| active Kit / handoff | 无；`handoff-bc6d14adc7f50224591e` 已加入 withdrawn |
+| 环境复刻修订 | exact-first Windows `.exe` 解析保留；版本探测改为官方稳定 `uv -V`，仍要求精确 `uv 0.9.25` |
 | 当前仓库 CLI | 离线 Build Kit/audit/handoff 命令与 target evidence 命令均已具备；已生成确定性 discovery raw skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
@@ -82,7 +82,7 @@
 | Gate | 状态 | 原因 |
 |---|---|---|
 | G0 INPUT-FROZEN | `PASS` | 批准 cutoff 与 A 环境离线输入合同已冻结 |
-| G1 KIT-READY | `PASS` | `7477c28` 双 Kit/ZIP、四 verifier、双 operator bundle 与 fresh handoff 已闭合；仅为 A 环境证据 |
+| G1 KIT-READY | `BLOCKED` | 实现输入变化，上一 Kit/handoff 已撤回；待新 clean evidence/delivery |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -90,13 +90,13 @@
 | G6 SECURITY-PILOT-READY | `BLOCKED` | 缺回传审计、安全包装、试点和回滚 |
 | G7 RELEASE-APPROVED | `BLOCKED` | 缺全部上游门和正式审批 |
 
-G0/G1 `PASS` 只说明固定 Git 输入与本地可复算 delivery chain。它们都不是 CATIA Compile、References、
+G0 `PASS` 只说明固定 Git 输入；G1 已因实现变化回到 `BLOCKED`。它们都不是 CATIA Compile、References、
 许可证 checkout、UI 或运行通过。
 
-## 6. 当前 Discovery 交付状态（本地已签发 / 远端未验证）
+## 6. 当前 Discovery 交付状态（preparation / 无 active 授权）
 
-当前 `bundle-9474bfe2...` 与 `handoff-bc6d...` 只在本地签发；ledger 只激活它并撤回六份历史 handoff。只有
-普通推送、远端双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 全部通过后，B28 才可能取得它。
+CURRENT 不存在，ledger active 为空并撤回包括 `handoff-bc6d...` 在内的七份历史 handoff。只有新 evidence/delivery、
+远端双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 全部通过后，B28 才可能取得新包。
 
 这不是 Compile、References、DSLS checkout、运行、G2/G3 或 release 通过。bundle 固定
 `compile_status=not-run`、target cases=`not-run`、`artifact_status=not-produced`、`release_eligible=false`。
