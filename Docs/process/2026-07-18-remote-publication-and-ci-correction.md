@@ -254,3 +254,6 @@ delivery、双平台 CI 与 GitHub fresh clone 完成前，B28 继续禁止执�
 
 本地聚焦回归为 `137 passed`；固定 uv 0.9.25 下 `uv lock --check` 通过，pre-evidence 完整回归为
 `1683 passed, 19 warnings in 269.57s`。19 条仍全部来自 oletools/pyparsing 第三方 deprecation。
+
+首个 formal verifier 调用在父环境保留 `MACRO_MENU_UV_EXECUTABLE` 时，使三个本应验证 PATH 分支的测试误走显式
+路径分支；生产 doctor 已通过，失败属于 fixture 环境隔离。三个测试现显式清除该变量后再验证 PATH 行为，不改生产合同。

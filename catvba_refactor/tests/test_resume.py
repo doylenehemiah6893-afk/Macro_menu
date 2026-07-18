@@ -817,6 +817,7 @@ def test_resume_resolves_extensionless_windows_action_output(
 def test_stdlib_bootstrap_resolves_uv_with_windows_runtime_environment(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.delenv("MACRO_MENU_UV_EXECUTABLE", raising=False)
     module = _bootstrap_script_module()
     executable = r"C:\hostedtoolcache\windows\uv\0.9.25\x86_64\uv.exe"
     observed: dict[str, object] = {"which": []}
@@ -849,6 +850,7 @@ def test_stdlib_bootstrap_resolves_uv_with_windows_runtime_environment(
 def test_stdlib_bootstrap_sync_uses_resolved_windows_uv_executable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("MACRO_MENU_UV_EXECUTABLE", raising=False)
     module = _bootstrap_script_module()
     executable = r"C:\hostedtoolcache\windows\uv\0.9.25\x86_64\uv.exe"
     observed: dict[str, object] = {"which": []}
@@ -884,6 +886,7 @@ def test_stdlib_bootstrap_sync_uses_resolved_windows_uv_executable(
 def test_resume_frozen_sync_uses_resolved_windows_uv_executable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("MACRO_MENU_UV_EXECUTABLE", raising=False)
     executable = r"C:\hostedtoolcache\windows\uv\0.9.25\x86_64\uv.exe"
     observed: dict[str, object] = {"which": []}
     environment = dict(os.environ)
