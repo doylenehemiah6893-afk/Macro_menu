@@ -131,3 +131,21 @@ delivery record 已提交为 `657d1f51ff18d8374e2e685d8b6797c334a5ebed`，其父
 
 下一步只允许一次普通 fast-forward 推送，确认远端 Linux/Windows CI 与 GitHub URL fresh clone。完成前 B28 仍不得
 执行。G0/G1 为 A 环境离线 `PASS`，G2–G7 保持 `BLOCKED`；其余 NO-GO 事实不变。
+
+## 6. 第二次远端运行与再次退回 preparation
+
+delivery 与 clone QA 记录提交为 `55cbef2ec3afc63d876c624ee174df8798ef2dbc` 后，普通 fast-forward 推送成功；
+GitHub 分支 SHA 与本地精确一致。新 Fresh-clone reproducibility run 为 `29649284949`：
+
+| job | GitHub ID | 结果 |
+|---|---:|---|
+| Linux reproducibility | `88092722622` | SUCCESS；说明本轮 Linux fresh-clone 全链已闭合 |
+| Windows native collector | `88092722616` | FAILURE；setup-python=3.12.10、setup-uv=0.9.25 成功，bootstrap 仍报 pinned uv |
+
+独立日志审查确认，现有单一错误消息混合了路径发现、进程启动、返回码和版本不符，不能把根因只归因于
+`shutil.which("uv.exe")`。修订合同使用固定 setup-uv action 已声明的 `uv-path` output，通过专用环境变量传入；代码仍
+要求绝对 regular file 和精确 `uv 0.9.25`。变量存在但为空/相对/非文件时 fail-closed，不得 PATH fallback；Windows
+版本检查保留 `PATHEXT/TEMP/TMP/UV_CACHE_DIR` 等受控 runtime 环境，后续 native pytest 也使用同一显式路径。
+
+该修改触及 workflow、bootstrap 和 resume doctor，属于 evidence 后实现输入变化。故 `handoff-80d8cb2c06104fcf3c74`
+已撤回，CURRENT 移除，ledger active 清空，state 回到 `complete-evidence-implementation`；不得沿用上一 Kit/bundle。

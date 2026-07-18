@@ -614,16 +614,18 @@ def _inspect_repository(
         diagnostics.append(_diagnostic("RESUME_LOCK_READ_FAILED", "uv.lock", "uv.lock is unavailable"))
     if platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 12):
         diagnostics.append(_diagnostic("RESUME_PYTHON_MISMATCH", "python", "CPython 3.12 is required"))
-    uv_executable = shutil.which("uv.exe" if os.name == "nt" else "uv")
+    uv_executable = _resolve_uv_executable()
     try:
         if uv_executable is None:
             raise OSError("uv is unavailable")
         uv_result = subprocess.run(
             [uv_executable, "--version"], check=False, capture_output=True, text=True,
-            env={name: os.environ[name] for name in ("PATH", "SYSTEMROOT") if name in os.environ},
+            env=_uv_environment(),
         )
-        if uv_result.returncode or uv_result.stdout.strip() != state["uv_requirement"]:
-            diagnostics.append(_diagnostic("RESUME_UV_MISMATCH", "uv", "installed uv does not match state"))
+        if uv_result.returncode:
+            diagnostics.append(_diagnostic("RESUME_UV_MISMATCH", "uv", "pinned uv version check failed"))
+        elif uv_result.stdout.strip() != state["uv_requirement"]:
+            diagnostics.append(_diagnostic("RESUME_UV_MISMATCH", "uv", "pinned uv version does not match state"))
     except OSError:
         diagnostics.append(_diagnostic("RESUME_UV_MISMATCH", "uv", "required uv is unavailable"))
 
@@ -700,22 +702,10 @@ def doctor_repository(
 
 
 def _frozen_sync(repo_root: Path) -> ResumeDiagnostic | None:
-    uv_executable = shutil.which("uv.exe" if os.name == "nt" else "uv")
+    uv_executable = _resolve_uv_executable()
     if uv_executable is None:
         return _diagnostic("RESUME_FROZEN_SYNC_FAILED", "uv.lock", "uv could not be started")
-    environment = {
-        name: os.environ[name]
-        for name in (
-            "PATH",
-            "SYSTEMROOT",
-            "PATHEXT",
-            "TEMP",
-            "TMP",
-            "UV_CACHE_DIR",
-            "UV_LINK_MODE",
-        )
-        if name in os.environ
-    }
+    environment = _uv_environment()
     environment["UV_PROJECT_ENVIRONMENT"] = os.fspath(repo_root / ".venv")
     repository = GitRepository(repo_root)
     try:
@@ -750,6 +740,39 @@ def _frozen_sync(repo_root: Path) -> ResumeDiagnostic | None:
             f"uv sync --frozen returned {result.returncode}",
         )
     return None
+
+
+def _resolve_uv_executable() -> str | None:
+    """Resolve uv from an authenticated explicit path or the parent PATH."""
+
+    if "MACRO_MENU_UV_EXECUTABLE" in os.environ:
+        explicit = os.environ["MACRO_MENU_UV_EXECUTABLE"]
+        candidate = Path(explicit)
+        if candidate.is_absolute() and candidate.is_file():
+            return os.fspath(candidate)
+        return None
+    names = ("uv.exe", "uv") if os.name == "nt" else ("uv",)
+    for name in names:
+        executable = shutil.which(name)
+        if executable is not None:
+            return executable
+    return None
+
+
+def _uv_environment() -> dict[str, str]:
+    return {
+        name: os.environ[name]
+        for name in (
+            "PATH",
+            "SYSTEMROOT",
+            "PATHEXT",
+            "TEMP",
+            "TMP",
+            "UV_CACHE_DIR",
+            "UV_LINK_MODE",
+        )
+        if name in os.environ
+    }
 
 
 def bootstrap_repository(

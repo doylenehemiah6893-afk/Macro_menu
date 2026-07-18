@@ -43,7 +43,10 @@ GitHub Actions 的 operator-bundle selector 与 Delivery doctor 职责不同：�
 5. `.venv`、cache、build、egg-info 和本机配置由仓库重新生成，绝不复制或提交；
 6. Git for Windows 的行尾设置不得改变受哈希保护的文件；`.gitattributes` 固定 LF，并将已签发 bundle 作为字节不透明内容。
 7. evidence 与 delivery commit 之间的路径边界必须用 `git diff --name-only -z` 的原始 NUL 分隔路径解析；不得依赖会受 `core.quotepath`、非 ASCII 文件名或换行文件名影响的展示文本。
-8. Windows 必须先在完整父环境中解析 `uv.exe` 的绝对路径，再用该路径执行版本检查和 frozen sync；不得依赖裁剪后的子进程环境再次搜索裸 `uv`。
+8. GitHub Actions 必须把固定 setup-uv action 的官方 `uv-path` output 作为 `MACRO_MENU_UV_EXECUTABLE` 显式传入；
+   bootstrap/doctor 只接受存在的绝对文件路径并再次验证精确 `uv 0.9.25`。变量存在但为空、相对或非文件时必须
+   fail-closed，不能回退 PATH；普通外部 clone 未设置该变量时才允许从完整父 PATH 解析。
+9. Windows uv 版本检查与 frozen sync 必须保留受控 runtime 变量 `PATH/SYSTEMROOT/PATHEXT/TEMP/TMP/UV_CACHE_DIR/UV_LINK_MODE`；CI 后续 native pytest 继续使用同一显式 uv 路径。
 
 仓库目前没有 wheelhouse，因此“仅 clone 即可完全断网安装依赖”不成立。若未来要求断网复刻，必须另建按操作系统/架构签名并带哈希的 wheelhouse 制品和验证清单，不能放宽 frozen lock。
 

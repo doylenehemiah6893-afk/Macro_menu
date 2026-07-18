@@ -60,44 +60,30 @@ def _stdlib_uv_preflight(requirement: object) -> None:
 
     if type(requirement) is not str:
         raise SystemExit("bootstrap uv requirement is invalid")
-    uv_executable = shutil.which("uv.exe" if os.name == "nt" else "uv")
+    uv_executable = _resolve_uv_executable()
     if uv_executable is None:
-        raise SystemExit("bootstrap requires the pinned uv")
+        raise SystemExit("bootstrap pinned uv path is unavailable")
     try:
         result = subprocess.run(
             [uv_executable, "--version"],
             check=False,
             capture_output=True,
             text=True,
-            env={
-                name: os.environ[name]
-                for name in ("PATH", "SYSTEMROOT")
-                if name in os.environ
-            },
+            env=_uv_environment(),
         )
     except OSError as error:
-        raise SystemExit("bootstrap requires the pinned uv") from error
-    if result.returncode or result.stdout.strip() != requirement:
-        raise SystemExit("bootstrap requires the pinned uv")
+        raise SystemExit("bootstrap pinned uv could not be started") from error
+    if result.returncode:
+        raise SystemExit("bootstrap pinned uv version check failed")
+    if result.stdout.strip() != requirement:
+        raise SystemExit("bootstrap pinned uv version does not match state")
 
 
 def _sync_dependencies(repo_root: Path) -> None:
-    uv_executable = shutil.which("uv.exe" if os.name == "nt" else "uv")
+    uv_executable = _resolve_uv_executable()
     if uv_executable is None:
         raise SystemExit("uv sync --frozen could not be started")
-    environment = {
-        name: os.environ[name]
-        for name in (
-            "PATH",
-            "SYSTEMROOT",
-            "PATHEXT",
-            "TEMP",
-            "TMP",
-            "UV_CACHE_DIR",
-            "UV_LINK_MODE",
-        )
-        if name in os.environ
-    }
+    environment = _uv_environment()
     environment["UV_PROJECT_ENVIRONMENT"] = os.fspath(repo_root / ".venv")
     pinned_head = _git(repo_root, "rev-parse", "--verify", "HEAD^{commit}")
     with tempfile.TemporaryDirectory(prefix="macro-menu-bootstrap-") as temporary:
@@ -127,6 +113,39 @@ def _sync_dependencies(repo_root: Path) -> None:
             raise SystemExit("uv sync --frozen could not be started") from error
         if result.returncode:
             raise SystemExit(f"uv sync --frozen returned {result.returncode}")
+
+
+def _resolve_uv_executable() -> str | None:
+    """Resolve a pinned uv path before subprocess environment minimization."""
+
+    if "MACRO_MENU_UV_EXECUTABLE" in os.environ:
+        explicit = os.environ["MACRO_MENU_UV_EXECUTABLE"]
+        candidate = Path(explicit)
+        if candidate.is_absolute() and candidate.is_file():
+            return os.fspath(candidate)
+        return None
+    names = ("uv.exe", "uv") if os.name == "nt" else ("uv",)
+    for name in names:
+        executable = shutil.which(name)
+        if executable is not None:
+            return executable
+    return None
+
+
+def _uv_environment() -> dict[str, str]:
+    return {
+        name: os.environ[name]
+        for name in (
+            "PATH",
+            "SYSTEMROOT",
+            "PATHEXT",
+            "TEMP",
+            "TMP",
+            "UV_CACHE_DIR",
+            "UV_LINK_MODE",
+        )
+        if name in os.environ
+    }
 
 
 def _git_environment() -> dict[str, str]:

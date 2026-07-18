@@ -19,9 +19,12 @@ jobs:
         with:
           python-version: '3.12'
       - uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc
+        id: setup-uv
         with:
           version: '0.9.25'
       - name: Authenticate clone and install the frozen project
+        env:
+          MACRO_MENU_UV_EXECUTABLE: ${{ steps.setup-uv.outputs.uv-path }}
         run: python3.12 scripts/bootstrap_resume.py --repo-root . --state resume/state.json
       - name: Run full suite and deterministic double build
         run: python scripts/verify_resume.py --repo-root . --state resume/state.json --output-root repro-output
@@ -52,10 +55,13 @@ jobs:
         with:
           python-version: '3.12'
       - uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc
+        id: setup-uv
         with:
           version: '0.9.25'
       - name: Bootstrap, doctor and immutable-ref checks
         shell: cmd
+        env:
+          MACRO_MENU_UV_EXECUTABLE: ${{ steps.setup-uv.outputs.uv-path }}
         run: |
           set "ORIGIN_DEV_BEFORE="
           for /f "delims=" %%I in ('git rev-parse refs/remotes/origin/dev') do set "ORIGIN_DEV_BEFORE=%%I"
@@ -72,7 +78,9 @@ jobs:
           if not "%LOCAL_DEV%"=="abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad" exit /b 1
       - name: Native collector tests
         shell: cmd
-        run: uv run pytest -q catvba_refactor\tests\test_target_collector_workspace.py catvba_refactor\tests\test_target_collector_records.py catvba_refactor\tests\test_target_collector_finalize.py
+        env:
+          MACRO_MENU_UV_EXECUTABLE: ${{ steps.setup-uv.outputs.uv-path }}
+        run: '"%MACRO_MENU_UV_EXECUTABLE%" run pytest -q catvba_refactor\tests\test_target_collector_workspace.py catvba_refactor\tests\test_target_collector_records.py catvba_refactor\tests\test_target_collector_finalize.py'
       - name: Build smoke pyz and exercise cmd wrapper
         shell: cmd
         run: |

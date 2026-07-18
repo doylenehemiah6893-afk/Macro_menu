@@ -215,6 +215,7 @@ def test_resume_state_matches_schema_and_never_claims_release() -> None:
         )
         assert ledger["active_handoff_ids"] == []
         assert "handoff-07bbe55bc7552489cd55" in ledger["withdrawn_handoff_ids"]
+        assert "handoff-80d8cb2c06104fcf3c74" in ledger["withdrawn_handoff_ids"]
     else:
         bundle = ROOT / state["active_bundle_path"]
         assert bundle.is_dir()
@@ -331,6 +332,9 @@ def test_repro_workflow_is_pinned_native_and_never_publishes_catvba() -> None:
     assert "git branch dev" not in workflow
     assert "py -3.12 scripts\\bootstrap_resume.py --repo-root . --state resume\\state.json" in workflow
     assert ".venv\\Scripts\\macro-menu-build.exe doctor" in workflow
+    assert workflow.count("id: setup-uv") == 2
+    assert workflow.count("MACRO_MENU_UV_EXECUTABLE: ${{ steps.setup-uv.outputs.uv-path }}") == 3
+    assert '"%MACRO_MENU_UV_EXECUTABLE%" run pytest' in workflow
     assert workflow.count("--scope development") >= 1
     assert "run-discovery.cmd --help" in workflow
     assert "target-discovery.pyz --help" in workflow

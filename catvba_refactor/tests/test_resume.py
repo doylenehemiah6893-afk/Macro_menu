@@ -597,11 +597,112 @@ def test_stdlib_bootstrap_rejects_wrong_uv_before_sync(
         ),
     )
 
+    with pytest.raises(SystemExit, match="pinned uv version does not match state"):
+        module._stdlib_uv_preflight("uv 0.9.25")
+
+
+def test_stdlib_bootstrap_distinguishes_uv_launch_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _bootstrap_script_module()
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/tools/uv")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("fixture")),
+    )
+
+    with pytest.raises(SystemExit, match="pinned uv could not be started"):
+        module._stdlib_uv_preflight("uv 0.9.25")
+
+
+def test_stdlib_bootstrap_distinguishes_uv_nonzero_version_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _bootstrap_script_module()
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/tools/uv")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 2, stdout="", stderr="fixture"
+        ),
+    )
+
+    with pytest.raises(SystemExit, match="pinned uv version check failed"):
+        module._stdlib_uv_preflight("uv 0.9.25")
+
+
+def test_stdlib_bootstrap_prefers_authenticated_explicit_uv_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _bootstrap_script_module()
+    executable = tmp_path / "uv.exe"
+    executable.write_bytes(b"fixture")
+    monkeypatch.setenv("MACRO_MENU_UV_EXECUTABLE", os.fspath(executable))
+    monkeypatch.setattr(
+        module.shutil,
+        "which",
+        lambda name: pytest.fail(f"unexpected PATH lookup for {name}"),
+    )
+    observed: dict[str, object] = {}
+
+    def record_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        observed["args"] = args[0]
+        return subprocess.CompletedProcess(args[0], 0, stdout="uv 0.9.25\n", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", record_run)
+    module._stdlib_uv_preflight("uv 0.9.25")
+
+    assert observed["args"] == [os.fspath(executable), "--version"]
+
+
+def test_stdlib_bootstrap_rejects_invalid_explicit_uv_without_path_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _bootstrap_script_module()
+    monkeypatch.setenv("MACRO_MENU_UV_EXECUTABLE", "relative/uv.exe")
+    monkeypatch.setattr(
+        module.shutil,
+        "which",
+        lambda name: pytest.fail(f"unexpected PATH fallback for {name}"),
+    )
+
     with pytest.raises(SystemExit, match="pinned uv"):
         module._stdlib_uv_preflight("uv 0.9.25")
 
 
-def test_stdlib_bootstrap_resolves_uv_before_minimizing_windows_environment(
+def test_stdlib_bootstrap_rejects_empty_explicit_uv_without_path_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _bootstrap_script_module()
+    monkeypatch.setenv("MACRO_MENU_UV_EXECUTABLE", "")
+    monkeypatch.setattr(
+        module.shutil,
+        "which",
+        lambda name: pytest.fail(f"unexpected PATH fallback for {name}"),
+    )
+
+    with pytest.raises(SystemExit, match="pinned uv path is unavailable"):
+        module._stdlib_uv_preflight("uv 0.9.25")
+
+
+def test_resume_prefers_authenticated_explicit_uv_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = tmp_path / "uv.exe"
+    executable.write_bytes(b"fixture")
+    monkeypatch.setenv("MACRO_MENU_UV_EXECUTABLE", os.fspath(executable))
+    monkeypatch.setattr(
+        resume.shutil,
+        "which",
+        lambda name: pytest.fail(f"unexpected PATH lookup for {name}"),
+    )
+
+    assert resume._resolve_uv_executable() == os.fspath(executable)
+
+
+def test_stdlib_bootstrap_resolves_uv_with_windows_runtime_environment(
     monkeypatch: pytest.MonkeyPatch,
 ):
     module = _bootstrap_script_module()
@@ -630,7 +731,7 @@ def test_stdlib_bootstrap_resolves_uv_before_minimizing_windows_environment(
 
     assert observed["which"] == ["uv.exe"]
     assert observed["args"] == [executable, "--version"]
-    assert "PATHEXT" not in observed["env"]
+    assert observed["env"]["PATHEXT"] == ".COM;.EXE;.BAT;.CMD"
 
 
 def test_stdlib_bootstrap_sync_uses_resolved_windows_uv_executable(
