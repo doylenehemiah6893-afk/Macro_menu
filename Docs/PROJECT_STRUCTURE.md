@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：CURRENT IMPLEMENTATION / WINDOWS CI CORRECTION IN PREPARATION — 当前无 active bundle；CATIA/目标机测试未运行
+> 状态：CURRENT IMPLEMENTATION / REFRESHED LOCAL DELIVERY — 等待远端双平台复验；CATIA/目标机测试未运行
 >
 > 更新日期：2026-07-18
 >
@@ -15,7 +15,7 @@
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
 - 离线 Python、manifest/schema、Build Kit/evidence/operator CLI、target collector 和 pytest 已实现；首轮 Core Runtime
   源码已固定为候选输入。远端已发布到 `55cbef2`；run `29649284949` Linux 成功、Windows uv preflight 失败。
-  当前正在形成显式 setup-uv output-path 的新 evidence，上一 `bundle-64084c...` handoff 已撤回，历史 bundle 只作审计。
+  显式 setup-uv output-path 修复已形成 evidence `982ce2b` 与本地 `bundle-44c7a1...`；上一 handoff 已撤回，历史 bundle 只作审计。
   尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
 
 ## 2. 仓库拓扑

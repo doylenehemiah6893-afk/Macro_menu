@@ -144,8 +144,33 @@ GitHub 分支 SHA 与本地精确一致。新 Fresh-clone reproducibility run �
 
 独立日志审查确认，现有单一错误消息混合了路径发现、进程启动、返回码和版本不符，不能把根因只归因于
 `shutil.which("uv.exe")`。修订合同使用固定 setup-uv action 已声明的 `uv-path` output，通过专用环境变量传入；代码仍
-要求绝对 regular file 和精确 `uv 0.9.25`。变量存在但为空/相对/非文件时 fail-closed，不得 PATH fallback；Windows
+要求存在的绝对文件路径和精确 `uv 0.9.25`。变量存在但为空/相对/非文件时 fail-closed，不得 PATH fallback；Windows
 版本检查保留 `PATHEXT/TEMP/TMP/UV_CACHE_DIR` 等受控 runtime 环境，后续 native pytest 也使用同一显式路径。
 
 该修改触及 workflow、bootstrap 和 resume doctor，属于 evidence 后实现输入变化。故 `handoff-80d8cb2c06104fcf3c74`
 已撤回，CURRENT 移除，ledger active 清空，state 回到 `complete-evidence-implementation`；不得沿用上一 Kit/bundle。
+
+## 7. R9B clean evidence 与刷新 delivery
+
+最终独立复审 Critical=0、Important=0。clean evidence commit 为
+`982ce2bd11ad971b9614e12d38a6830b5a7789ba`，tree 为 `b4e423ac2faccbcc0c11e65e8a10917ece862c88`。
+从该精确提交运行正式 receipt：
+
+| 项目 | 固定结果 |
+|---|---|
+| lock / Development doctor | 24 packages resolved / PASS |
+| 完整 pytest | `1678 passed, 19 warnings in 252.17s` |
+| inventory / check | 90 records / 16 components、2 tools；零 diagnostics，formal eligible |
+| Kit / ZIP SHA-256 | `kit-a235b5dd5fc27d09b7de` / `cee08464bf22024f733b2277e61defdf448e76f41b18082225ffb880fec7fe45` |
+| Kit tree / sidecar SHA-256 | `772699f6df4b56d507c996116848d4c515112d7166835ab65c2836835bc6930b` / `5575207cef866ffaac6ca7202d4a69ea020c7fd9a7b7d9995a3971a00888b494` |
+| 四 verifier / collector smoke | 全通过；collector pyz SHA-256 `e11da8de8147fbbaab5217f56dde7eea7636cacf8993230c85484b1ef6358301` |
+| pre-issuance snapshot SHA-256 | `4f33ce6b2e07a91929563f9bb5bec6816d2a8a10782fe704284dadeb27567c7b`；active 为空、五份历史 handoff withdrawn |
+| handoff / SHA-256 | `handoff-be908ee37a9b5beba0b5` / `d7b87d0ee40ac3dc8c4ead0425014723b926fcbeb52923e37e91d54ea0c5c4d9` |
+| created / expires | `2026-07-18T15:33:27Z` / `2026-07-25T14:33:26Z` |
+| active ledger | captured `2026-07-18T15:33:33Z`；SHA-256 `feb03d9ddd3508cc82e947a2de78bba016a1d64ab116f02c3309a7b09143b281` |
+| operator bundle | `bundle-44c7a1ae951d2917309fc9d5`；两次完整目录相同，61 files、约 700 KiB |
+| provenance / content SHA-256 | `44c7a1ae951d2917309fc9d5d5aea8bf583b080254a512dc8b8e7d789430c5de` / `b144330c4517407927152295c7510a283c953f09c3df0b9d566c14cde51bf092` |
+
+两个 Discovery skeleton 与两个 operator bundle 分别逐字节相同；公开 bundle 不含 CATVBA、用户/主机/DSLS 标识、
+客户路径或真实现场数据。G0/G1 仅为 A 环境离线 `PASS`；delivery commit、本地 clone QA、远端 Linux/Windows 与
+GitHub URL fresh clone 完成前，B28 继续 BLOCKED，G2–G7 与 release 继续 BLOCKED。

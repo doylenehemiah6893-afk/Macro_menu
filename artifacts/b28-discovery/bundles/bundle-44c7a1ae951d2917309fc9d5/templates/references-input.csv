@@ -1,0 +1,2 @@
+guid,major,minor,display_name,missing,architecture,source_class,root_kind,basename,relative_path,path_sha256
+{00020430-0000-0000-C000-000000000046},2,0,VBA,false,x64,system,CATIA_INSTALL,vbe7.dll,win_b64/code/bin/vbe7.dll,REPLACE_WITH_LOWERCASE_SHA256

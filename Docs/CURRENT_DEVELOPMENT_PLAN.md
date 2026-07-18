@@ -1,6 +1,6 @@
 # Macro_menu 当前开发计划
 
-状态：CURRENT / second Windows CI correction in preparation
+状态：CURRENT / second Windows CI correction locally delivered / remote pending
 
 日期：2026-07-18
 
@@ -13,8 +13,8 @@
 | Discovery Task 1–9 | 本地完成 | schema、bootstrap、collector、raw finalizer、bundle builder、教程、CI 已实现 |
 | Task 10 | 本地完成 | 实施审查与回归关闭记录已提交 |
 | Task 11 | 本地重新完成 | quoted-path 修复后已从新 evidence 双构建并签发 public discovery bundle；不是 B28 执行完成 |
-| Task 12 | IN PROGRESS | 远端已到 `55cbef2`；run `29649284949` Linux 成功、Windows uv preflight 失败，正在新 evidence 周期修复 |
-| B28 Discovery | BLOCKED | 当前无 active bundle/CURRENT；上一 `handoff-80d8...` 已撤回 |
+| Task 12 | IN PROGRESS | 远端已到 `55cbef2`；新 evidence `982ce2b` 与 local delivery 已闭合，等待 clone QA、push 和远端复验 |
+| B28 Discovery | BLOCKED | 新 local bundle/handoff 已签发；等待远端双平台 CI 与 GitHub clone Delivery doctor |
 | G2–G7 | BLOCKED | Compile、References、权益、profile、试点和发布证据均未取得 |
 
 ## 2. 当前复刻与文档治理工作包
@@ -32,15 +32,14 @@
 | R8 | 推送并验证 GitHub | DONE FOR INITIAL PUBLICATION | remote 从 `037ab406` 普通 fast-forward 到 `2098484`，本地/远端精确一致；临时 OAuth token 已撤销并删除 |
 | R9 | Linux/Windows CI 与第二 fresh clone | CORRECTIVE IN PROGRESS | run `29644483056`：Linux 完整 Development 1665 tests 通过后被 stale selector 阻断；Windows 因裁剪环境中裸 `uv` 发现失败；comments-only workflow 另产生 startup failure `29644481596` |
 | R9A | 首轮远端 CI 缺陷修复并重签发 | REMOTE FAILED / WITHDRAWN | run `29649284949` Linux success；Windows `88092722616` 仍报 pinned uv；`handoff-80d8...` 已撤回 |
-| R9B | setup-uv 官方 output-path 修复 | IN PROGRESS | 显式绝对路径、精确版本、空值 fail-closed、Windows runtime env、后续 native tests 均纳入合同；待完整 evidence/delivery 与远端复跑 |
+| R9B | setup-uv 官方 output-path 修复 | LOCAL DONE / REMOTE PENDING | `982ce2b`、1678 tests、双 Kit/四 verifier、`bundle-44c7a1...` 与新 handoff 已闭合；待 delivery commit、clone QA 和远端复跑 |
 | R10 | 原生 B28 Discovery | BLOCKED BY R9B | 从通过 CI/fresh-clone 的新签发包取得 fresh ledger + 未过期 handoff，再人工完成五点 Reference observation；仍禁止 Compile |
 
 ## 3. 当前执行顺序
 
-1. 完成 R9B 聚焦/完整回归、独立审查并形成 clean evidence commit。
-2. 从该 evidence 重新构建 Kit、签发新 handoff/operator bundle，提交 delivery record 并做 autocrlf/quotepath clone QA。
-3. 普通 fast-forward 推送，要求 Linux/Windows CI 与 GitHub clone Delivery doctor 全部通过。
-4. 仅随后按新 bundle quick-start 在原生 Windows `cmd.exe` 人工执行 Discovery。
+1. 提交只含 Docs/artifacts/resume 的 delivery record，并做 autocrlf/quotepath clone QA。
+2. 普通 fast-forward 推送，要求 Linux/Windows CI 与 GitHub clone Delivery doctor 全部通过。
+3. 仅随后按新 bundle quick-start 在原生 Windows `cmd.exe` 人工执行 Discovery。
 
 ## 4. 停止条件
 

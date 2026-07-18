@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/environment.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "binding",
+    "windows",
+    "catia",
+    "catia_environment",
+    "vba",
+    "dsls",
+    "security",
+    "accounts_isolated",
+    "pollution_scan",
+    "reference_contract_body_digest",
+    "environment_fingerprint",
+    "operator_record_id"
+  ],
+  "properties": {
+    "binding": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"
+    },
+    "windows": {"oneOf": [{"$ref": "#/$defs/windows"}, {"type": "null"}]},
+    "catia": {"oneOf": [{"$ref": "#/$defs/catia"}, {"type": "null"}]},
+    "catia_environment": {"oneOf": [{"$ref": "#/$defs/catia_environment"}, {"type": "null"}]},
+    "vba": {"oneOf": [{"$ref": "#/$defs/vba"}, {"type": "null"}]},
+    "dsls": {"oneOf": [{"$ref": "#/$defs/dsls"}, {"type": "null"}]},
+    "security": {"$ref": "#/$defs/security"},
+    "accounts_isolated": {"type": ["boolean", "null"]},
+    "pollution_scan": {"$ref": "#/$defs/pollution_scan"},
+    "reference_contract_body_digest": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"
+    },
+    "environment_fingerprint": {
+      "oneOf": [
+        {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        {"type": "null"}
+      ]
+    },
+    "operator_record_id": {
+      "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"environment_fingerprint": {"type": "null"}}},
+      "then": {
+        "properties": {
+          "windows": {"type": "null"},
+          "catia": {"type": "null"},
+          "catia_environment": {"type": "null"},
+          "vba": {"type": "null"},
+          "dsls": {"type": "null"},
+          "security": {
+            "properties": {
+              "office_state": {"const": "unknown"},
+              "network_state": {"const": "unknown"},
+              "powershell_state": {"const": "unknown"},
+              "wsh_state": {"const": "unknown"}
+            }
+          },
+          "accounts_isolated": {"type": "null"},
+          "pollution_scan": {
+            "properties": {
+              "b30": {"const": "not-run"},
+              "x86": {"const": "not-run"},
+              "vba6": {"const": "not-run"},
+              "syswow64": {"const": "not-run"},
+              "temp_com": {"const": "not-run"},
+              "user_com": {"const": "not-run"}
+            }
+          },
+          "environment_fingerprint": {"type": "null"},
+          "operator_record_id": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"environment_fingerprint": {"type": "string"}}},
+      "then": {
+        "properties": {
+          "windows": {"type": "object"},
+          "catia": {"type": "object"},
+          "catia_environment": {"type": "object"},
+          "vba": {"type": "object"},
+          "dsls": {"type": "object"},
+          "environment_fingerprint": {"type": "string"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "windows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edition", "build", "patch"],
+      "properties": {
+        "edition": {"type": "string", "minLength": 1, "maxLength": 64},
+        "build": {"type": "string", "pattern": "^[0-9.]{1,32}$"},
+        "patch": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"}
+      }
+    },
+    "catia": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release", "revision", "build", "ga", "service_pack", "hotfix"],
+      "properties": {
+        "release": {"const": "V5-6R2018"},
+        "revision": {"const": "R28"},
+        "build": {"const": "B28"},
+        "ga": {"type": "boolean"},
+        "service_pack": {"type": "string", "pattern": "^SP[0-9]+$"},
+        "hotfix": {"type": "string", "pattern": "^HF[0-9]+$"}
+      }
+    },
+    "path_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root_kind", "basename", "relative_path", "redacted_display", "normalized_path_sha256"],
+      "properties": {
+        "root_kind": {"enum": ["catia-install", "windows-install", "temp", "user-profile", "customer-root", "other"]},
+        "basename": {
+          "oneOf": [
+            {"type": "string", "pattern": "^[A-Za-z0-9._ -]{1,80}$"},
+            {"type": "null"}
+          ]
+        },
+        "relative_path": {
+          "oneOf": [
+            {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/portable_path"},
+            {"type": "null"}
+          ]
+        },
+        "redacted_display": {
+          "type": "string",
+          "pattern": "^(?:<[^>]+>(?:/[A-Za-z0-9._ -]+)*|[A-Za-z0-9._ -]+)$"
+        },
+        "normalized_path_sha256": {
+          "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "root_kind": {"enum": ["temp", "user-profile", "customer-root"]}
+            }
+          },
+          "then": {
+            "properties": {
+              "basename": {"type": "null"},
+              "relative_path": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"root_kind": {"const": "temp"}}},
+          "then": {"properties": {"redacted_display": {"const": "<TEMP>"}}}
+        },
+        {
+          "if": {"properties": {"root_kind": {"const": "user-profile"}}},
+          "then": {"properties": {"redacted_display": {"const": "<USER_PROFILE>"}}}
+        },
+        {
+          "if": {"properties": {"root_kind": {"const": "customer-root"}}},
+          "then": {"properties": {"redacted_display": {"const": "<CUSTOMER_ROOT>"}}}
+        }
+      ]
+    },
+    "catia_environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anonymous_id", "install_root"],
+      "properties": {
+        "anonymous_id": {
+          "$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"
+        },
+        "install_root": {
+          "allOf": [
+            {"$ref": "#/$defs/path_evidence"},
+            {
+              "properties": {
+                "root_kind": {"const": "catia-install"},
+                "basename": {"type": "string"}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "vba": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ds_vba_version", "vbe_version", "vba7", "win64"],
+      "properties": {
+        "ds_vba_version": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+)+$"},
+        "vbe_version": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+)+$"},
+        "vba7": {"type": "boolean"},
+        "win64": {"type": "boolean"}
+      }
+    },
+    "dsls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["client_anonymous_id", "server_anonymous_id", "connection_mode"],
+      "properties": {
+        "client_anonymous_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"},
+        "server_anonymous_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"},
+        "connection_mode": {"enum": ["network", "local", "offline", "unknown"]}
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["office_state", "network_state", "powershell_state", "wsh_state"],
+      "properties": {
+        "office_state": {"enum": ["not-installed", "installed", "unknown"]},
+        "network_state": {"enum": ["isolated", "connected", "unknown"]},
+        "powershell_state": {"enum": ["disabled", "enabled", "unknown"]},
+        "wsh_state": {"enum": ["disabled", "enabled", "unknown"]}
+      }
+    },
+    "pollution_scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["b30", "x86", "vba6", "syswow64", "temp_com", "user_com"],
+      "properties": {
+        "b30": {"$ref": "#/$defs/pollution_status"},
+        "x86": {"$ref": "#/$defs/pollution_status"},
+        "vba6": {"$ref": "#/$defs/pollution_status"},
+        "syswow64": {"$ref": "#/$defs/pollution_status"},
+        "temp_com": {"$ref": "#/$defs/pollution_status"},
+        "user_com": {"$ref": "#/$defs/pollution_status"}
+      }
+    },
+    "pollution_status": {"enum": ["absent", "present", "unknown", "not-run"]}
+  }
+}

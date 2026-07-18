@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/collector-environment-input.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "windows", "catia", "vba", "pollution_scan"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "windows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edition", "build", "architecture"],
+      "properties": {
+        "edition": {"type": "string", "minLength": 1, "maxLength": 100},
+        "build": {"type": "string", "minLength": 1, "maxLength": 32},
+        "architecture": {"const": "Win64"}
+      }
+    },
+    "catia": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release", "revision", "build"],
+      "properties": {
+        "release": {"const": "V5-6R2018"},
+        "revision": {"const": "R28"},
+        "build": {"const": "B28"}
+      }
+    },
+    "vba": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "win64"],
+      "properties": {"generation": {"const": "VBA7"}, "win64": {"const": true}}
+    },
+    "pollution_scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["B30", "x86", "VBA6", "Temp", "user-profile"],
+      "properties": {
+        "B30": {"const": "absent"},
+        "x86": {"const": "absent"},
+        "VBA6": {"const": "absent"},
+        "Temp": {"const": "absent"},
+        "user-profile": {"const": "absent"}
+      }
+    }
+  }
+}
