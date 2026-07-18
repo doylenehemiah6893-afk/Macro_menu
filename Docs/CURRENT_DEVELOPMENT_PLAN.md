@@ -1,6 +1,6 @@
 # Macro_menu 当前开发计划
 
-状态：CURRENT / remote CI corrective evidence cycle in progress
+状态：CURRENT / corrective local delivery verified / remote CI rerun pending
 
 日期：2026-07-18
 
@@ -14,7 +14,7 @@
 | Task 10 | 本地完成 | 实施审查与回归关闭记录已提交 |
 | Task 11 | 本地重新完成 | quoted-path 修复后已从新 evidence 双构建并签发 public discovery bundle；不是 B28 执行完成 |
 | Task 12 | IN PROGRESS | 首次 fast-forward 已发布到 `2098484`；远端 CI 已运行并暴露两个可复现缺陷，正在新的 evidence/delivery 周期修复 |
-| B28 Discovery | BLOCKED | 旧 handoff 已因控制陈旧和实现输入变化撤回；等待新 evidence、重签发、远端双平台 CI 与 GitHub fresh clone |
+| B28 Discovery | BLOCKED | 新 local delivery 已签发；等待 delivery commit、远端双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 后再由目标机取得 |
 | G2–G7 | BLOCKED | Compile、References、权益、profile、试点和发布证据均未取得 |
 
 ## 2. 当前复刻与文档治理工作包
@@ -31,16 +31,15 @@
 | R7A | 修复非 ASCII delivery 路径验证并形成新 evidence/delivery | DONE | `4327491`、1665 tests、新 Kit/bundle/handoff；`29e9d49` 的 autocrlf/quotepath final clone、两种 doctor 与 selector 全通过 |
 | R8 | 推送并验证 GitHub | DONE FOR INITIAL PUBLICATION | remote 从 `037ab406` 普通 fast-forward 到 `2098484`，本地/远端精确一致；临时 OAuth token 已撤销并删除 |
 | R9 | Linux/Windows CI 与第二 fresh clone | CORRECTIVE IN PROGRESS | run `29644483056`：Linux 完整 Development 1665 tests 通过后被 stale selector 阻断；Windows 因裁剪环境中裸 `uv` 发现失败；comments-only workflow 另产生 startup failure `29644481596` |
-| R9A | 远端 CI 缺陷修复并重签发 | IN PROGRESS | 绝对解析 `uv.exe`；CI 时效失活仅标 unavailable、篡改仍 fail；删除无效 workflow；完整测试、新 evidence、bundle/handoff、远端双平台复跑 |
+| R9A | 远端 CI 缺陷修复并重签发 | LOCAL DONE / REMOTE PENDING | `0b28548` 独立复审 Critical/Important=0；1672 tests、双 Kit/四 verifier、`bundle-64084c...` 与 fresh handoff 已闭合；待 push 和远端双平台复跑 |
 | R10 | 原生 B28 Discovery | BLOCKED BY R9A | 从通过 CI/fresh-clone 的新签发包取得 fresh ledger + 未过期 handoff，再人工完成五点 Reference observation；仍禁止 Compile |
 
 ## 3. 当前执行顺序
 
-1. 完成 Windows uv/CI selector/workflow 修复、文档与状态 preparation 提交，形成新的 clean evidence commit。
-2. 从该 evidence commit 跑完整 `verify_resume.py`，双构建、四 verifier、重签发 handoff/operator bundle，并提交仅含允许路径的 delivery record。
-3. 只 fast-forward 推送 `codex/dev-review-report`，验证远端 HEAD，监控 Linux/Windows CI，并从 GitHub 新目录 clone 复核。
-4. 仅在新 clone 的 Delivery doctor 仍通过时，把新 active bundle/CURRENT/fresh ledger 转运到 B28。
-5. 按 bundle 内 quick-start 在原生 Windows `cmd.exe` 人工执行 Discovery，并回传 raw/untrusted 证据。
+1. 提交只含 `Docs/`、`RESUME.md`、`artifacts/`、`resume/` 的 delivery record，并完成本地 autocrlf/quotepath fresh-clone 验证。
+2. 只 fast-forward 推送 `codex/dev-review-report`，验证远端 HEAD，监控 Linux/Windows CI，并从 GitHub 新目录 clone 复核。
+3. 仅在新 clone 的 Delivery doctor 仍通过时，把新 active bundle/CURRENT/fresh ledger 转运到 B28。
+4. 按 bundle 内 quick-start 在原生 Windows `cmd.exe` 人工执行 Discovery，并回传 raw/untrusted 证据。
 
 ## 4. 停止条件
 

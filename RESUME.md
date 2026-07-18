@@ -1,31 +1,33 @@
 # Macro_menu 新环境续作入口
 
-状态：CURRENT / corrective evidence preparation / **NO-GO for release**
+状态：CURRENT / corrective local delivery pending remote verification / **NO-GO for release**
 
 唯一仓库：`doylenehemiah6893-afk/Macro_menu`
 唯一工作分支：`codex/dev-review-report`
-当前开发动作：完成远端 CI 缺陷修复、新 evidence/delivery 重签发，再 fast-forward 推送并验证双平台 CI 与 GitHub fresh clone
+当前开发动作：提交并本地 fresh-clone 验证新 delivery，再 fast-forward 推送并验证双平台 CI 与 GitHub fresh clone
 
-当前目标机动作：BLOCKED，当前没有 active delivery；等待新签发控制完成远端验证
+当前目标机动作：BLOCKED，已有本地 fresh delivery，但等待提交、推送与远端验证
 
 机器状态首先以 `resume/state.json` 为准；只有 `active_bundle_path` 非空时，CURRENT 与 bundle provenance 才能
 共同选择活动制品。本文件不把 A 环境验证说成 CATIA 验证。
 
 > GitHub 远端已从 `037ab40696744678a57781d5197c152687520d84` 普通 fast-forward 到
 > `2098484d2bc0e9159293f65a31e0724b17ea5809`。首轮 CI 已真实运行；当前 corrective worktree 尚未形成并发布新的
-> evidence/delivery，因此远端可以复刻已发布基线，但不能代表本轮修复已验证。
+> evidence/delivery，因此远端可以复刻已发布基线，但尚不能取得本地新 bundle 或代表本轮修复已验证。
 
 ## 1. 当前机器状态
 
 | 项目 | 固定值 |
 |---|---|
 | remote published HEAD | `2098484d2bc0e9159293f65a31e0724b17ea5809` |
-| corrective state | evidence/tree/delivery parent 均为 `null`；`revocation_status=preparation` |
-| active bundle / Kit / handoff | 全部 `null`；`CURRENT.json` 已移除 |
-| ledger | active 为空；`handoff-07bbe55bc7552489cd55` 与更早 handoff 全部 withdrawn |
-| Gate / next action | G0=`PASS`，G1–G7=`BLOCKED`；`complete-evidence-implementation` |
+| corrective evidence / tree | `0b28548e5ebe1ee6f5c174122d56c92c2e6005ed` / `cbcac84169c75133fdb2de1b984ef62645edd5b7` |
+| active bundle / provenance | `bundle-64084c5ea0dfd63e24d861cb` / `64084c5ea0dfd63e24d861cbf948b05a4af3e33a7268290eb8ecca8158373ffe` |
+| active Kit / ZIP | `kit-d5ea863e68ba6af1cefa` / `db46b7c1e09741b71097554e9383356b90a1d77ef90fc3d910f1387344ade977` |
+| active handoff / expiry | `handoff-80d8cb2c06104fcf3c74` / `2026-07-25T12:38:11Z` |
+| ledger | captured `2026-07-18T13:38:17Z`；只激活新 handoff，四份旧 handoff withdrawn |
+| Gate / next action | G0/G1=`PASS`，G2–G7=`BLOCKED`；`run-b28-discovery` |
 | remote CI | run `29644483056`：Linux Development 全链通过后被 stale selector 阻断；Windows bootstrap 未能启动裸 `uv`；无效 workflow startup run `29644481596` |
-| 本轮本地测试 | 独立审查修复后聚焦 `126 passed`；pre-evidence 完整回归 `1672 passed, 19 warnings`；clean evidence receipt 待提交后执行 |
+| 本轮本地测试 | 独立复审 Critical/Important=0；clean evidence receipt `1672 passed, 19 warnings`，双 Kit/四 verifier/collector smoke 全通过 |
 
 `bundle-95bce...`、`bundle-6b7518...` 与 `bundle-ab5205...` 仍保留供审计，但其 handoff 均已撤回；更早的
 `handoff-6ed312...` 也保持 withdrawn。不得因历史 expiry 尚未到达就直接复用，也不得手改 JSON 延期或恢复。
@@ -65,10 +67,10 @@ bootstrap 会先在完整父环境解析 Windows `uv.exe` 的绝对路径，再�
 
 ## 3. B28 目标机唯一入口
 
-目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。当前没有
-active bundle。只有新的 evidence/delivery、远端同步、GitHub fresh clone 与 Delivery doctor 全部通过后，才可在批准的
-blank VM、标准用户、原生 `cmd.exe` 中将新 active bundle、`CURRENT.json` 和 fresh ledger 放入互不重叠的本地 NTFS
-目录，然后严格执行新 bundle 内三份教程；历史 `bundle-95bce...` 不再是可执行入口。
+目标 B28 机已有 Python 3.12，**不得使用 WSL、PowerShell、uv 或任何脚本自动化 CATIA/VBE/DSLS**。只有当前
+delivery commit、远端同步、GitHub fresh clone 与 Delivery doctor 全部通过后，才可在批准的 blank VM、标准用户、
+原生 `cmd.exe` 中将 `bundle-64084c...`、`CURRENT.json` 和 fresh ledger 放入互不重叠的本地 NTFS 目录，然后严格
+执行 bundle 内三份教程；历史 `bundle-95bce...` 不再是可执行入口。
 
 仓库中的 `Docs/runbooks/b28-target/README_TARGET_B28.md` 仅保留为源教程/审查入口；目标机执行时以已签发 bundle
 内同名文件为准，避免把源工作树、控制文件与现场 capture 混在一起。

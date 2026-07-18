@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project.schema.json",
+  "title": "Macro Menu project configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "upstream_repository",
+    "upstream_ref",
+    "fork_repository",
+    "fork_dev_ref",
+    "work_repository",
+    "work_branch",
+    "governed_paths"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "upstream_repository": {"type": "string", "minLength": 1},
+    "upstream_ref": {"type": "string", "minLength": 1},
+    "fork_repository": {"type": "string", "minLength": 1},
+    "fork_dev_ref": {"type": "string", "minLength": 1},
+    "work_repository": {"type": "string", "minLength": 1},
+    "work_branch": {"type": "string", "minLength": 1},
+    "governed_paths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

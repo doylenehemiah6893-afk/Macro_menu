@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/test-results.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["binding", "target_plan_sha256", "records"],
+  "properties": {
+    "binding": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"},
+    "target_plan_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "records": {
+      "type": "array",
+      "minItems": 30,
+      "maxItems": 30,
+      "items": {"$ref": "#/$defs/record"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "binding": {
+            "properties": {"session_mode": {"enum": ["discovery", "g2"]}}
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {"items": {"properties": {"status": {"const": "not-run"}, "execution_point": {"const": "not-run"}}}}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "binding": {"properties": {"session_mode": {"const": "g3-c"}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "prefixItems": [
+              {
+                "properties": {
+                  "case_id": {"const": "context.core.healthcheck.none"},
+                  "status": {"enum": ["not-run", "passed", "failed", "blocked"]}
+                }
+              }
+            ],
+            "items": {"properties": {"status": {"const": "not-run"}, "execution_point": {"const": "not-run"}}}
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id", "case_definition_sha256", "profile_id", "package_id", "tool_id",
+        "execution_point", "compile_record_id", "status", "expected_result_code",
+        "expected_state", "observed_result_code", "observed_state", "started_at",
+        "ended_at", "operator_record_id", "state_diff_record_id", "failure_classification"
+      ],
+      "properties": {
+        "case_id": {"type": "string", "pattern": "^[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)+$"},
+        "case_definition_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "profile_id": {"enum": ["DISCOVERY", "P-AB3", "P-HD2", "P-MD2", "P-ALL", "P-PROD"]},
+        "package_id": {"const": "core"},
+        "tool_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"},
+        "execution_point": {"enum": ["not-run", "post-restart"]},
+        "compile_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"},
+        "status": {"enum": ["not-run", "passed", "failed", "blocked"]},
+        "expected_result_code": {"type": "integer"},
+        "expected_state": {"type": ["string", "null"], "maxLength": 80},
+        "observed_result_code": {"type": ["integer", "null"]},
+        "observed_state": {"type": ["string", "null"], "maxLength": 80},
+        "started_at": {"oneOf": [{"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"}, {"type": "null"}]},
+        "ended_at": {"oneOf": [{"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"}, {"type": "null"}]},
+        "operator_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"},
+        "state_diff_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"},
+        "failure_classification": {"type": ["string", "null"], "enum": [null, "compile", "runtime", "state", "environment", "blocked", "unknown"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "not-run"}}},
+          "then": {
+            "properties": {
+              "execution_point": {"const": "not-run"},
+              "compile_record_id": {"type": "null"},
+              "observed_result_code": {"type": "null"},
+              "observed_state": {"type": "null"},
+              "started_at": {"type": "null"},
+              "ended_at": {"type": "null"},
+              "operator_record_id": {"type": "null"},
+              "state_diff_record_id": {"type": "null"},
+              "failure_classification": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["passed", "failed", "blocked"]}}},
+          "then": {
+            "properties": {
+              "execution_point": {"const": "post-restart"},
+              "compile_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+              "started_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
+              "ended_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
+              "operator_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

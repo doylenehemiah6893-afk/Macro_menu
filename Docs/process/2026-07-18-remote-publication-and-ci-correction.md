@@ -1,6 +1,6 @@
 # 远端首次发布与 CI 修正记录
 
-状态：CORRECTIVE EVIDENCE PREPARATION
+状态：CORRECTIVE LOCAL DELIVERY BUILT / REMOTE VERIFICATION PENDING
 
 日期：2026-07-18
 
@@ -86,5 +86,38 @@ bundle tamper、Windows `uv.exe` preflight/sync、Windows CMD fail-fast 和 prep
 5. 本地 autocrlf/quotepath fresh clone、两种 doctor 与严格 selector通过；
 6. 一次 fast-forward 推送 evidence+delivery，远端 Linux/Windows CI 与 GitHub fresh clone 通过。
 
-当前结论保持 **NO-GO**：G0=`PASS`，G1–G7=`BLOCKED`，`compile_status=not-run`，30 个 target case
-全部 `not-run`，CATVBA=`not-produced`，`release_eligible=false`。
+签发前 preparation 结论为 **NO-GO**：G0=`PASS`，G1–G7=`BLOCKED`。下节完成新 A 环境 delivery 后只允许
+G1 回到 `PASS`；`compile_status=not-run`、30 个 target case 全部 `not-run`、CATVBA=`not-produced`、
+`release_eligible=false` 始终不变。
+
+## 5. 可签发 evidence 与新 delivery
+
+复审后的 clean evidence commit 为 `0b28548e5ebe1ee6f5c174122d56c92c2e6005ed`，tree 为
+`cbcac84169c75133fdb2de1b984ef62645edd5b7`。它在已复审 `e254b33` 上只把根 README 改为时间稳定入口；
+再次独立复审 Critical=0、Important=0。唯一 Minor 是未单独直接观察
+doctor 内部 uv 版本子进程参数，但同型路径已有测试，且 Windows CI 已对 doctor 可靠 fail-fast，不阻断签发。
+
+从该精确提交重新运行正式 receipt：
+
+| 项目 | 固定结果 |
+|---|---|
+| lock / Development doctor | 24 packages resolved / PASS；local dev 保持批准 cutoff，未采用 floating origin/dev |
+| 完整 pytest | `1672 passed, 19 warnings in 250.99s` |
+| inventory / check | 90 records / 16 components、2 tools；零 diagnostics，均 formal eligible |
+| Kit / ZIP SHA-256 | `kit-d5ea863e68ba6af1cefa` / `db46b7c1e09741b71097554e9383356b90a1d77ef90fc3d910f1387344ade977` |
+| Kit tree / sidecar SHA-256 | `7f962e8890caa0cbc332017775fa61e8494c9e017b5d9c16713bd143c1f4f3d2` / `c72da27158d0dcbf9399673781bedfff75a1fc0bcf3c383b00be08a12ad256ba` |
+| 四 verifier / collector smoke | directory/ZIP × primary/comparison 全通过；pyz help 与 synthetic expected-fail-closed 通过 |
+| pre-issuance snapshot SHA-256 | `1e992f6b67cc41d8bbb8f0d196febab781896a8378fb84bd514ba74ee199dff4`；active 为空，四份旧 handoff withdrawn |
+| handoff / SHA-256 | `handoff-80d8cb2c06104fcf3c74` / `0964ef2f00d2d370f7583616b45df7ea6a78b6ebc1556110caa3547fbb5b6681` |
+| created / expires | `2026-07-18T13:38:11Z` / `2026-07-25T12:38:11Z` |
+| active ledger | captured `2026-07-18T13:38:17Z`；SHA-256 `fd9045791c151d43b201a8a1ce3a99f973927d7c48d269d75f685e8559e64761` |
+| operator bundle | `bundle-64084c5ea0dfd63e24d861cb`；两次完整目录相同，61 files、约 700 KiB |
+| provenance / content SHA-256 | `64084c5ea0dfd63e24d861cbf948b05a4af3e33a7268290eb8ecca8158373ffe` / `6e546677d55b74be0f52367695c4f709055a48c604b5073abb36a1e3f569fe7a` |
+| collector pyz SHA-256 | `e11da8de8147fbbaab5217f56dde7eea7636cacf8993230c85484b1ef6358301` |
+
+两个 raw Discovery skeleton 的三个成员与完整目录逐字节相同；它们只含 `not-run` 模板，未提交 raw fixture 或现场数据。
+两个 operator bundle 构建目录逐字节相同，公开 bundle 不含 CATVBA、用户/主机/DSLS 标识或客户路径。
+
+本地 delivery record 尚待提交和 autocrlf/quotepath fresh-clone 验证；随后必须一次 fast-forward 推送 evidence+delivery，
+确认远端 Linux/Windows CI 与 GitHub fresh clone。完成前 B28 仍不得执行。G0/G1 可在提交后为 A 环境离线 `PASS`，
+G2–G7 保持 `BLOCKED`；其余 NO-GO 事实不变。

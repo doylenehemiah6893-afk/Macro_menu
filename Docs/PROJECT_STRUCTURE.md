@@ -1,6 +1,6 @@
 # 项目结构、所有权与分支规划
 
-> 状态：CURRENT IMPLEMENTATION / CORRECTIVE EVIDENCE PREPARATION — 离线工具、Core 与 evidence harness 已实现；首轮远端 CI 后正在重签发，CATIA/目标机测试未运行
+> 状态：CURRENT IMPLEMENTATION / CORRECTIVE LOCAL DELIVERY VERIFIED — 离线工具、Core、evidence harness 与新 operator bundle 已复算；等待远端双平台复验，CATIA/目标机测试未运行
 >
 > 更新日期：2026-07-18
 >
@@ -14,8 +14,9 @@
 - 所有本地 VBA、Python、配置、schema、测试和派生输出进入 `catvba_refactor/`；
 - 根 `pyproject.toml`、`uv.lock`、`.python-version` 是唯一 Python 项目与依赖真源，不在命名空间内重复；
 - 离线 Python、manifest/schema、Build Kit/evidence/operator CLI、target collector 和 pytest 已实现；首轮 Core Runtime
-  源码已固定为候选输入。远端已发布到 `2098484` 并实际运行 CI；Windows uv/陈旧 selector 修复触发新 evidence 周期，
-  因而当前没有 active bundle。历史 `bundle-95bce...` 只作审计。尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
+  源码已固定为候选输入。远端已发布到 `2098484` 并实际运行 CI；Windows uv/陈旧 selector 修复已形成 evidence
+  `0b28548` 和 active `bundle-64084c5ea0dfd63e24d861cb`，尚待推送与远端复验。历史 bundle 只作审计。
+  尚未生成/验证正式 CATVBA，也没有 CATIA/目标机通过证据。
 
 ## 2. 仓库拓扑
 

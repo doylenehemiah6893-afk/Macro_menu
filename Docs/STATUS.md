@@ -14,8 +14,8 @@
 
 开发续作入口为仓库根 `RESUME.md`、`Docs/ENVIRONMENT_REPRODUCTION.md` 与 `resume/state.json`。初始仓库同步已完成，
 但远端首轮 CI 暴露 Windows `uv.exe` 发现和陈旧 delivery selector 两个缺陷；comments-only workflow 也被 GitHub 判为
-无效启动。当前处于新的 corrective evidence 周期：`next_action=complete-evidence-implementation`、
-`revocation_status=preparation`，没有 active bundle，目标机不得开始。
+无效启动。修复已形成新的 clean evidence、独立复审、完整 receipt 和 fresh delivery：
+`next_action=run-b28-discovery`、`revocation_status=active`。但本轮 delivery 尚未推送/通过远端双平台复验，目标机不得开始。
 
 ## 1. 立即停止条件
 
@@ -38,16 +38,16 @@
 | SPA/FTA | 目标机保证权益；物理隔离为默认部署 Fleet Extensions |
 | 上游 | `verysolecd/Macro_menu:dev` 是 Src/resources 逻辑来源 |
 | fork | main/dev 镜像上游；个人实现只写 codex/dev-review-report |
-| 本地/远端 | 首次远端发布已从 `037ab406` fast-forward 到 `2098484`；本地 corrective worktree 正在形成下一 evidence/delivery，尚未再次推送 |
+| 本地/远端 | 首次远端发布已从 `037ab406` fast-forward 到 `2098484`；本地新 evidence=`0b28548`，delivery worktree 待提交/推送 |
 | Python | 根 pyproject.toml/uv.lock/.python-version 为唯一真源 |
 | 目录 | `catvba_refactor/` 已包含离线 Python、四份 manifest/schema、Core Runtime 固定/生成源码、Form override 和 pytest |
 | 设计 | 恢复规格和 B28 G2/G3 证据工具链规格均已获用户书面确认 |
 | 实施计划 | 离线 Build Kit、baseline intake、Core Runtime MVP 和 B28 evidence harness 的 A 环境实现已完成 |
 | Intake baseline | upstream/fork `dev` 已独立复核并接受为 `abce8ffe37d25cc8f189ae9e9a2a1e942279a5ad`；本地只读 `refs/heads/dev` 已原子建立，远端未写入 |
-| 离线测试 | 上一 evidence `4327491` 为 1665 passed；独立审查修复后聚焦 `126 passed`，pre-evidence 完整回归 `1672 passed, 19 warnings`；clean evidence receipt 待提交后执行；均非 CATIA 证据 |
-| active discovery bundle | 无；`CURRENT.json` 已移除，旧 `bundle-95bce...` 仅作审计 |
-| active Kit / handoff | 无；`handoff-07bbe55bc7552489cd55` 已加入 withdrawn，等待本轮重签发 |
-| 环境复刻修订 | 首轮 run `29644483056` 的 Linux 完成 1665 tests、双 Kit/四 verifier/collector smoke；Windows 在 bootstrap 裸 `uv` 启动失败；修复正纳入新 evidence |
+| 离线测试 | `0b28548` 正式 receipt：1672 passed、19 warnings；inventory/check、双 Kit、四 verifier、collector smoke 全通过；均非 CATIA 证据 |
+| active discovery bundle | `bundle-64084c5ea0dfd63e24d861cb`；provenance SHA-256 `64084c5ea0dfd63e24d861cbf948b05a4af3e33a7268290eb8ecca8158373ffe` |
+| active Kit / handoff | `kit-d5ea863e68ba6af1cefa` / `handoff-80d8cb2c06104fcf3c74`；expires `2026-07-25T12:38:11Z` |
+| 环境复刻修订 | 首轮远端缺陷已修复并由独立复审确认 Critical/Important=0；本地 delivery 仍等待提交、autocrlf/quotepath clone 和远端双平台复跑 |
 | 当前仓库 CLI | 离线 Build Kit/audit/handoff 命令与 target evidence 命令均已具备；已生成确定性 discovery raw skeleton，真实 observation/receipt/approval/seal 仍需 B28 输入 |
 | CATIA 证据 | 缺 B28 Compile、重启、三最小 profile、SPA/FTA、试点与回滚 |
 
@@ -81,7 +81,7 @@
 | Gate | 状态 | 原因 |
 |---|---|---|
 | G0 INPUT-FROZEN | `PASS` | 批准 cutoff 与 A 环境离线输入合同已冻结 |
-| G1 KIT-READY | `BLOCKED` | 实现输入已变化且上一 handoff 已撤回；等待新 evidence 双 Kit/ZIP、四 verifier、operator bundle 与 fresh handoff |
+| G1 KIT-READY | `PASS` | `0b28548` 双 Kit/ZIP、四 verifier、双 operator bundle 与 fresh handoff 已闭合；仅为 A 环境离线证据 |
 | G2 B28-ENV-ATTESTED | `BLOCKED` | 缺正式 SP/HF、References、环境证据 |
 | G3 BUILT-UNVERIFIED | `BLOCKED` | 未从空白 B28 工程构建 |
 | G4 BASE-PROFILE-MATRIX-PASS | `BLOCKED` | 缺 P-AB3/P-HD2/P-MD2 |
@@ -92,16 +92,16 @@
 G0/G1 `PASS` 只说明固定 Git 输入与本地可复算 delivery chain 闭合；两者都不是 CATIA Compile、References、
 许可证 checkout、UI 或运行通过。
 
-## 6. 当前 Discovery 交付状态（preparation，不是 CATIA PASS）
+## 6. 当前 Discovery 交付状态（本地已签发，不是 CATIA PASS）
 
-上一 bundle `artifacts/b28-discovery/bundles/bundle-95bce28983237f5d84d0cbfd/` 保留为不可变历史审计制品；其
-handoff `handoff-07bbe55bc7552489cd55` 已撤回。当前 ledger active 集为空，`CURRENT.json` 不存在，
-`resume/state.json` 不选择任何 bundle/Kit/handoff。完整历史构建记录见
-`Docs/process/2026-07-16-environment-reproducibility-refresh.md`，本轮远端诊断与修复记录见
+当前 bundle 为 `artifacts/b28-discovery/bundles/bundle-64084c5ea0dfd63e24d861cb/`；CURRENT 固定 provenance
+SHA-256 `64084c5ea0dfd63e24d861cbf948b05a4af3e33a7268290eb8ecca8158373ffe`。active ledger captured-at 为
+`2026-07-18T13:38:17Z`，只激活 `handoff-80d8cb2c06104fcf3c74`，并撤回四份旧 handoff。bundle 内含 Kit ZIP、
+collector pyz、哈希、handoff、教程和 sanitized offline receipts；本轮记录见
 `Docs/process/2026-07-18-remote-publication-and-ci-correction.md`。
 
-只有新 evidence/delivery、本轮远端同步、双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 全部通过后，B28
-才可能按新 bundle quick-start 以原生 Windows `cmd.exe` 和 CPython 3.12 人工执行 raw Discovery。不得使用
+只有本轮 delivery commit、远端同步、双平台 CI、GitHub fresh clone 与 fresh Delivery doctor 全部通过后，B28
+才可能按当前 bundle quick-start 以原生 Windows `cmd.exe` 和 CPython 3.12 人工执行 raw Discovery。不得使用
 WSL、PowerShell、uv 或自动化 CATIA/VBE/DSLS；不得使用任何历史 bundle 的 handoff。
 
 这不是 Compile、References、DSLS checkout、运行、G2/G3 或 release 通过。bundle 固定
