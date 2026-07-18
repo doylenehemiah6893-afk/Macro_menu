@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/compile-result.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["binding", "records"],
+  "properties": {
+    "binding": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"},
+    "records": {
+      "type": "array",
+      "prefixItems": [
+        {"$ref": "#/$defs/record", "properties": {"point": {"const": "blank-project"}}},
+        {"$ref": "#/$defs/record", "properties": {"point": {"const": "post-import"}}},
+        {"$ref": "#/$defs/record", "properties": {"point": {"const": "post-save"}}},
+        {"$ref": "#/$defs/record", "properties": {"point": {"const": "post-restart"}}}
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "binding": {"properties": {"session_mode": {"const": "g2"}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {"items": {"properties": {"status": {"const": "not-run"}}}}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id", "point", "status", "started_at", "ended_at", "catia_operator_record_id",
+        "vbe_operator_record_id", "error_stage", "error_module", "redacted_error_summary"
+      ],
+      "properties": {
+        "record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+        "point": {"enum": ["blank-project", "post-import", "post-save", "post-restart"]},
+        "status": {"enum": ["not-run", "passed", "failed", "blocked"]},
+        "started_at": {"oneOf": [{"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"}, {"type": "null"}]},
+        "ended_at": {"oneOf": [{"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"}, {"type": "null"}]},
+        "catia_operator_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"},
+        "vbe_operator_record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/nullable_record_id"},
+        "error_stage": {"type": ["string", "null"], "enum": [null, "import", "compile", "save", "restart", "unknown"]},
+        "error_module": {"type": ["string", "null"], "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,79}$"},
+        "redacted_error_summary": {"type": ["string", "null"], "maxLength": 500}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "not-run"}}},
+          "then": {
+            "properties": {
+              "started_at": {"type": "null"},
+              "ended_at": {"type": "null"},
+              "catia_operator_record_id": {"type": "null"},
+              "vbe_operator_record_id": {"type": "null"},
+              "error_stage": {"type": "null"},
+              "error_module": {"type": "null"},
+              "redacted_error_summary": {"type": "null"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

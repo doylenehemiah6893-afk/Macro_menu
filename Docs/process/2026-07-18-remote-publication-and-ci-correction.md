@@ -257,3 +257,25 @@ delivery、双平台 CI 与 GitHub fresh clone 完成前，B28 继续禁止执�
 
 首个 formal verifier 调用在父环境保留 `MACRO_MENU_UV_EXECUTABLE` 时，使三个本应验证 PATH 分支的测试误走显式
 路径分支；生产 doctor 已通过，失败属于 fixture 环境隔离。三个测试现显式清除该变量后再验证 PATH 行为，不改生产合同。
+
+## 11. R9D clean evidence 与本地 delivery
+
+最终 clean evidence commit 为 `957d0f23c40513a9b82d583e8428d7c85d1710c5`，tree 为
+`fe3d79dedfeb282e5e80f8ebf0a345b927811b35`；独立复审 Critical/Important/Minor 均为 0。正式 verifier：
+
+| 项目 | 固定结果 |
+|---|---|
+| lock / Development doctor / pytest | PASS / PASS / `1683 passed, 19 warnings in 254.89s` |
+| inventory / check | 90 records / 16 components、2 tools；零 diagnostics，formal eligible |
+| Kit / ZIP SHA-256 | `kit-1ce7c253b8220c5aa53b` / `8f5b213c7194092d425959c42d4254df941cccbc4b0708568c935b542adf8544` |
+| Kit tree / sidecar SHA-256 | `c9650449cadea0220c9b944849209f36e998104c708fa41ba9aca88ab0e0cf8b` / `ec4255eb2b47095bb3c6b36925b8b8d7190ab430c1a1c4577b48cf3095349141` |
+| issuance snapshot SHA-256 | `735d333e2f492f07776bd6f78bc5e75858a28fc712065aa01737fbef300e1834` |
+| handoff / SHA-256 | `handoff-abb194d469d790637ab1` / `31cb3a4c5659715601f03e8484e1731337523ae53e7b6a62514c00c874c484f9` |
+| created / expires | `2026-07-18T20:01:32Z` / `2026-07-25T19:00:38Z` |
+| active ledger | captured `2026-07-18T20:01:40Z`；SHA-256 `388951eed48e88861206d86457cb04546a61a935e5bd79faafc48f383e09d6f5` |
+| operator bundle | `bundle-e4d5b791d8ce5dd442529605`；两次目录一致，61 files |
+| provenance / content SHA-256 | `e4d5b791d8ce5dd442529605337da0e36712ecb9858365673703d89820bdf35c` / `c0769c5fe635584e178cc3c249d4be4405c0504551273cc40e3773020d5b5de8` |
+| skeleton / collector pyz SHA-256 | `db1dbbb06cd64240671d32a1a522368af2b40479ff3b73fa72a2a55841456f53` / `e11da8de8147fbbaab5217f56dde7eea7636cacf8993230c85484b1ef6358301` |
+
+所有 target truth 仍为 not-run/not-produced，`release_eligible=false`。delivery commit、clone QA、远端双平台与
+GitHub URL fresh clone 完成前，B28 继续 BLOCKED。

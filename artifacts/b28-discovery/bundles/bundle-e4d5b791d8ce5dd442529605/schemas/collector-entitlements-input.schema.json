@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/collector-entitlements-input.schema.json",
+  "title": "Normalized form of the collector entitlements CSV input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["AB3", "HD2", "MD2", "SPA", "FTA"],
+  "properties": {
+    "AB3": {"$ref": "#/$defs/observation"},
+    "HD2": {"$ref": "#/$defs/observation"},
+    "MD2": {"$ref": "#/$defs/observation"},
+    "SPA": {"$ref": "#/$defs/observation"},
+    "FTA": {"$ref": "#/$defs/observation"}
+  },
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "checkout"],
+      "properties": {
+        "availability": {"enum": ["unknown", "observed-available", "observed-unavailable"]},
+        "checkout": {"enum": ["unknown", "observed-checked-out", "not-checked-out"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"checkout": {"const": "observed-checked-out"}}},
+          "then": {"properties": {"availability": {"const": "observed-available"}}}
+        },
+        {
+          "if": {"properties": {"availability": {"const": "observed-unavailable"}}},
+          "then": {"properties": {"checkout": {"const": "not-checked-out"}}}
+        }
+      ]
+    }
+  }
+}

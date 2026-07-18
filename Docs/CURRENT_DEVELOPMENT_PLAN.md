@@ -1,6 +1,6 @@
 # Macro_menu 当前开发计划
 
-状态：CURRENT / stable uv version invocation corrective implementation
+状态：CURRENT / R9D locally delivered / remote pending
 
 日期：2026-07-18
 
@@ -14,7 +14,7 @@
 | Task 10 | 本地完成 | 实施审查与回归关闭记录已提交 |
 | Task 11 | 本地重新完成 | quoted-path 修复后已从新 evidence 双构建并签发 public discovery bundle；不是 B28 执行完成 |
 | Task 12 | IN PROGRESS | 远端已到 `cfb9b09`；run `29651458545` Linux success、Windows 暴露 `--version` build metadata 差异，进入 R9D |
-| B28 Discovery | BLOCKED | `handoff-bc6d...` 已撤回；当前无 active bundle/CURRENT |
+| B28 Discovery | BLOCKED | 新 local bundle/handoff 已签发；等待 delivery commit、clone QA 与远端验证 |
 | G2–G7 | BLOCKED | Compile、References、权益、profile、试点和发布证据均未取得 |
 
 ## 2. 当前复刻与文档治理工作包
@@ -34,13 +34,13 @@
 | R9A | 首轮远端 CI 缺陷修复并重签发 | REMOTE FAILED / WITHDRAWN | run `29649284949` Linux success；Windows `88092722616` 仍报 pinned uv；`handoff-80d8...` 已撤回 |
 | R9B | setup-uv 官方 output-path 修复 | REMOTE FAILED / WITHDRAWN | run `29650442197` Windows 输出 `...\\uv`，原样路径不存在；`handoff-be908...` 已撤回 |
 | R9C | Windows extensionless output 安全解析 | REMOTE FAILED / WITHDRAWN | run `29651458545` Linux success；Windows 已启动 `.exe` 但 `--version` 含 build metadata；`handoff-bc6d...` 已撤回 |
-| R9D | uv 稳定版本输出校验 | IN PROGRESS | 官方 `uv -V` 整行精确匹配；137 focused、1683 full tests 通过，待独立复审/clean evidence/delivery/CI |
+| R9D | uv 稳定版本输出校验 | LOCAL DONE / REMOTE PENDING | `957d0f2`、1683 tests、双 Kit/四 verifier、`bundle-e4d5...` 已闭合；待 commit/clone QA/push/CI |
 | R10 | 原生 B28 Discovery | BLOCKED BY R9D | 从通过 CI/fresh-clone 的新签发包取得 fresh ledger + 未过期 handoff，再人工完成五点 Reference observation；仍禁止 Compile |
 
 ## 3. 当前执行顺序
 
-1. 完成 `uv -V` 聚焦回归、完整 receipt、独立复审与 clean evidence。
-2. 重签发 delivery，完成 local clone QA 后普通 fast-forward 推送。
+1. 提交 R9D delivery，完成 local autocrlf/quotepath clone QA。
+2. 普通 fast-forward 推送。
 3. 要求 Linux/Windows CI 与 GitHub URL fresh-clone Delivery doctor 全部通过；仅随后执行 B28 Discovery。
 
 ## 4. 停止条件

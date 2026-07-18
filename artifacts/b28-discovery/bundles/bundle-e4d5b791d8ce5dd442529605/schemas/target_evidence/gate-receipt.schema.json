@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/gate-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "receipt_id", "session_id", "session_mode", "gate_id",
+    "kit_id", "kit_zip_sha256", "kit_verifier_report_digest",
+    "evidence_payload_digest", "rule_version", "computed_outcome", "reason",
+    "audit_rule_version", "audit_status", "audit_report_digest", "diagnostics",
+    "release_eligible"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "receipt_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/opaque_id"},
+    "session_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/session_id"},
+    "session_mode": {"enum": ["discovery", "g2", "g3-c"]},
+    "gate_id": {"enum": ["DISCOVERY", "G2", "G3-C"]},
+    "kit_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/kit_id"},
+    "kit_zip_sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "kit_verifier_report_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "evidence_payload_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+    "rule_version": {"const": "b28-g2-g3-c-v1"},
+    "computed_outcome": {"enum": ["eligible", "fail", "blocked"]},
+    "reason": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "audit_rule_version": {"const": 1},
+    "audit_status": {"enum": ["not-run", "verified", "partial", "unavailable", "failed"]},
+    "audit_report_digest": {
+      "oneOf": [
+        {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        {"type": "null"}
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "path", "message"],
+        "properties": {
+          "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+          "path": {"type": "string", "minLength": 1, "maxLength": 300},
+          "message": {"type": "string", "minLength": 1, "maxLength": 500}
+        }
+      }
+    },
+    "release_eligible": {"const": false}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"audit_status": {"const": "not-run"}}},
+      "then": {"properties": {"audit_report_digest": {"type": "null"}}},
+      "else": {"properties": {"audit_report_digest": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"}}}
+    },
+    {
+      "if": {"properties": {"session_mode": {"const": "discovery"}}},
+      "then": {
+        "properties": {
+          "gate_id": {"const": "DISCOVERY"},
+          "computed_outcome": {"const": "blocked"},
+          "reason": {"const": "discovery-only"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"session_mode": {"const": "g2"}}},
+      "then": {"properties": {"gate_id": {"const": "G2"}}}
+    },
+    {
+      "if": {"properties": {"session_mode": {"const": "g3-c"}}},
+      "then": {"properties": {"gate_id": {"const": "G3-C"}}}
+    }
+  ]
+}

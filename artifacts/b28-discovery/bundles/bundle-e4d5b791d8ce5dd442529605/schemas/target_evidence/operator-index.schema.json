@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.catvba.invalid/target-evidence/operator-index.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["binding", "records"],
+  "properties": {
+    "binding": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/binding"},
+    "records": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/record"}
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "category", "relative_path", "sha256", "captured_at", "collector_role", "redaction_status"],
+      "properties": {
+        "record_id": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/record_id"},
+        "category": {"enum": ["session", "environment", "entitlement", "reference", "compile", "test", "state", "artifact", "handoff", "review", "other"]},
+        "relative_path": {
+          "allOf": [
+            {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/portable_path"},
+            {"pattern": "^operator-records/[^/]+(?:/[^/]+)*$"}
+          ]
+        },
+        "sha256": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/sha256"},
+        "captured_at": {"$ref": "https://schemas.catvba.invalid/target-evidence/common.schema.json#/$defs/utc"},
+        "collector_role": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+        "redaction_status": {"enum": ["reviewed-redacted", "two-person-text"]}
+      }
+    }
+  }
+}
